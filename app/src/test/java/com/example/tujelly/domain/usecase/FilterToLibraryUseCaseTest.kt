@@ -44,6 +44,63 @@ class FakeJellyfinDao : JellyfinDao {
         return localDb.firstOrNull { it.id == id }
     }
 
+    override suspend fun insertOrUpdate(item: JellyfinMediaEntity) {
+        localDb.removeAll { it.id == item.id }
+        localDb.add(item)
+    }
+
+    override suspend fun findByTitleAndYear(title: String, year: Int): JellyfinMediaEntity? {
+        return localDb.firstOrNull { it.title.equals(title, ignoreCase = true) && it.productionYear == year }
+    }
+
+    override suspend fun findByTitle(title: String): JellyfinMediaEntity? {
+        return localDb.firstOrNull { it.title.equals(title, ignoreCase = true) }
+    }
+
+    override suspend fun findByFuzzyTitle(title: String): JellyfinMediaEntity? {
+        return localDb.firstOrNull { it.title.contains(title, ignoreCase = true) }
+    }
+
+    override suspend fun searchLocalMedia(query: String, limit: Int): List<JellyfinMediaEntity> {
+        return localDb.filter { it.title.contains(query, ignoreCase = true) }.take(limit)
+    }
+
+    override suspend fun getMovies(): List<JellyfinMediaEntity> = localDb.filter { it.type == "Movie" }
+
+    override suspend fun getSeries(): List<JellyfinMediaEntity> = localDb.filter { it.type == "Series" }
+
+    override suspend fun getTopRatedLocal(limit: Int): List<JellyfinMediaEntity> = localDb.take(limit)
+
+    override suspend fun getTopMoviesLocal(limit: Int): List<JellyfinMediaEntity> = localDb.filter { it.type == "Movie" }.take(limit)
+
+    override suspend fun getTopSeriesLocal(limit: Int): List<JellyfinMediaEntity> = localDb.filter { it.type == "Series" }.take(limit)
+
+    override suspend fun getItemsByGenre(genre: String, limit: Int): List<JellyfinMediaEntity> =
+        localDb.filter { it.genres?.contains(genre, ignoreCase = true) == true }.take(limit)
+
+    override suspend fun getWatchedGenres(): List<String> = emptyList()
+
+    override suspend fun getAllGenresRaw(): List<String> = emptyList()
+
+    override suspend fun getCount(): Int = localDb.size
+
+    override fun getMediaCountFlow(): Flow<Int> = flowOf(localDb.size)
+
+    override suspend fun getFavorites(): List<JellyfinMediaEntity> = localDb.filter { it.isFavorite }
+
+    override fun getFavoritesFlow(): Flow<List<JellyfinMediaEntity>> = flowOf(localDb.filter { it.isFavorite })
+
+    override suspend fun updateFavoriteStatus(itemId: String, isFavorite: Boolean) {
+        val item = getItemById(itemId) ?: return
+        insertOrUpdate(item.copy(isFavorite = isFavorite))
+    }
+
+    override suspend fun getCachedOverviews(): List<com.example.tujelly.data.local.db.CachedOverviewDto> {
+        return localDb.mapNotNull {
+            if (it.overview != null) com.example.tujelly.data.local.db.CachedOverviewDto(it.id, it.overview, it.backdropImageTag) else null
+        }
+    }
+
     override suspend fun clearAll() {
         localDb.clear()
     }

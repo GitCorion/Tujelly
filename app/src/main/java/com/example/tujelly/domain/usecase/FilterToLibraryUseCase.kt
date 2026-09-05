@@ -15,9 +15,9 @@ class FilterToLibraryUseCase(
      */
     suspend fun filterTraktItems(
         traktItems: List<TraktMediaDto>,
-        serverUrl: String,
-        userId: String,
-        token: String,
+        serverUrl: String = "",
+        userId: String = "",
+        token: String = "",
         maxCandidates: Int = 20
     ): List<JellyfinMediaEntity> {
         val seenIds = mutableSetOf<String>()
@@ -45,9 +45,9 @@ class FilterToLibraryUseCase(
      */
     suspend fun filterTmdbItems(
         tmdbItems: List<TmdbItemDto>,
-        serverUrl: String,
-        userId: String,
-        token: String,
+        serverUrl: String = "",
+        userId: String = "",
+        token: String = "",
         maxCandidates: Int = 20
     ): List<JellyfinMediaEntity> {
         val seenIds = mutableSetOf<String>()
