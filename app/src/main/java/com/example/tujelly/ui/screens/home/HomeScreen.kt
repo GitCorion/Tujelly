@@ -93,6 +93,12 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = com.example.tujelly.R.drawable.ic_logo_tujelly),
+                    contentDescription = "Logo Tujelly",
+                    modifier = Modifier.size(36.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = "TUJELLY",
                     style = MaterialTheme.typography.headlineMedium,
