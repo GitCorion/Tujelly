@@ -2,7 +2,11 @@
 
 package com.example.tujelly.ui.screens.player
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -150,6 +154,21 @@ fun PlayerScreen(
     var duration by remember { mutableLongStateOf(0L) }
     var bufferedPosition by remember { mutableLongStateOf(0L) }
 
+    val activity = remember(context) { context.findActivity() }
+
+    // Prevent Android TV from going to sleep / ambient mode while playing or viewing controls
+    DisposableEffect(activity, isPlaying, showOverlayControls) {
+        val keepOn = isPlaying || showOverlayControls
+        if (keepOn) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     var audioTracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
     var subtitleTracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
 
@@ -244,6 +263,7 @@ fun PlayerScreen(
                     .setRenderersFactory(renderersFactory)
                     .setMediaSourceFactory(mediaSourceFactory)
                     .setLoadControl(loadControl)
+                    .setWakeMode(C.WAKE_MODE_NETWORK)
                     .build().apply {
 
                         val subtitleConfigs = info.subtitles.map { sub ->
@@ -353,10 +373,12 @@ fun PlayerScreen(
                         player = exoPlayer
                         useController = false
                         resizeMode = currentResizeMode
+                        keepScreenOn = true
                     }
                 },
                 update = { playerView ->
                     playerView.resizeMode = currentResizeMode
+                    playerView.keepScreenOn = isPlaying || showOverlayControls
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -1211,4 +1233,15 @@ private fun formatTime(timeMs: Long): String {
     } else {
         java.lang.String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)
     }
+}
+
+private fun Context.findActivity(): Activity? {
+    var currentContext = this
+    while (currentContext is ContextWrapper) {
+        if (currentContext is Activity) {
+            return currentContext
+        }
+        currentContext = currentContext.baseContext
+    }
+    return null
 }
