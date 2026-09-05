@@ -478,29 +478,44 @@ class GetHomeFeedUseCase(
         val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
         val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
 
+        val isContinueWatching = source == MediaSource.JELLYFIN && playbackPositionTicks > 0
         val effectiveTitle = if (type.equals("Episode", ignoreCase = true) && !seriesName.isNullOrEmpty()) {
-            val epCode = if (seasonNumber != null && episodeNumber != null) " (T${seasonNumber}:E${episodeNumber})" else ""
-            "$seriesName$epCode"
+            if (isContinueWatching) {
+                val epCode = if (seasonNumber != null && episodeNumber != null) " (T${seasonNumber}:E${episodeNumber})" else ""
+                "$seriesName$epCode"
+            } else {
+                seriesName
+            }
         } else {
             title
         }
+
+        val effectiveType = if (type.equals("Episode", ignoreCase = true) && source != MediaSource.JELLYFIN) "Series" else type
 
         val total = totalItemCount
         val unplayed = unplayedItemCount
         val played = if (total != null && unplayed != null) (total - unplayed).coerceAtLeast(0) else null
 
+        val effectivePlayed = if (effectiveType.equals("Series", ignoreCase = true)) {
+            if (unplayed != null) unplayed == 0 && (total ?: 0) > 0 else isPlayed
+        } else if (type.equals("Episode", ignoreCase = true) && source != MediaSource.JELLYFIN) {
+            false
+        } else {
+            isPlayed
+        }
+
         return MediaItem(
             id = id,
             title = effectiveTitle,
             overview = overview,
-            type = type,
+            type = effectiveType,
             posterUrl = posterUrl,
             backdropUrl = backdropUrl,
             rating = communityRating,
             year = productionYear,
             source = source,
             playbackPositionTicks = playbackPositionTicks,
-            isPlayed = isPlayed,
+            isPlayed = effectivePlayed,
             isFavorite = isFavorite,
             totalEpisodes = total,
             playedEpisodes = played

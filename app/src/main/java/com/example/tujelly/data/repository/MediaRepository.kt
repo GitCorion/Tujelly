@@ -184,11 +184,26 @@ class MediaRepository(
             }
 
             // 4. Sync Recently Played items (Fast, marks watched/progress in local DB)
+            var playedEntities: List<JellyfinMediaEntity> = emptyList()
             try {
                 val playedResponse = api.getRecentlyPlayedItems(authHeader = authHeader, userId = userId, limit = 100)
-                val playedEntities = playedResponse.items.map { it.toEntity() }
+                playedEntities = playedResponse.items.map { it.toEntity() }
                 if (playedEntities.isNotEmpty()) {
                     jellyfinDao.insertOrUpdateAll(playedEntities)
+                }
+            } catch (_: Exception) {}
+
+            // 5. Pre-cache parent series for any synced episodes so full series details exist in Room
+            try {
+                val seriesIds = playedEntities
+                    .filter { it.type.equals("Episode", ignoreCase = true) && !it.seriesId.isNullOrBlank() }
+                    .mapNotNull { it.seriesId }
+                    .distinct()
+                for (sId in seriesIds) {
+                    try {
+                        val seriesDto = api.getItemDetail(authHeader = authHeader, userId = userId, itemId = sId)
+                        jellyfinDao.insertOrUpdate(seriesDto.toEntity())
+                    } catch (_: Exception) {}
                 }
             } catch (_: Exception) {}
         }
@@ -706,6 +721,11 @@ class MediaRepository(
     }
 
     suspend fun findLocal(tmdbId: String?, imdbId: String?, title: String? = null, year: Int? = null): JellyfinMediaEntity? {
+        val matched = findLocalInternal(tmdbId, imdbId, title, year) ?: return null
+        return resolveToSeriesIfEpisode(matched)
+    }
+
+    private suspend fun findLocalInternal(tmdbId: String?, imdbId: String?, title: String? = null, year: Int? = null): JellyfinMediaEntity? {
         // 1. Try matching by TMDB or IMDB ID
         if (tmdbId != null || imdbId != null) {
             val matchedById = jellyfinDao.findByTmdbOrImdb(tmdbId, imdbId)
@@ -727,6 +747,62 @@ class MediaRepository(
         }
 
         return null
+    }
+
+    private suspend fun resolveToSeriesIfEpisode(entity: JellyfinMediaEntity): JellyfinMediaEntity {
+        if (!entity.type.equals("Episode", ignoreCase = true)) {
+            return entity
+        }
+
+        // 1. Look up parent series in local Room DB by seriesId
+        if (!entity.seriesId.isNullOrBlank()) {
+            val parent = jellyfinDao.getItemById(entity.seriesId)
+            if (parent != null) return parent
+        }
+
+        // 2. Look up parent series in local Room DB by seriesName or title
+        val sName = entity.seriesName ?: entity.title.substringBefore("(").substringBefore("-").trim()
+        val parentByName = jellyfinDao.getSeriesByTitle(sName)
+        if (parentByName != null) return parentByName
+
+        // 3. Synthesize Series entity from Episode data
+        val eps = if (!entity.seriesId.isNullOrBlank()) {
+            jellyfinDao.getEpisodesForSeries(entity.seriesId)
+        } else emptyList()
+
+        val playedCount = if (eps.isNotEmpty()) {
+            eps.count { it.isPlayed }
+        } else {
+            if (entity.isPlayed) 1 else 0
+        }
+        val totalCount = entity.totalItemCount ?: if (playedCount > 0) maxOf(playedCount + 1, 10) else 10
+        val unplayedCount = (totalCount - playedCount).coerceAtLeast(0)
+
+        return JellyfinMediaEntity(
+            id = entity.seriesId ?: entity.id,
+            title = sName,
+            originalTitle = entity.originalTitle,
+            type = "Series",
+            tmdbId = entity.tmdbId,
+            imdbId = entity.imdbId,
+            tvdbId = entity.tvdbId,
+            overview = entity.overview,
+            primaryImageTag = entity.seriesPrimaryImageTag ?: entity.primaryImageTag,
+            backdropImageTag = entity.backdropImageTag,
+            communityRating = entity.communityRating,
+            productionYear = entity.productionYear,
+            genres = entity.genres,
+            isPlayed = unplayedCount == 0 && playedCount > 0,
+            playbackPositionTicks = 0L,
+            isFavorite = entity.isFavorite,
+            seriesId = null,
+            seriesName = null,
+            seriesPrimaryImageTag = null,
+            seasonNumber = null,
+            episodeNumber = null,
+            totalItemCount = totalCount,
+            unplayedItemCount = unplayedCount
+        )
     }
 
     suspend fun getMostWatchedGenres(): List<String> {

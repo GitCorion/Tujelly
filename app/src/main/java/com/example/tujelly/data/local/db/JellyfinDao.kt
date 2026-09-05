@@ -18,23 +18,29 @@ interface JellyfinDao {
     @Query("SELECT * FROM jellyfin_media")
     fun getAllItems(): Flow<List<JellyfinMediaEntity>>
 
-    @Query("SELECT * FROM jellyfin_media WHERE tmdbId = :tmdbId LIMIT 1")
+    @Query("SELECT * FROM jellyfin_media WHERE tmdbId = :tmdbId ORDER BY CASE WHEN type = 'Series' THEN 0 WHEN type = 'Movie' THEN 1 ELSE 2 END LIMIT 1")
     suspend fun findByTmdbId(tmdbId: String): JellyfinMediaEntity?
 
-    @Query("SELECT * FROM jellyfin_media WHERE imdbId = :imdbId LIMIT 1")
+    @Query("SELECT * FROM jellyfin_media WHERE imdbId = :imdbId ORDER BY CASE WHEN type = 'Series' THEN 0 WHEN type = 'Movie' THEN 1 ELSE 2 END LIMIT 1")
     suspend fun findByImdbId(imdbId: String): JellyfinMediaEntity?
 
-    @Query("SELECT * FROM jellyfin_media WHERE (:tmdbId IS NOT NULL AND tmdbId = :tmdbId) OR (:imdbId IS NOT NULL AND imdbId = :imdbId) LIMIT 1")
+    @Query("SELECT * FROM jellyfin_media WHERE (:tmdbId IS NOT NULL AND tmdbId = :tmdbId) OR (:imdbId IS NOT NULL AND imdbId = :imdbId) ORDER BY CASE WHEN type = 'Series' THEN 0 WHEN type = 'Movie' THEN 1 ELSE 2 END LIMIT 1")
     suspend fun findByTmdbOrImdb(tmdbId: String?, imdbId: String?): JellyfinMediaEntity?
 
-    @Query("SELECT * FROM jellyfin_media WHERE (LOWER(title) = LOWER(:title) OR LOWER(originalTitle) = LOWER(:title)) AND productionYear = :year LIMIT 1")
+    @Query("SELECT * FROM jellyfin_media WHERE (LOWER(title) = LOWER(:title) OR LOWER(originalTitle) = LOWER(:title) OR LOWER(seriesName) = LOWER(:title)) AND productionYear = :year ORDER BY CASE WHEN type = 'Series' THEN 0 WHEN type = 'Movie' THEN 1 ELSE 2 END LIMIT 1")
     suspend fun findByTitleAndYear(title: String, year: Int): JellyfinMediaEntity?
 
-    @Query("SELECT * FROM jellyfin_media WHERE LOWER(title) = LOWER(:title) OR LOWER(originalTitle) = LOWER(:title) LIMIT 1")
+    @Query("SELECT * FROM jellyfin_media WHERE LOWER(title) = LOWER(:title) OR LOWER(originalTitle) = LOWER(:title) OR LOWER(seriesName) = LOWER(:title) ORDER BY CASE WHEN type = 'Series' THEN 0 WHEN type = 'Movie' THEN 1 ELSE 2 END LIMIT 1")
     suspend fun findByTitle(title: String): JellyfinMediaEntity?
 
-    @Query("SELECT * FROM jellyfin_media WHERE LOWER(title) LIKE '%' || LOWER(:title) || '%' OR LOWER(originalTitle) LIKE '%' || LOWER(:title) || '%' LIMIT 1")
+    @Query("SELECT * FROM jellyfin_media WHERE LOWER(title) LIKE '%' || LOWER(:title) || '%' OR LOWER(originalTitle) LIKE '%' || LOWER(:title) || '%' OR LOWER(seriesName) LIKE '%' || LOWER(:title) || '%' ORDER BY CASE WHEN type = 'Series' THEN 0 WHEN type = 'Movie' THEN 1 ELSE 2 END LIMIT 1")
     suspend fun findByFuzzyTitle(title: String): JellyfinMediaEntity?
+
+    @Query("SELECT * FROM jellyfin_media WHERE seriesId = :seriesId AND type = 'Episode'")
+    suspend fun getEpisodesForSeries(seriesId: String): List<JellyfinMediaEntity>
+
+    @Query("SELECT * FROM jellyfin_media WHERE (LOWER(title) = LOWER(:title) OR LOWER(originalTitle) = LOWER(:title)) AND type = 'Series' LIMIT 1")
+    suspend fun getSeriesByTitle(title: String): JellyfinMediaEntity?
 
     @Query("SELECT * FROM jellyfin_media WHERE type IN ('Movie', 'Series') AND (LOWER(title) LIKE '%' || LOWER(:query) || '%' OR LOWER(originalTitle) LIKE '%' || LOWER(:query) || '%') ORDER BY communityRating DESC LIMIT :limit")
     suspend fun searchLocalMedia(query: String, limit: Int = 40): List<JellyfinMediaEntity>

@@ -61,6 +61,14 @@ class FakeJellyfinDao : JellyfinDao {
         return localDb.firstOrNull { it.title.contains(title, ignoreCase = true) }
     }
 
+    override suspend fun getEpisodesForSeries(seriesId: String): List<JellyfinMediaEntity> {
+        return localDb.filter { it.seriesId == seriesId && it.type == "Episode" }
+    }
+
+    override suspend fun getSeriesByTitle(title: String): JellyfinMediaEntity? {
+        return localDb.firstOrNull { it.type == "Series" && (it.title.equals(title, ignoreCase = true) || it.originalTitle?.equals(title, ignoreCase = true) == true) }
+    }
+
     override suspend fun searchLocalMedia(query: String, limit: Int): List<JellyfinMediaEntity> {
         return localDb.filter { it.title.contains(query, ignoreCase = true) }.take(limit)
     }
@@ -167,5 +175,41 @@ class FilterToLibraryUseCaseTest {
         assertEquals(1, filtered.size)
         assertEquals("Interstellar", filtered[0].title)
         assertEquals("jf-200", filtered[0].id)
+    }
+
+    @Test
+    fun `filterTmdbItems resolves episode match to parent series and keeps isPlayed false when not finished`() = runTest {
+        val fakeDao = FakeJellyfinDao()
+        val playedEpisode = JellyfinMediaEntity(
+            id = "ep-101",
+            title = "Día de la Libertad",
+            type = "Episode",
+            seriesId = "series-silo",
+            seriesName = "Silo",
+            tmdbId = "125988",
+            isPlayed = true,
+            seasonNumber = 1,
+            episodeNumber = 1,
+            totalItemCount = 10,
+            unplayedItemCount = 9
+        )
+        fakeDao.setLocalItems(listOf(playedEpisode))
+
+        val repo = MediaRepository(fakeDao)
+        val useCase = FilterToLibraryUseCase(repo)
+
+        val tmdbItems = listOf(
+            TmdbItemDto(id = 125988, name = "Silo", firstAirDate = "2023-05-05")
+        )
+
+        val filtered = useCase.filterTmdbItems(tmdbItems)
+
+        assertEquals(1, filtered.size)
+        val item = filtered[0]
+        assertEquals("Silo", item.title)
+        assertEquals("Series", item.type)
+        assertEquals(false, item.isPlayed) // Must NOT be marked as fully played
+        assertEquals(10, item.totalItemCount)
+        assertEquals(9, item.unplayedItemCount)
     }
 }

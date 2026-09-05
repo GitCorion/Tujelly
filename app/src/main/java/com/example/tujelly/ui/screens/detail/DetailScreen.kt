@@ -334,7 +334,8 @@ fun DetailScreen(
                             val totalEps = entity.totalItemCount
                             val unplayedEps = entity.unplayedItemCount
                             val playedEps = if (totalEps != null && unplayedEps != null) (totalEps - unplayedEps).coerceAtLeast(0) else null
-                            val hasSeriesProgress = !entity.isPlayed && isTvSeries && playedEps != null && totalEps != null && playedEps > 0
+                            val isSeriesFinished = if (isTvSeries && unplayedEps != null) unplayedEps == 0 && (totalEps ?: 0) > 0 else entity.isPlayed
+                            val hasSeriesProgress = !isSeriesFinished && isTvSeries && playedEps != null && totalEps != null && playedEps > 0
 
                             if (hasSeriesProgress) {
                                 TvPill(
@@ -354,7 +355,7 @@ fun DetailScreen(
                                 )
                             }
 
-                            if (entity.isPlayed) {
+                            if (isSeriesFinished && !hasSeriesProgress) {
                                 TvPill(
                                     text = "✓ VISTO",
                                     containerColor = Color(0x22FFFFFF),

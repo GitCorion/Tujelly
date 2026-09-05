@@ -167,15 +167,21 @@ fun HeroBanner(
                     val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
                     val isMonochrome = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
 
+                    val isTvSeries = item.type.equals("Series", ignoreCase = true)
                     val hasEpisodeProgress = !item.isPlayed &&
-                            item.type.equals("Series", ignoreCase = true) &&
-                            item.playedEpisodes != null && item.totalEpisodes != null &&
-                            item.playedEpisodes > 0 && item.totalEpisodes > 0
+                            isTvSeries &&
+                            item.playedEpisodes != null &&
+                            item.playedEpisodes > 0
 
                     if (hasEpisodeProgress) {
+                        val progressText = if (item.totalEpisodes != null && item.totalEpisodes > 0) {
+                            "PROGRESO: ${item.playedEpisodes}/${item.totalEpisodes}"
+                        } else {
+                            "PROGRESO: ${item.playedEpisodes} caps"
+                        }
                         Spacer(modifier = Modifier.width(8.dp))
                         TvPill(
-                            text = "PROGRESO: ${item.playedEpisodes}/${item.totalEpisodes}",
+                            text = progressText,
                             containerColor = Color(0x22FFFFFF),
                             textColor = if (isMonochrome) Color.White else Color(0xFF38BDF8),
                             borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x5500A4DC)
@@ -192,7 +198,7 @@ fun HeroBanner(
                         )
                     }
 
-                    if (item.isPlayed) {
+                    if (item.isPlayed && !hasEpisodeProgress) {
                         Spacer(modifier = Modifier.width(8.dp))
                         TvPill(
                             text = "✓ VISTO",

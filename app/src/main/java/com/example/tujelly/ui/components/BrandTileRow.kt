@@ -111,7 +111,7 @@ private fun BrandCard(
             modifier = Modifier
                 .fillMaxSize()
                 .background(if (isFocused) Color(0xFF1E222D) else Color(0xFF111319))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
             Image(

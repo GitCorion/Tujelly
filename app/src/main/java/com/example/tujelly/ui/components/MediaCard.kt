@@ -137,14 +137,20 @@ fun MediaCard(
                     val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
                     val isMonochrome = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
 
+                    val isTvSeries = item.type.equals("Series", ignoreCase = true)
                     val hasEpisodeProgress = !item.isPlayed &&
-                            item.type.equals("Series", ignoreCase = true) &&
-                            item.playedEpisodes != null && item.totalEpisodes != null &&
-                            item.playedEpisodes > 0 && item.totalEpisodes > 0
+                            isTvSeries &&
+                            item.playedEpisodes != null &&
+                            item.playedEpisodes > 0
 
                     if (hasEpisodeProgress) {
                         val progressBorder = if (isMonochrome) Color(0x66FFFFFF) else Color(0x9900A4DC)
                         val progressTextColor = if (isMonochrome) Color.White else Color(0xFF38BDF8)
+                        val progressText = if (item.totalEpisodes != null && item.totalEpisodes > 0) {
+                            "${item.playedEpisodes}/${item.totalEpisodes}"
+                        } else {
+                            "${item.playedEpisodes} caps"
+                        }
 
                         Box(
                             modifier = Modifier
@@ -157,7 +163,7 @@ fun MediaCard(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "${item.playedEpisodes}/${item.totalEpisodes}",
+                                text = progressText,
                                 color = progressTextColor,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 9.sp,
@@ -189,7 +195,7 @@ fun MediaCard(
                         }
                     }
 
-                    if (item.isPlayed) {
+                    if (item.isPlayed && !hasEpisodeProgress) {
                         val checkColor = if (isMonochrome) Color.White else Color(0xFF10B981)
                         val checkBorder = if (isMonochrome) Color(0x66FFFFFF) else Color(0x9910B981)
 
