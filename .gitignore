@@ -13,6 +13,7 @@ app/build
 *.apk
 *.aab
 *.keystore
+!app/debug.keystore
 *.jks
 .kotlin/
 .vscode/
