@@ -145,4 +145,8 @@ val LocalIndicatorTheme = androidx.compose.runtime.compositionLocalOf {
     com.example.tujelly.data.local.INDICATOR_THEME_COLOR
 }
 
+val LocalPlatformLogoStyle = androidx.compose.runtime.compositionLocalOf {
+    com.example.tujelly.data.local.PLATFORM_LOGO_COLOR
+}
+
 

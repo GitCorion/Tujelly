@@ -36,15 +36,17 @@ import com.example.tujelly.R
 data class BrandTile(
     val id: String,
     val name: String,
-    val iconRes: Int
+    val iconRes: Int,
+    val iconMonoRes: Int = iconRes
 )
 
 val BRAND_TILES = listOf(
-    BrandTile("netflix", "NETFLIX", R.drawable.ic_brand_netflix),
-    BrandTile("disney", "DISNEY+", R.drawable.ic_brand_disney),
-    BrandTile("max", "MAX", R.drawable.ic_brand_max),
-    BrandTile("prime", "PRIME VIDEO", R.drawable.ic_brand_prime),
-    BrandTile("apple", "APPLE TV+", R.drawable.ic_brand_apple)
+    BrandTile("netflix", "NETFLIX", R.drawable.ic_brand_netflix, R.drawable.ic_brand_netflix_mono),
+    BrandTile("disney", "DISNEY+", R.drawable.ic_brand_disney, R.drawable.ic_brand_disney_mono),
+    BrandTile("max", "MAX", R.drawable.ic_brand_max, R.drawable.ic_brand_max_mono),
+    BrandTile("prime", "PRIME VIDEO", R.drawable.ic_brand_prime, R.drawable.ic_brand_prime_mono),
+    BrandTile("apple", "APPLE TV+", R.drawable.ic_brand_apple, R.drawable.ic_brand_apple_mono),
+    BrandTile("movistar", "MOVISTAR+", R.drawable.ic_brand_movistar, R.drawable.ic_brand_movistar_mono)
 )
 
 @Composable
@@ -58,8 +60,9 @@ fun BrandTileRow(
             .padding(vertical = 12.dp)
     ) {
         LazyRow(
+            modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 48.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
         ) {
             items(BRAND_TILES, key = { it.id }) { brand ->
                 BrandCard(
@@ -79,6 +82,12 @@ private fun BrandCard(
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val logoStyle = com.example.tujelly.ui.theme.LocalPlatformLogoStyle.current
+    val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
+    val isMonochrome = logoStyle == com.example.tujelly.data.local.PLATFORM_LOGO_MONOCHROME ||
+            (logoStyle == com.example.tujelly.data.local.PLATFORM_LOGO_COLOR && indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME)
+
+    val iconRes = if (isMonochrome) brand.iconMonoRes else brand.iconRes
 
     Card(
         onClick = onClick,
@@ -86,10 +95,10 @@ private fun BrandCard(
             containerColor = if (isFocused) Color(0xFF1E222D) else Color(0xFF111319),
             focusedContainerColor = Color(0xFF1E222D)
         ),
-        scale = CardDefaults.scale(focusedScale = 1.0f),
+        scale = CardDefaults.scale(focusedScale = 1.04f),
         modifier = modifier
-            .width(145.dp)
-            .height(68.dp)
+            .width(132.dp)
+            .height(64.dp)
             .onFocusChanged { isFocused = it.isFocused }
             .clip(RoundedCornerShape(10.dp))
             .border(
@@ -102,11 +111,11 @@ private fun BrandCard(
             modifier = Modifier
                 .fillMaxSize()
                 .background(if (isFocused) Color(0xFF1E222D) else Color(0xFF111319))
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             contentAlignment = Alignment.Center
         ) {
             Image(
-                painter = painterResource(id = brand.iconRes),
+                painter = painterResource(id = iconRes),
                 contentDescription = brand.name,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()

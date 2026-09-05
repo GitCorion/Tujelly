@@ -26,6 +26,9 @@ const val ACCENT_WHITE = "WHITE"
 const val INDICATOR_THEME_COLOR = "COLOR"
 const val INDICATOR_THEME_MONOCHROME = "MONOCHROME"
 
+const val PLATFORM_LOGO_COLOR = "COLOR"
+const val PLATFORM_LOGO_MONOCHROME = "MONOCHROME"
+
 data class UserPreferences(
     val jellyfinServerUrl: String = "",
     val jellyfinUserId: String = "",
@@ -40,6 +43,7 @@ data class UserPreferences(
     val buttonStyle: String = BUTTON_STYLE_ICONS_ONLY,
     val accentColor: String = ACCENT_CYAN,
     val indicatorTheme: String = INDICATOR_THEME_COLOR,
+    val platformLogoStyle: String = PLATFORM_LOGO_COLOR,
     val jellyfinLastSync: String = ""
 )
 
@@ -59,6 +63,7 @@ class UserPreferencesRepository(private val context: Context) {
         val BUTTON_STYLE = stringPreferencesKey("button_style")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
         val INDICATOR_THEME = stringPreferencesKey("indicator_theme")
+        val PLATFORM_LOGO_STYLE = stringPreferencesKey("platform_logo_style")
         val JELLYFIN_LAST_SYNC = stringPreferencesKey("jellyfin_last_sync")
     }
 
@@ -84,6 +89,7 @@ class UserPreferencesRepository(private val context: Context) {
             buttonStyle = prefs[Keys.BUTTON_STYLE] ?: BUTTON_STYLE_ICONS_ONLY,
             accentColor = prefs[Keys.ACCENT_COLOR] ?: ACCENT_CYAN,
             indicatorTheme = prefs[Keys.INDICATOR_THEME] ?: INDICATOR_THEME_COLOR,
+            platformLogoStyle = prefs[Keys.PLATFORM_LOGO_STYLE] ?: PLATFORM_LOGO_COLOR,
             jellyfinLastSync = prefs[Keys.JELLYFIN_LAST_SYNC] ?: ""
         )
     }
@@ -154,6 +160,12 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun updateIndicatorTheme(theme: String) {
         context.dataStore.edit { prefs ->
             prefs[Keys.INDICATOR_THEME] = theme
+        }
+    }
+
+    suspend fun updatePlatformLogoStyle(style: String) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.PLATFORM_LOGO_STYLE] = style
         }
     }
 

@@ -61,6 +61,7 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
                 "max" -> BrandInfo("max", "MAX", "1899|384", com.example.tujelly.R.drawable.ic_brand_max, androidx.compose.ui.graphics.Color(0xFF002BE7), androidx.compose.ui.graphics.Color(0xFF020A24))
                 "prime" -> BrandInfo("prime", "PRIME VIDEO", "119", com.example.tujelly.R.drawable.ic_brand_prime, androidx.compose.ui.graphics.Color(0xFF00A8E1), androidx.compose.ui.graphics.Color(0xFF02141C))
                 "apple" -> BrandInfo("apple", "APPLE TV+", "350", com.example.tujelly.R.drawable.ic_brand_apple, androidx.compose.ui.graphics.Color(0xFFE2E8F0), androidx.compose.ui.graphics.Color(0xFF101116))
+                "movistar" -> BrandInfo("movistar", "MOVISTAR+", "2241|149", com.example.tujelly.R.drawable.ic_brand_movistar, androidx.compose.ui.graphics.Color(0xFF019DF4), androidx.compose.ui.graphics.Color(0xFF020B20))
                 else -> BrandInfo("netflix", "NETFLIX", "8", com.example.tujelly.R.drawable.ic_brand_netflix, androidx.compose.ui.graphics.Color(0xFFE50914), androidx.compose.ui.graphics.Color(0xFF1E0507))
             }
 

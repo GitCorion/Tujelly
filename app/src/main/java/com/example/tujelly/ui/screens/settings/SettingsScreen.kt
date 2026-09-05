@@ -1,9 +1,11 @@
 package com.example.tujelly.ui.screens.settings
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,6 +78,8 @@ import com.example.tujelly.data.local.ACCENT_CYAN
 import com.example.tujelly.data.local.ACCENT_WHITE
 import com.example.tujelly.data.local.INDICATOR_THEME_COLOR
 import com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
+import com.example.tujelly.data.local.PLATFORM_LOGO_COLOR
+import com.example.tujelly.data.local.PLATFORM_LOGO_MONOCHROME
 import com.example.tujelly.ui.theme.TvAccent
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_AND_TEXT
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
@@ -827,6 +831,41 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(24.dp))
 
                             Text(
+                                text = "Estilo de Logos de Plataformas (Streaming)",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Elige si deseas ver las plataformas (Netflix, Disney+, Max, Prime, Apple TV+, Movistar+) con sus colores oficiales de marca o en blanco monocromático.",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            PlatformLogoStyleSelectionCard(
+                                title = "Color Original de Marca",
+                                description = "Logotipos oficiales en alta definición con sus tonalidades características (Rojo Netflix, Cyan Disney+, Azul Max, Azul Movistar+, etc.).",
+                                isSelected = uiState.platformLogoStyle == PLATFORM_LOGO_COLOR,
+                                isColorMode = true,
+                                onClick = { viewModel.updatePlatformLogoStyle(PLATFORM_LOGO_COLOR) }
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            PlatformLogoStyleSelectionCard(
+                                title = "Monocromático Blanco Puro",
+                                description = "Todos los logotipos de plataformas en blanco puro estilizado sobre cristal oscuro, diseño premium estilo tvOS.",
+                                isSelected = uiState.platformLogoStyle == PLATFORM_LOGO_MONOCHROME,
+                                isColorMode = false,
+                                onClick = { viewModel.updatePlatformLogoStyle(PLATFORM_LOGO_MONOCHROME) }
+                            )
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            Text(
                                 text = "Personalización de Botones de Acción",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = Color.White,
@@ -1431,6 +1470,129 @@ fun IndicatorThemeSelectionCard(
                         color = if (isColorMode) Color(0xFF38BDF8) else Color.White,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = if (isSelected) Color.White else Color(0xFFE2E8F0),
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    fontSize = 14.sp
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = description,
+                    color = Color(0xFF94A3B8),
+                    fontSize = 11.sp
+                )
+            }
+
+            if (isSelected) {
+                Spacer(modifier = Modifier.width(12.dp))
+                TvPill(
+                    text = "ACTIVO",
+                    containerColor = Color.White,
+                    textColor = Color(0xFF0F172A),
+                    borderColor = Color.White
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PlatformLogoStyleSelectionCard(
+    title: String,
+    description: String,
+    isSelected: Boolean,
+    isColorMode: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isSelected) Color(0x28FFFFFF) else Color(0xFF131422),
+            focusedContainerColor = Color(0x40FFFFFF)
+        ),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(
+                border = BorderStroke(1.dp, if (isSelected) Color.White else Color(0xFF222438)),
+                shape = RoundedCornerShape(10.dp)
+            ),
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, Color.White),
+                shape = RoundedCornerShape(10.dp)
+            )
+        ),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Muestra visual de logos
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Mini badge Netflix
+                Box(
+                    modifier = Modifier
+                        .height(26.dp)
+                        .width(44.dp)
+                        .background(Color(0xFF111319), RoundedCornerShape(6.dp))
+                        .border(0.75.dp, Color(0x33FFFFFF), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = if (isColorMode) com.example.tujelly.R.drawable.ic_brand_netflix else com.example.tujelly.R.drawable.ic_brand_netflix_mono),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                // Mini badge Disney+
+                Box(
+                    modifier = Modifier
+                        .height(26.dp)
+                        .width(44.dp)
+                        .background(Color(0xFF111319), RoundedCornerShape(6.dp))
+                        .border(0.75.dp, Color(0x33FFFFFF), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = if (isColorMode) com.example.tujelly.R.drawable.ic_brand_disney else com.example.tujelly.R.drawable.ic_brand_disney_mono),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                // Mini badge Movistar+
+                Box(
+                    modifier = Modifier
+                        .height(26.dp)
+                        .width(44.dp)
+                        .background(Color(0xFF111319), RoundedCornerShape(6.dp))
+                        .border(0.75.dp, Color(0x33FFFFFF), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = if (isColorMode) com.example.tujelly.R.drawable.ic_brand_movistar else com.example.tujelly.R.drawable.ic_brand_movistar_mono),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }

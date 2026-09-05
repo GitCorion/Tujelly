@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
             val userPrefsRepo = remember { com.example.tujelly.data.local.UserPreferencesRepository(applicationContext) }
             val currentPrefs by userPrefsRepo.userPreferencesFlow.collectAsState(initial = null)
             val indicatorTheme = currentPrefs?.indicatorTheme ?: com.example.tujelly.data.local.INDICATOR_THEME_COLOR
+            val platformLogoStyle = currentPrefs?.platformLogoStyle ?: com.example.tujelly.data.local.PLATFORM_LOGO_COLOR
 
             TujellyTheme {
                 Surface(
@@ -52,7 +53,8 @@ class MainActivity : ComponentActivity() {
                     )
                 ) {
                     androidx.compose.runtime.CompositionLocalProvider(
-                        com.example.tujelly.ui.theme.LocalIndicatorTheme provides indicatorTheme
+                        com.example.tujelly.ui.theme.LocalIndicatorTheme provides indicatorTheme,
+                        com.example.tujelly.ui.theme.LocalPlatformLogoStyle provides platformLogoStyle
                     ) {
                         TujellyApp()
                     }
