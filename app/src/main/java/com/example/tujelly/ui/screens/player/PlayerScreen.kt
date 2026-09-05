@@ -399,12 +399,11 @@ fun PlayerScreen(
                             .border(1.dp, Color(0x44FFFFFF), RoundedCornerShape(24.dp))
                             .padding(horizontal = 24.dp, vertical = 14.dp)
                     ) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            strokeWidth = 2.5.dp,
-                            modifier = Modifier.size(20.dp)
+                        com.example.tujelly.ui.components.JellyLoadingIndicator(
+                            size = 28.dp,
+                            message = null
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(14.dp))
                         Text(
                             text = "Cargando reproducción...",
                             color = Color.White,

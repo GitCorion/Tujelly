@@ -93,12 +93,6 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = com.example.tujelly.R.drawable.ic_logo_tujelly),
-                    contentDescription = "Logo Tujelly",
-                    modifier = Modifier.size(36.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = "TUJELLY",
                     style = MaterialTheme.typography.headlineMedium,
@@ -345,20 +339,10 @@ fun HomeScreen(
         when (val state = uiState) {
             is HomeUiState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Rounded.Explore,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(44.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Cargando descubridor de plataformas...",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = Color(0xFFE2E8F0)
-                        )
-                    }
+                    com.example.tujelly.ui.components.JellyLoadingIndicator(
+                        size = 84.dp,
+                        message = "Cargando descubridor de plataformas..."
+                    )
                 }
             }
 

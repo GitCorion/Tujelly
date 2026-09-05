@@ -102,21 +102,10 @@ fun DetailScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            color = Color(0xFF38BDF8),
-                            strokeWidth = 3.dp,
-                            modifier = Modifier.size(44.dp)
-                        )
-                        Text(
-                            text = "Cargando detalles...",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = Color(0xFFCBD5E1)
-                        )
-                    }
+                    com.example.tujelly.ui.components.JellyLoadingIndicator(
+                        size = 84.dp,
+                        message = "Cargando detalles..."
+                    )
                 }
             }
 
