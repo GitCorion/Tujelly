@@ -77,11 +77,25 @@ data class JellyfinUserDataDto(
     @SerialName("IsFavorite") val isFavorite: Boolean = false,
     @SerialName("isFavorite") val isFavoriteLower: Boolean = false
 ) {
+    val rawPlayed: Boolean
+        get() = played || playedLower || isPlayedAlias || isPlayedAliasLower
+
+    fun isPlayedForType(type: String?): Boolean {
+        return if (type.equals("Series", ignoreCase = true)) {
+            // For Series: ONLY mark played if there are 0 unplayed episodes
+            if (unplayedItemCount != null) {
+                unplayedItemCount == 0
+            } else {
+                rawPlayed
+            }
+        } else {
+            rawPlayed || playCount > 0 || playCountLower > 0 ||
+                    (playedPercentage != null && playedPercentage >= 90.0)
+        }
+    }
+
     val isPlayed: Boolean
-        get() = played || playedLower || isPlayedAlias || isPlayedAliasLower ||
-                playCount > 0 || playCountLower > 0 ||
-                (playedPercentage != null && playedPercentage >= 90.0) ||
-                (unplayedItemCount != null && unplayedItemCount == 0)
+        get() = isPlayedForType(null)
 
     val effectivePositionTicks: Long
         get() = if (playbackPositionTicks > 0L) playbackPositionTicks else playbackPositionTicksLower
@@ -154,8 +168,15 @@ data class JellyfinItemDto(
     @SerialName("SeasonId") val seasonId: String? = null,
     @SerialName("SeasonName") val seasonName: String? = null,
     @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
-    @SerialName("Status") val status: String? = null
-)
+    @SerialName("Status") val status: String? = null,
+    @SerialName("RecursiveItemCount") val recursiveItemCount: Int? = null,
+    @SerialName("recursiveItemCount") val recursiveItemCountLower: Int? = null,
+    @SerialName("ChildCount") val childCount: Int? = null,
+    @SerialName("childCount") val childCountLower: Int? = null
+) {
+    val effectiveItemCount: Int?
+        get() = recursiveItemCount ?: recursiveItemCountLower ?: childCount ?: childCountLower
+}
 
 @Serializable
 data class JellyfinItemsResponse(

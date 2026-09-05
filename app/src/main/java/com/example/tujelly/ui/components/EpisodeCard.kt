@@ -103,6 +103,9 @@ fun EpisodeCard(
 
                 // Watched badge
                 if (episode.isPlayed) {
+                    val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
+                    val isMonochrome = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
+
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -110,9 +113,9 @@ fun EpisodeCard(
                     ) {
                         TvPill(
                             text = "✓ Visto",
-                            containerColor = Color(0xB310B981),
+                            containerColor = if (isMonochrome) Color(0xCC334155) else Color(0xB310B981),
                             textColor = Color.White,
-                            borderColor = Color.Transparent
+                            borderColor = if (isMonochrome) Color(0x88FFFFFF) else Color.Transparent
                         )
                     }
                 }

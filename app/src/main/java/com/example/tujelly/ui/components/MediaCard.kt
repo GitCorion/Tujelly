@@ -134,7 +134,42 @@ fun MediaCard(
                         }
                     }
 
+                    val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
+                    val isMonochrome = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
+
+                    val hasEpisodeProgress = !item.isPlayed &&
+                            item.type.equals("Series", ignoreCase = true) &&
+                            item.playedEpisodes != null && item.totalEpisodes != null &&
+                            item.playedEpisodes > 0 && item.totalEpisodes > 0
+
+                    if (hasEpisodeProgress) {
+                        val progressBorder = if (isMonochrome) Color(0x66FFFFFF) else Color(0x9900A4DC)
+                        val progressTextColor = if (isMonochrome) Color.White else Color(0xFF38BDF8)
+
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = Color(0xE60F172A),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                                .border(1.dp, progressBorder, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${item.playedEpisodes}/${item.totalEpisodes}",
+                                color = progressTextColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.sp,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+
                     if (item.isFavorite) {
+                        val favColor = if (isMonochrome) Color.White else Color(0xFFEF4444)
+                        val favBorder = if (isMonochrome) Color(0x66FFFFFF) else Color(0x88EF4444)
+
                         Box(
                             modifier = Modifier
                                 .size(22.dp)
@@ -142,19 +177,22 @@ fun MediaCard(
                                     color = Color(0xE60F172A),
                                     shape = CircleShape
                                 )
-                                .border(1.dp, Color(0x66FFFFFF), CircleShape),
+                                .border(1.dp, favBorder, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Favorite,
                                 contentDescription = "Favorito",
-                                tint = Color.White,
+                                tint = favColor,
                                 modifier = Modifier.size(12.dp)
                             )
                         }
                     }
 
                     if (item.isPlayed) {
+                        val checkColor = if (isMonochrome) Color.White else Color(0xFF10B981)
+                        val checkBorder = if (isMonochrome) Color(0x66FFFFFF) else Color(0x9910B981)
+
                         Box(
                             modifier = Modifier
                                 .size(22.dp)
@@ -162,13 +200,13 @@ fun MediaCard(
                                     color = Color(0xE60F172A),
                                     shape = CircleShape
                                 )
-                                .border(1.dp, Color(0x9934D399), CircleShape),
+                                .border(1.dp, checkBorder, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Check,
                                 contentDescription = "Visto",
-                                tint = Color(0xFF34D399),
+                                tint = checkColor,
                                 modifier = Modifier.size(14.dp)
                             )
                         }

@@ -183,10 +183,10 @@ class MediaRepository(
                 android.util.Log.e("MediaRepository", "Error syncing favorites: ${e.message}", e)
             }
 
-            // 4. Sync Recently Played items (Fast, marks watched items in local DB)
+            // 4. Sync Recently Played items (Fast, marks watched/progress in local DB)
             try {
                 val playedResponse = api.getRecentlyPlayedItems(authHeader = authHeader, userId = userId, limit = 100)
-                val playedEntities = playedResponse.items.map { it.toEntity().copy(isPlayed = true) }
+                val playedEntities = playedResponse.items.map { it.toEntity() }
                 if (playedEntities.isNotEmpty()) {
                     jellyfinDao.insertOrUpdateAll(playedEntities)
                 }
@@ -248,7 +248,7 @@ class MediaRepository(
                     )
 
                     var deltaCount = 0
-                    val fields = "ProviderIds,PrimaryImageTag,CommunityRating,Genres,UserData"
+                    val fields = "ProviderIds,PrimaryImageTag,CommunityRating,Genres,UserData,ItemCounts,RecursiveItemCount"
                     for (view in mediaViews.ifEmpty { listOf(null) }) {
                         val isSeries = view?.collectionType.equals("tvshows", ignoreCase = true) || view?.name.equals("Series", ignoreCase = true)
                         val deltaResponse = runCatching {
@@ -301,7 +301,7 @@ class MediaRepository(
                 // =========================================================================
                 // CAMINO 2: SINCRONIZACIÓN COMPLETA GLOBAL
                 // =========================================================================
-                val fields = "ProviderIds,PrimaryImageTag,CommunityRating"
+                val fields = "ProviderIds,PrimaryImageTag,CommunityRating,UserData,ItemCounts,RecursiveItemCount"
                 val pageSize = 200
                 var totalSynced = 0
                 // Estimación inicial del catálogo: 35.000 títulos
@@ -872,11 +872,16 @@ class MediaRepository(
     }
 
     private fun JellyfinItemDto.toEntity(): JellyfinMediaEntity {
+        val totalCount = effectiveItemCount
+        val unplayedCount = userData?.unplayedItemCount
+        val itemType = type ?: "Unknown"
+        val playedStatus = userData?.isPlayedForType(itemType) ?: false
+
         return JellyfinMediaEntity(
             id = id,
             title = name ?: "",
             originalTitle = originalTitle,
-            type = type ?: "Unknown",
+            type = itemType,
             tmdbId = providerIds?.get("Tmdb") ?: providerIds?.get("tmdb"),
             imdbId = providerIds?.get("Imdb") ?: providerIds?.get("imdb"),
             tvdbId = providerIds?.get("Tvdb") ?: providerIds?.get("tvdb"),
@@ -886,14 +891,16 @@ class MediaRepository(
             communityRating = communityRating,
             productionYear = productionYear,
             genres = genres?.joinToString(", "),
-            isPlayed = userData?.isPlayed ?: false,
+            isPlayed = playedStatus,
             playbackPositionTicks = userData?.effectivePositionTicks ?: 0L,
             isFavorite = userData?.effectiveIsFavorite ?: false,
             seriesId = seriesId,
             seriesName = seriesName,
             seriesPrimaryImageTag = seriesPrimaryImageTag,
             seasonNumber = parentIndexNumber,
-            episodeNumber = indexNumber
+            episodeNumber = indexNumber,
+            totalItemCount = totalCount,
+            unplayedItemCount = unplayedCount
         )
     }
 }

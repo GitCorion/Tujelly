@@ -5,6 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.navigation.NavType
@@ -36,6 +39,10 @@ class MainActivity : ComponentActivity() {
         coil.Coil.setImageLoader(imageLoader)
 
         setContent {
+            val userPrefsRepo = remember { com.example.tujelly.data.local.UserPreferencesRepository(applicationContext) }
+            val currentPrefs by userPrefsRepo.userPreferencesFlow.collectAsState(initial = null)
+            val indicatorTheme = currentPrefs?.indicatorTheme ?: com.example.tujelly.data.local.INDICATOR_THEME_COLOR
+
             TujellyTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -44,7 +51,11 @@ class MainActivity : ComponentActivity() {
                         containerColor = androidx.compose.ui.graphics.Color(0xFF0C0C12)
                     )
                 ) {
-                    TujellyApp()
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        com.example.tujelly.ui.theme.LocalIndicatorTheme provides indicatorTheme
+                    ) {
+                        TujellyApp()
+                    }
                 }
             }
         }

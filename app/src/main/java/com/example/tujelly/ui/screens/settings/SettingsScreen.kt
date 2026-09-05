@@ -60,6 +60,7 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -73,6 +74,8 @@ import coil.compose.AsyncImage
 import com.example.tujelly.data.local.ACCENT_AMBER
 import com.example.tujelly.data.local.ACCENT_CYAN
 import com.example.tujelly.data.local.ACCENT_WHITE
+import com.example.tujelly.data.local.INDICATOR_THEME_COLOR
+import com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
 import com.example.tujelly.ui.theme.TvAccent
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_AND_TEXT
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
@@ -787,6 +790,43 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(24.dp))
 
                             Text(
+                                text = "Tema de Indicadores (Vistos, Favoritos y Series)",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Elige la paleta visual para las insignias de favoritos, completado de series y progreso de episodios.",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Opción Tema 1: Color
+                            IndicatorThemeSelectionCard(
+                                title = "Color Vivo (Recomendado)",
+                                description = "Favoritos en Rojo pasión, Visto en Verde esmeralda y Progreso de episodios acentuado.",
+                                isSelected = uiState.indicatorTheme == INDICATOR_THEME_COLOR,
+                                isColorMode = true,
+                                onClick = { viewModel.updateIndicatorTheme(INDICATOR_THEME_COLOR) }
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Opción Tema 2: Monocromático
+                            IndicatorThemeSelectionCard(
+                                title = "Monocromático Minimalista",
+                                description = "Todos los iconos e indicadores en blanco puro de alto contraste sobre cristal ahumado.",
+                                isSelected = uiState.indicatorTheme == INDICATOR_THEME_MONOCHROME,
+                                isColorMode = false,
+                                onClick = { viewModel.updateIndicatorTheme(INDICATOR_THEME_MONOCHROME) }
+                            )
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            Text(
                                 text = "Personalización de Botones de Acción",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = Color.White,
@@ -1303,6 +1343,122 @@ fun AccentColorSelectionCard(
                     containerColor = accentColor,
                     textColor = if (accentColor == Color.White) Color(0xFF0F172A) else Color(0xFF0F172A),
                     borderColor = accentColor
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun IndicatorThemeSelectionCard(
+    title: String,
+    description: String,
+    isSelected: Boolean,
+    isColorMode: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isSelected) Color(0x28FFFFFF) else Color(0xFF131422),
+            focusedContainerColor = Color(0x40FFFFFF)
+        ),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(
+                border = BorderStroke(1.dp, if (isSelected) Color.White else Color(0xFF222438)),
+                shape = RoundedCornerShape(10.dp)
+            ),
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, Color.White),
+                shape = RoundedCornerShape(10.dp)
+            )
+        ),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Muestra visual de muestra de badges
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Badge de muestra: Favorito
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .background(Color(0xE60F172A), CircleShape)
+                        .border(1.dp, if (isColorMode) Color(0x88EF4444) else Color(0x66FFFFFF), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Favorite,
+                        contentDescription = null,
+                        tint = if (isColorMode) Color(0xFFEF4444) else Color.White,
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+
+                // Badge de muestra: Visto
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .background(Color(0xE60F172A), CircleShape)
+                        .border(1.dp, if (isColorMode) Color(0x9910B981) else Color(0x66FFFFFF), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = if (isColorMode) Color(0xFF10B981) else Color.White,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+
+                // Badge de muestra: Progreso 7/20
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xE60F172A), RoundedCornerShape(5.dp))
+                        .border(1.dp, if (isColorMode) Color(0x9900A4DC) else Color(0x66FFFFFF), RoundedCornerShape(5.dp))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "7/20",
+                        color = if (isColorMode) Color(0xFF38BDF8) else Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = if (isSelected) Color.White else Color(0xFFE2E8F0),
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    fontSize = 14.sp
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = description,
+                    color = Color(0xFF94A3B8),
+                    fontSize = 11.sp
+                )
+            }
+
+            if (isSelected) {
+                Spacer(modifier = Modifier.width(12.dp))
+                TvPill(
+                    text = "ACTIVO",
+                    containerColor = Color.White,
+                    textColor = Color(0xFF0F172A),
+                    borderColor = Color.White
                 )
             }
         }

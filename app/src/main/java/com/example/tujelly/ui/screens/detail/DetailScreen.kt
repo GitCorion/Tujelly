@@ -253,6 +253,9 @@ fun DetailScreen(
                             .weight(1f)
                             .verticalScroll(rememberScrollState())
                     ) {
+                        val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
+                        val isMonochrome = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
+
                         // Title
                         Text(
                             text = entity.title,
@@ -328,12 +331,26 @@ fun DetailScreen(
                                 )
                             }
 
+                            val totalEps = entity.totalItemCount
+                            val unplayedEps = entity.unplayedItemCount
+                            val playedEps = if (totalEps != null && unplayedEps != null) (totalEps - unplayedEps).coerceAtLeast(0) else null
+                            val hasSeriesProgress = !entity.isPlayed && isTvSeries && playedEps != null && totalEps != null && playedEps > 0
+
+                            if (hasSeriesProgress) {
+                                TvPill(
+                                    text = "PROGRESO: $playedEps/$totalEps",
+                                    containerColor = Color(0x22FFFFFF),
+                                    textColor = if (isMonochrome) Color.White else Color(0xFF38BDF8),
+                                    borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x5500A4DC)
+                                )
+                            }
+
                             if (state.isFavorite) {
                                 TvPill(
                                     text = "♥ FAVORITO",
                                     containerColor = Color(0x22FFFFFF),
-                                    textColor = Color.White,
-                                    borderColor = Color(0x33FFFFFF)
+                                    textColor = if (isMonochrome) Color.White else Color(0xFFEF4444),
+                                    borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x66EF4444)
                                 )
                             }
 
@@ -341,8 +358,8 @@ fun DetailScreen(
                                 TvPill(
                                     text = "✓ VISTO",
                                     containerColor = Color(0x22FFFFFF),
-                                    textColor = Color(0xFF6EE7B7),
-                                    borderColor = Color(0x3310B981)
+                                    textColor = if (isMonochrome) Color.White else Color(0xFF6EE7B7),
+                                    borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x3310B981)
                                 )
                             }
                         }
@@ -407,6 +424,7 @@ fun DetailScreen(
                                         Icon(
                                             imageVector = if (state.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                                             contentDescription = if (state.isFavorite) "En Favoritos" else "Añadir a Favoritos",
+                                            tint = if (state.isFavorite && !isMonochrome) Color(0xFFEF4444) else Color.White,
                                             modifier = Modifier.size(17.dp)
                                         )
                                     }

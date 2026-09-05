@@ -21,7 +21,9 @@ data class MediaItem(
     val playbackPositionTicks: Long = 0L,
     val rank: Int? = null,
     val isPlayed: Boolean = false,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val totalEpisodes: Int? = null,
+    val playedEpisodes: Int? = null
 )
 
 data class HomeSection(

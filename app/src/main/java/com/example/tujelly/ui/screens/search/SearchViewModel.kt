@@ -190,6 +190,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
         val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
 
+        val total = totalItemCount
+        val unplayed = unplayedItemCount
+        val played = if (total != null && unplayed != null) (total - unplayed).coerceAtLeast(0) else null
+
         return MediaItem(
             id = id,
             title = title,
@@ -202,7 +206,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             source = MediaSource.JELLYFIN,
             playbackPositionTicks = playbackPositionTicks,
             isPlayed = isPlayed,
-            isFavorite = isFavorite
+            isFavorite = isFavorite,
+            totalEpisodes = total,
+            playedEpisodes = played
         )
     }
 }

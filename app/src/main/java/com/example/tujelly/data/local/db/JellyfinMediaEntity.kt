@@ -36,5 +36,7 @@ data class JellyfinMediaEntity(
     val seriesName: String? = null,
     val seriesPrimaryImageTag: String? = null,
     val seasonNumber: Int? = null,
-    val episodeNumber: Int? = null
+    val episodeNumber: Int? = null,
+    val totalItemCount: Int? = null,
+    val unplayedItemCount: Int? = null
 )

@@ -141,3 +141,8 @@ object TvAccent {
     }
 }
 
+val LocalIndicatorTheme = androidx.compose.runtime.compositionLocalOf {
+    com.example.tujelly.data.local.INDICATOR_THEME_COLOR
+}
+
+

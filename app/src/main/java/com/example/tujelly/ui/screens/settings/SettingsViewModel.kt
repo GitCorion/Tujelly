@@ -43,6 +43,7 @@ data class SettingsUiState(
     val watchRegion: String = "ES",
     val buttonStyle: String = BUTTON_STYLE_ICONS_ONLY,
     val accentColor: String = com.example.tujelly.data.local.ACCENT_CYAN,
+    val indicatorTheme: String = com.example.tujelly.data.local.INDICATOR_THEME_COLOR,
     val isLoading: Boolean = false,
     val statusMessage: String? = null,
     val isSuccess: Boolean = false,
@@ -100,6 +101,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 watchRegion = prefs.watchRegion,
                 buttonStyle = prefs.buttonStyle,
                 accentColor = prefs.accentColor,
+                indicatorTheme = prefs.indicatorTheme,
                 isJellyfinConnected = isJfConnected,
                 isTraktConnected = prefs.traktAccessToken.isNotBlank()
             )
@@ -124,6 +126,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             userPreferencesRepository.updateAccentColor(accent)
             _uiState.value = _uiState.value.copy(accentColor = accent)
+        }
+    }
+
+    fun updateIndicatorTheme(theme: String) {
+        viewModelScope.launch {
+            userPreferencesRepository.updateIndicatorTheme(theme)
+            _uiState.value = _uiState.value.copy(indicatorTheme = theme)
         }
     }
 

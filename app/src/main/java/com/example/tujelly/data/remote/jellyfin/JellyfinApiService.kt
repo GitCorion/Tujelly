@@ -49,7 +49,7 @@ interface JellyfinApiService {
         @Query("UserId") userId: String,
         @Query("ParentId") parentId: String? = null,
         @Query("IncludeItemTypes") includeItemTypes: String? = "Movie,Series",
-        @Query("Fields") fields: String? = "ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData",
+        @Query("Fields") fields: String? = "ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,ItemCounts,RecursiveItemCount",
         @Query("Recursive") recursive: Boolean = true,
         @Query("Limit") limit: Int? = 500,
         @Query("StartIndex") startIndex: Int? = 0,

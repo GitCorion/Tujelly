@@ -128,6 +128,10 @@ class FavoritesViewModel(application: Application) : AndroidViewModel(applicatio
         val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
         val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
 
+        val total = totalItemCount
+        val unplayed = unplayedItemCount
+        val played = if (total != null && unplayed != null) (total - unplayed).coerceAtLeast(0) else null
+
         return MediaItem(
             id = id,
             title = title,
@@ -140,7 +144,9 @@ class FavoritesViewModel(application: Application) : AndroidViewModel(applicatio
             source = MediaSource.JELLYFIN,
             playbackPositionTicks = playbackPositionTicks,
             isPlayed = isPlayed,
-            isFavorite = true
+            isFavorite = true,
+            totalEpisodes = total,
+            playedEpisodes = played
         )
     }
 }
