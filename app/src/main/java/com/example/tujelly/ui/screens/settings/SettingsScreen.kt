@@ -254,31 +254,17 @@ fun SettingsScreen(
                     .padding(16.dp)
             ) {
                 // Branding Header
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.foundation.Image(
-                        painter = androidx.compose.ui.res.painterResource(id = com.example.tujelly.R.drawable.ic_jelly_symbol),
-                        contentDescription = "Tujelly Logo",
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "TUJELLY",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                    listOf(Color(0xFF38BDF8), Color(0xFF818CF8), Color(0xFFC084FC))
-                                )
-                            ),
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp
-                        )
-                        Text(
-                            text = "Ajustes de Sistema",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF64748B)
-                        )
-                    }
-                }
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = com.example.tujelly.R.drawable.ic_tujelly_header),
+                    contentDescription = "Tujelly",
+                    modifier = Modifier.height(34.dp)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Ajustes de Sistema",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF64748B)
+                )
 
                 Spacer(modifier = Modifier.height(24.dp))
 

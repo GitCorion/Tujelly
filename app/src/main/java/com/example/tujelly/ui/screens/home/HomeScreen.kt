@@ -94,28 +94,9 @@ fun HomeScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = com.example.tujelly.R.drawable.ic_jelly_symbol),
-                    contentDescription = "Tujelly Logo",
-                    modifier = Modifier.size(38.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "TUJELLY",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                            listOf(Color(0xFF38BDF8), Color(0xFF818CF8), Color(0xFFC084FC))
-                        )
-                    ),
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 2.sp
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                TvPill(
-                    text = "TV",
-                    containerColor = Color(0x3338BDF8),
-                    textColor = Color(0xFFE0F2FE),
-                    borderColor = Color(0x7738BDF8),
-                    fontSizeSp = 10
+                    painter = androidx.compose.ui.res.painterResource(id = com.example.tujelly.R.drawable.ic_tujelly_header),
+                    contentDescription = "Tujelly",
+                    modifier = Modifier.height(42.dp)
                 )
 
                 if (syncProgress.isSyncing) {
