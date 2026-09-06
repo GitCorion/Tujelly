@@ -28,6 +28,7 @@ sealed interface DetailUiState {
         val entity: JellyfinMediaEntity,
         val posterUrl: String?,
         val backdropUrl: String?,
+        val logoUrl: String? = null,
         val trailerUrl: String? = null,
         val baseUrl: String? = null,
         val isFavorite: Boolean = false,
@@ -102,6 +103,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                     val authParam = if (token.isNotBlank()) "&api_key=$token" else ""
                     val posterUrl = finalEntity.primaryImageTag?.let { tag -> "$baseUrl/Items/${finalEntity.id}/Images/Primary?tag=$tag$authParam" }
                     val backdropUrl = finalEntity.backdropImageTag?.let { tag -> "$baseUrl/Items/${finalEntity.id}/Images/Backdrop/0?tag=$tag$authParam" }
+                    val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/${finalEntity.id}/Images/Logo$authParam" else null
 
                     val trailerUrl = if (tmdbLong != null && prefs.tmdbApiKey.isNotBlank()) {
                         mediaRepository.getTmdbTrailerUrl(prefs.tmdbApiKey, tmdbLong, isTv = isTv)
@@ -208,6 +210,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                         entity = finalEntity,
                         posterUrl = posterUrl,
                         backdropUrl = backdropUrl,
+                        logoUrl = logoUrl,
                         trailerUrl = trailerUrl,
                         baseUrl = baseUrl,
                         isFavorite = finalEntity.isFavorite,

@@ -17,6 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -92,15 +98,49 @@ fun HomeScreen(
     val focusContent = TvAccent.getFocusedContentColor(accentColorKey)
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-
     val syncProgress by viewModel.syncProgress.collectAsState()
     val localMediaCount by viewModel.localMediaCount.collectAsState()
+    val focusedBackdrop = (uiState as? HomeUiState.Success)?.focusedItem?.backdropUrl
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = 8.dp)
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Global ambient backdrop crossfade
+        Crossfade(
+            targetState = focusedBackdrop,
+            animationSpec = tween(durationMillis = 400),
+            label = "homeGlobalBackdrop"
+        ) { backdropUrl ->
+            if (!backdropUrl.isNullOrBlank()) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AsyncImage(
+                        model = backdropUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(0.32f)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color(0xD007070B),
+                                        Color(0xE007070B),
+                                        Color(0xFF07070B)
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 8.dp)
+        ) {
         // Universal Persistent TV TopBar
         com.example.tujelly.ui.components.TvTopBar(
             selectedTab = com.example.tujelly.ui.components.TvNavTab.HOME,
@@ -342,3 +382,6 @@ fun HomeScreen(
         }
     }
 }
+}
+
+

@@ -316,6 +316,52 @@ fun MedusaScreen(
                             }
                         }
 
+                        // Format Filter Chips (Todos, Películas, Series)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                        ) {
+                            MedusaFormatFilter.entries.forEach { filter ->
+                                val isSelected = uiState.selectedFormat == filter
+                                Surface(
+                                    onClick = { viewModel.setFormatFilter(filter) },
+                                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
+                                    colors = ClickableSurfaceDefaults.colors(
+                                        containerColor = if (isSelected) medusaColor.copy(alpha = 0.25f) else Color(0x18FFFFFF),
+                                        focusedContainerColor = medusaColor,
+                                        pressedContainerColor = medusaColor.copy(alpha = 0.85f)
+                                    ),
+                                    border = ClickableSurfaceDefaults.border(
+                                        border = Border(
+                                            BorderStroke(
+                                                1.dp,
+                                                if (isSelected) medusaColor.copy(alpha = 0.75f) else Color(0x28FFFFFF)
+                                            ),
+                                            shape = RoundedCornerShape(14.dp)
+                                        ),
+                                        focusedBorder = Border(
+                                            BorderStroke(1.5.dp, Color.White),
+                                            shape = RoundedCornerShape(14.dp)
+                                        )
+                                    ),
+                                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f)
+                                ) {
+                                    Text(
+                                        text = filter.displayName,
+                                        color = when {
+                                            isSelected -> Color.White
+                                            else -> Color(0xFF94A3B8)
+                                        },
+                                        fontSize = 11.5.sp,
+                                        fontFamily = FontFamily.Serif,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(10.dp))
 
                         if (uiState.isLoading) {

@@ -22,9 +22,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Movie
@@ -236,15 +239,36 @@ fun DetailScreen(
                     ) {
                         // isMonochrome is already computed in outer scope (line 98)
 
-                        // Title
-                        Text(
-                            text = entity.title,
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = Color.White,
-                            fontWeight = FontWeight.Black
-                        )
+                        // ClearLogo transparent vector with high-contrast typography fallback
+                        var isLogoLoaded by remember(entity.id) { mutableStateOf(false) }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        if (!state.logoUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = state.logoUrl,
+                                contentDescription = entity.title,
+                                contentScale = ContentScale.Fit,
+                                alignment = Alignment.CenterStart,
+                                modifier = Modifier
+                                    .heightIn(max = 75.dp)
+                                    .widthIn(max = 380.dp)
+                                    .graphicsLayer { alpha = if (isLogoLoaded) 1f else 0f },
+                                onSuccess = { isLogoLoaded = true },
+                                onError = { isLogoLoaded = false }
+                            )
+                        }
+
+                        if (state.logoUrl.isNullOrBlank() || !isLogoLoaded) {
+                            Text(
+                                text = entity.title,
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
 
                         // Metadata Badges Row
                         Row(

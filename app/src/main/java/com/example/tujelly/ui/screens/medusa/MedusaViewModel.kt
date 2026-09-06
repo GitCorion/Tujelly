@@ -42,15 +42,30 @@ data class MedusaStar(
     val normY: Float get() = baseNormY
 }
 
+enum class MedusaFormatFilter(val displayName: String) {
+    ALL("Todos"),
+    MOVIES("Películas"),
+    SERIES("Series")
+}
+
 data class MedusaUiState(
     val allStars: List<MedusaStar> = emptyList(),
     val selectedPath: List<String> = emptyList(),
     val activeBranchIds: List<String> = emptyList(),
     val starPositions: Map<String, Pair<Float, Float>> = emptyMap(),
-    val recommendations: List<MediaItem> = emptyList(),
+    val rawRecommendations: List<MediaItem> = emptyList(),
+    val selectedFormat: MedusaFormatFilter = MedusaFormatFilter.ALL,
     val focusedItem: MediaItem? = null,
     val isLoading: Boolean = false
 ) {
+    val recommendations: List<MediaItem> get() {
+        return when (selectedFormat) {
+            MedusaFormatFilter.ALL -> rawRecommendations
+            MedusaFormatFilter.MOVIES -> rawRecommendations.filter { it.type.equals("Movie", ignoreCase = true) }
+            MedusaFormatFilter.SERIES -> rawRecommendations.filter { it.type.equals("Series", ignoreCase = true) }
+        }
+    }
+
     val selectedStarIds: Set<String> get() = selectedPath.toSet()
     val selectedCount: Int get() = selectedPath.size
     val isFormed: Boolean get() = selectedPath.isNotEmpty()
@@ -199,9 +214,24 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             selectedPath = emptyList(),
             activeBranchIds = emptyList(),
             starPositions = restPositions,
-            recommendations = emptyList(),
+            rawRecommendations = emptyList(),
+            selectedFormat = MedusaFormatFilter.ALL,
             focusedItem = null,
             isLoading = false
+        )
+    }
+
+    fun setFormatFilter(filter: MedusaFormatFilter) {
+        val current = _uiState.value
+        if (current.selectedFormat == filter) return
+        val filtered = when (filter) {
+            MedusaFormatFilter.ALL -> current.rawRecommendations
+            MedusaFormatFilter.MOVIES -> current.rawRecommendations.filter { it.type.equals("Movie", ignoreCase = true) }
+            MedusaFormatFilter.SERIES -> current.rawRecommendations.filter { it.type.equals("Series", ignoreCase = true) }
+        }
+        _uiState.value = current.copy(
+            selectedFormat = filter,
+            focusedItem = filtered.firstOrNull()
         )
     }
 
@@ -309,7 +339,7 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
     private fun updateRecommendations() {
         val currentState = _uiState.value
         if (!currentState.isFormed) {
-            _uiState.value = currentState.copy(recommendations = emptyList(), focusedItem = null, isLoading = false)
+            _uiState.value = currentState.copy(rawRecommendations = emptyList(), focusedItem = null, isLoading = false)
             return
         }
 
@@ -339,7 +369,7 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             Log.d("MedusaViewModel", "Loaded ${items.size} recommendations for ${selectedNeuronIds.size} neuronas")
 
             _uiState.value = _uiState.value.copy(
-                recommendations = items,
+                rawRecommendations = items,
                 focusedItem = items.firstOrNull(),
                 isLoading = false
             )

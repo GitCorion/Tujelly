@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.tv.material3.Icon
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -108,11 +110,46 @@ fun BrandScreen(
                 listOf(brand.gradientStart, Color(0xFF07070B))
             }
 
+            val focusedBackdrop = state.focusedItem?.backdropUrl
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Brush.verticalGradient(colors = gradientColors))
             ) {
+                // Global ambient backdrop crossfade
+                Crossfade(
+                    targetState = focusedBackdrop,
+                    animationSpec = tween(durationMillis = 400),
+                    label = "brandGlobalBackdrop"
+                ) { backdropUrl ->
+                    if (!backdropUrl.isNullOrBlank()) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            AsyncImage(
+                                model = backdropUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .alpha(0.25f)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                Color(0xD007070B),
+                                                Color(0xE007070B),
+                                                Color(0xFF07070B)
+                                            )
+                                        )
+                                    )
+                            )
+                        }
+                    }
+                }
+
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     // Universal Persistent TV TopBar
                     item {

@@ -38,7 +38,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -464,14 +463,6 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(18.dp)
                     ) {
-                        TvCircularIconButton(
-                            onClick = onBack,
-                            icon = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver",
-                            size = 44.dp,
-                            iconSize = 20.dp
-                        )
-
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
                                 text = info.title.ifBlank { "Reproduciendo" },
