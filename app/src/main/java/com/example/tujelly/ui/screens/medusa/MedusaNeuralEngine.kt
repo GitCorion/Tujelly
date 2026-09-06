@@ -43,7 +43,7 @@ class MedusaNeuralEngine {
                 baseNormX = normX,
                 baseNormY = normY,
                 textOnLeft = normX < 0.5f,
-                relatedStarIds = related.distinct().take(4),
+                relatedStarIds = related.distinct().take(8),
                 primaryGenres = neuron.genres,
                 secondaryKeywords = neuron.keywords
             )

@@ -1,6 +1,6 @@
 {
   "version": "2.0-neural-manifold",
-  "brainVersion": 1,
+  "brainVersion": 3,
   "totalNeurons": 18,
   "neurons": [
     {
@@ -20,11 +20,15 @@
         "distopía"
       ],
       "synapticWeights": {
-        "neuron_17": 0.817,
-        "neuron_16": 0.246,
-        "neuron_14": 0.1
+        "neuron_17": 0.283,
+        "neuron_13": 0.154,
+        "neuron_06": 0.119,
+        "neuron_11": 0.11,
+        "neuron_16": 0.079,
+        "neuron_14": 0.06,
+        "neuron_12": 0.042
       },
-      "mutantJump": "neuron_11"
+      "mutantJump": "neuron_03"
     },
     {
       "id": "neuron_02",
@@ -42,9 +46,13 @@
         "fantasía"
       ],
       "synapticWeights": {
-        "neuron_11": 0.306,
-        "neuron_10": 0.248,
-        "neuron_18": 0.077
+        "neuron_11": 0.179,
+        "neuron_10": 0.115,
+        "neuron_06": 0.083,
+        "neuron_01": 0.0,
+        "neuron_03": 0.0,
+        "neuron_04": 0.0,
+        "neuron_05": 0.0
       },
       "mutantJump": "neuron_06"
     },
@@ -62,14 +70,18 @@
         "policíaco",
         "investigación",
         "sombras",
-        "detectives"
+        "crimen"
       ],
       "synapticWeights": {
-        "neuron_12": 0.089,
-        "neuron_05": 0.074,
-        "neuron_01": 0.053
+        "neuron_12": 0.202,
+        "neuron_14": 0.189,
+        "neuron_07": 0.133,
+        "neuron_16": 0.044,
+        "neuron_08": 0.042,
+        "neuron_13": 0.04,
+        "neuron_01": 0.039
       },
-      "mutantJump": "neuron_16"
+      "mutantJump": "neuron_01"
     },
     {
       "id": "neuron_04",
@@ -84,12 +96,16 @@
         "sobrenatural",
         "pesadilla",
         "ocultismo",
-        "maldiciones"
+        "terror"
       ],
       "synapticWeights": {
-        "neuron_14": 0.041,
-        "neuron_17": 0.007,
-        "neuron_16": 0.002
+        "neuron_14": 0.014,
+        "neuron_01": 0.0,
+        "neuron_02": 0.0,
+        "neuron_03": 0.0,
+        "neuron_05": 0.0,
+        "neuron_06": 0.0,
+        "neuron_07": 0.0
       },
       "mutantJump": "neuron_01"
     },
@@ -109,9 +125,13 @@
         "comedia"
       ],
       "synapticWeights": {
-        "neuron_10": 0.389,
-        "neuron_18": 0.193,
-        "neuron_11": 0.187
+        "neuron_10": 0.178,
+        "neuron_18": 0.174,
+        "neuron_09": 0.01,
+        "neuron_03": 0.009,
+        "neuron_01": 0.0,
+        "neuron_02": 0.0,
+        "neuron_04": 0.0
       },
       "mutantJump": "neuron_18"
     },
@@ -128,12 +148,16 @@
         "galaxias",
         "viaje",
         "estrellas",
-        "viajes"
+        "aventura"
       ],
       "synapticWeights": {
-        "neuron_10": 0.205,
-        "neuron_17": 0.175,
-        "neuron_11": 0.107
+        "neuron_17": 0.191,
+        "neuron_10": 0.135,
+        "neuron_13": 0.124,
+        "neuron_01": 0.119,
+        "neuron_11": 0.117,
+        "neuron_02": 0.083,
+        "neuron_03": 0.0
       },
       "mutantJump": "neuron_02"
     },
@@ -151,12 +175,16 @@
         "tensión",
         "psicológico",
         "mente",
-        "tramas"
+        "misterio"
       ],
       "synapticWeights": {
-        "neuron_14": 0.047,
-        "neuron_17": 0.041,
-        "neuron_03": 0.04
+        "neuron_14": 0.195,
+        "neuron_03": 0.133,
+        "neuron_12": 0.099,
+        "neuron_16": 0.098,
+        "neuron_09": 0.07,
+        "neuron_15": 0.049,
+        "neuron_17": 0.049
       },
       "mutantJump": "neuron_01"
     },
@@ -176,11 +204,15 @@
         "acción"
       ],
       "synapticWeights": {
-        "neuron_16": 0.06,
-        "neuron_11": 0.054,
-        "neuron_13": 0.052
+        "neuron_16": 0.181,
+        "neuron_13": 0.166,
+        "neuron_11": 0.118,
+        "neuron_14": 0.05,
+        "neuron_12": 0.046,
+        "neuron_07": 0.044,
+        "neuron_03": 0.042
       },
-      "mutantJump": "neuron_07"
+      "mutantJump": "neuron_01"
     },
     {
       "id": "neuron_09",
@@ -194,14 +226,18 @@
         "autor",
         "sentimientos",
         "familia",
-        "íntimas"
+        "drama"
       ],
       "synapticWeights": {
-        "neuron_10": 0.123,
-        "neuron_17": 0.062,
-        "neuron_03": 0.038
+        "neuron_10": 0.089,
+        "neuron_12": 0.074,
+        "neuron_16": 0.073,
+        "neuron_07": 0.07,
+        "neuron_15": 0.069,
+        "neuron_17": 0.069,
+        "neuron_18": 0.067
       },
-      "mutantJump": "neuron_12"
+      "mutantJump": "neuron_18"
     },
     {
       "id": "neuron_10",
@@ -221,11 +257,15 @@
         "animación"
       ],
       "synapticWeights": {
-        "neuron_05": 0.389,
-        "neuron_02": 0.248,
-        "neuron_06": 0.205
+        "neuron_05": 0.178,
+        "neuron_06": 0.135,
+        "neuron_02": 0.115,
+        "neuron_09": 0.089,
+        "neuron_01": 0.0,
+        "neuron_03": 0.0,
+        "neuron_04": 0.0
       },
-      "mutantJump": "neuron_06"
+      "mutantJump": "neuron_02"
     },
     {
       "id": "neuron_11",
@@ -241,14 +281,18 @@
         "marvel",
         "dc",
         "poderes",
-        "extraordinarios"
+        "fantasía"
       ],
       "synapticWeights": {
-        "neuron_02": 0.306,
-        "neuron_13": 0.237,
-        "neuron_17": 0.194
+        "neuron_13": 0.204,
+        "neuron_02": 0.179,
+        "neuron_17": 0.177,
+        "neuron_08": 0.118,
+        "neuron_06": 0.117,
+        "neuron_01": 0.11,
+        "neuron_16": 0.074
       },
-      "mutantJump": "neuron_01"
+      "mutantJump": "neuron_16"
     },
     {
       "id": "neuron_12",
@@ -267,9 +311,13 @@
         "crimen"
       ],
       "synapticWeights": {
-        "neuron_03": 0.089,
-        "neuron_16": 0.085,
-        "neuron_17": 0.077
+        "neuron_03": 0.202,
+        "neuron_16": 0.131,
+        "neuron_07": 0.099,
+        "neuron_09": 0.074,
+        "neuron_14": 0.053,
+        "neuron_15": 0.052,
+        "neuron_17": 0.051
       },
       "mutantJump": "neuron_01"
     },
@@ -287,14 +335,18 @@
         "desierto",
         "aislado",
         "ruinas",
-        "devastado"
+        "acción"
       ],
       "synapticWeights": {
-        "neuron_11": 0.237,
-        "neuron_10": 0.124,
-        "neuron_15": 0.093
+        "neuron_11": 0.204,
+        "neuron_17": 0.186,
+        "neuron_08": 0.166,
+        "neuron_01": 0.154,
+        "neuron_06": 0.124,
+        "neuron_16": 0.121,
+        "neuron_15": 0.061
       },
-      "mutantJump": "neuron_06"
+      "mutantJump": "neuron_03"
     },
     {
       "id": "neuron_14",
@@ -309,14 +361,18 @@
         "secta",
         "oculto",
         "ritual",
-        "enigmas"
+        "misterio"
       ],
       "synapticWeights": {
-        "neuron_01": 0.1,
-        "neuron_16": 0.089,
-        "neuron_07": 0.047
+        "neuron_07": 0.195,
+        "neuron_03": 0.189,
+        "neuron_16": 0.084,
+        "neuron_01": 0.06,
+        "neuron_12": 0.053,
+        "neuron_08": 0.05,
+        "neuron_13": 0.048
       },
-      "mutantJump": "neuron_08"
+      "mutantJump": "neuron_13"
     },
     {
       "id": "neuron_15",
@@ -331,12 +387,16 @@
         "desierto",
         "duelo",
         "caballo",
-        "vaqueros"
+        "western"
       ],
       "synapticWeights": {
-        "neuron_13": 0.093,
-        "neuron_17": 0.049,
-        "neuron_05": 0.035
+        "neuron_09": 0.069,
+        "neuron_13": 0.061,
+        "neuron_12": 0.052,
+        "neuron_16": 0.051,
+        "neuron_07": 0.049,
+        "neuron_17": 0.048,
+        "neuron_18": 0.047
       },
       "mutantJump": "neuron_18"
     },
@@ -354,14 +414,18 @@
         "política",
         "inteligencia",
         "traición",
-        "agentes"
+        "acción"
       ],
       "synapticWeights": {
-        "neuron_01": 0.246,
-        "neuron_14": 0.089,
-        "neuron_12": 0.085
+        "neuron_08": 0.181,
+        "neuron_12": 0.131,
+        "neuron_13": 0.121,
+        "neuron_07": 0.098,
+        "neuron_14": 0.084,
+        "neuron_01": 0.079,
+        "neuron_11": 0.074
       },
-      "mutantJump": "neuron_17"
+      "mutantJump": "neuron_03"
     },
     {
       "id": "neuron_17",
@@ -379,11 +443,15 @@
         "ciencia"
       ],
       "synapticWeights": {
-        "neuron_01": 0.817,
-        "neuron_11": 0.194,
-        "neuron_06": 0.175
+        "neuron_01": 0.283,
+        "neuron_06": 0.191,
+        "neuron_13": 0.186,
+        "neuron_11": 0.177,
+        "neuron_09": 0.069,
+        "neuron_12": 0.051,
+        "neuron_16": 0.051
       },
-      "mutantJump": "neuron_16"
+      "mutantJump": "neuron_18"
     },
     {
       "id": "neuron_18",
@@ -398,14 +466,18 @@
         "desengaño",
         "seducción",
         "prohibido",
-        "amores"
+        "romance"
       ],
       "synapticWeights": {
-        "neuron_05": 0.193,
-        "neuron_02": 0.077,
-        "neuron_13": 0.049
+        "neuron_05": 0.174,
+        "neuron_09": 0.067,
+        "neuron_12": 0.05,
+        "neuron_16": 0.05,
+        "neuron_07": 0.048,
+        "neuron_15": 0.047,
+        "neuron_17": 0.047
       },
-      "mutantJump": "neuron_15"
+      "mutantJump": "neuron_17"
     }
   ]
 }

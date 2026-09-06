@@ -17,10 +17,6 @@ import json
 import re
 from pathlib import Path
 
-import numpy as np
-from sklearn.decomposition import TruncatedSVD
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 BASE = Path(__file__).resolve().parents[2]
 SEED_PATH = Path(__file__).resolve().parent / "corpus" / "seed.json"
 OUT_PATH = BASE / "app" / "src" / "main" / "assets" / "medusa_brain.json"
@@ -64,49 +60,103 @@ def extract_keywords(c, top_terms):
     return keywords[:6]
 
 
+def train_pure_python(concepts):
+    import math
+    from collections import Counter
+
+    n = len(concepts)
+    stop_set = set(STOPWORDS)
+    docs = []
+    for c in concepts:
+        text = " ".join([
+            c.get("name", ""),
+            " ".join(c.get("genres", []) * 3),
+            " ".join(c.get("keywords", []) * 2),
+            c.get("text", "")
+        ]).lower()
+        tokens = [w for w in re.findall(TOKEN_PATTERN, text) if w not in stop_set]
+        docs.append(tokens)
+
+    df = Counter()
+    for doc in docs:
+        for term in set(doc):
+            df[term] += 1
+
+    vocab = sorted(list(df.keys()))
+    idf = {term: math.log((1 + n) / (1 + df[term])) + 1.0 for term in vocab}
+
+    vectors = []
+    top_terms_by_doc = {i: [] for i in range(n)}
+    for i, doc in enumerate(docs):
+        tf = Counter(doc)
+        doc_len = len(doc) if doc else 1
+        vec = {}
+        for term, count in tf.items():
+            val = (count / doc_len) * idf[term]
+            vec[term] = val
+            top_terms_by_doc[i].append((term, val))
+        norm = math.sqrt(sum(v * v for v in vec.values())) or 1.0
+        for term in vec:
+            vec[term] /= norm
+        vectors.append(vec)
+        top_terms_by_doc[i].sort(key=lambda pair: -pair[1])
+
+    similarity = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                similarity[i][j] = 1.0
+            else:
+                dot = sum(vectors[i].get(t, 0.0) * vectors[j].get(t, 0.0) for t in vectors[i] if t in vectors[j])
+                similarity[i][j] = dot
+
+    return similarity, top_terms_by_doc
+
+
 def main():
     concepts = load_concepts()
     n = len(concepts)
 
-    docs = build_docs(concepts)
+    try:
+        import numpy as np
+        from sklearn.decomposition import TruncatedSVD
+        from sklearn.feature_extraction.text import TfidfVectorizer
 
-    vectorizer = TfidfVectorizer(token_pattern=TOKEN_PATTERN, stop_words=STOPWORDS)
-    matrix = vectorizer.fit_transform(docs)
-    feature_names = vectorizer.get_feature_names_out()
+        docs = build_docs(concepts)
+        vectorizer = TfidfVectorizer(token_pattern=TOKEN_PATTERN, stop_words=STOPWORDS)
+        matrix = vectorizer.fit_transform(docs)
+        feature_names = vectorizer.get_feature_names_out()
 
-    # Embeddings densos por concepto
-    n_components = max(2, min(16, n - 1, matrix.shape[1]))
-    embeddings = TruncatedSVD(n_components=n_components, random_state=0).fit_transform(matrix)
-    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0
-    normalized = embeddings / norms
-    similarity = normalized @ normalized.T
+        n_components = max(2, min(16, n - 1, matrix.shape[1]))
+        embeddings = TruncatedSVD(n_components=n_components, random_state=0).fit_transform(matrix)
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        normalized = embeddings / norms
+        similarity = (normalized @ normalized.T).tolist()
 
-    # Términos más representativos por concepto (TF-IDF)
-    coo = matrix.tocoo()
-    top_terms_by_doc = {i: [] for i in range(n)}
-    for row, col, value in zip(coo.row, coo.col, coo.data):
-        top_terms_by_doc[row].append((feature_names[col], value))
-    for i in top_terms_by_doc:
-        top_terms_by_doc[i].sort(key=lambda pair: -pair[1])
-
-    # Mapa id -> index para referencias cruzadas
-    id_to_index = {c["id"]: i for i, c in enumerate(concepts)}
+        coo = matrix.tocoo()
+        top_terms_by_doc = {i: [] for i in range(n)}
+        for row, col, value in zip(coo.row, coo.col, coo.data):
+            top_terms_by_doc[row].append((feature_names[col], value))
+        for i in top_terms_by_doc:
+            top_terms_by_doc[i].sort(key=lambda pair: -pair[1])
+    except ImportError:
+        similarity, top_terms_by_doc = train_pure_python(concepts)
 
     neurons = []
     for i, concept in enumerate(concepts):
         top_terms = [term for term, _ in top_terms_by_doc[i]]
         keywords = extract_keywords(concept, top_terms)
 
-        # Pesos sinápticos: vecinos más cercanos por coseno (mínimo 3 conexiones
-        # para que cada neurona siempre tenga ramas afines en la constelación).
+        # Pesos sinápticos: hasta 7 vecinos más afines por similitud coseno
+        # para que broten ramificaciones ricas de 6 a 8 tentáculos orgánicos.
         neighbor_order = sorted(range(n), key=lambda k: -similarity[i][k])
         synaptic_weights = {}
         for k in neighbor_order:
             if k == i:
                 continue
             synaptic_weights[concepts[k]["id"]] = round(float(similarity[i][k]), 3)
-            if len(synaptic_weights) >= 3:
+            if len(synaptic_weights) >= 7:
                 break
 
         # Salto mutante: neurona más distante con un género/keyword puente
@@ -135,16 +185,18 @@ def main():
 
     brain = {
         "version": "2.0-neural-manifold",
-        "brainVersion": 1,
+        "brainVersion": 3,
         "totalNeurons": len(neurons),
         "neurons": neurons,
     }
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with OUT_PATH.open("w", encoding="utf-8") as f:
-        json.dump(brain, f, ensure_ascii=False, indent=2)
+        json.dump(brain, f, indent=2, ensure_ascii=False)
+        f.write("\n")
 
-    print(f"Brain generado: {len(neurons)} neuronas -> {OUT_PATH}")
+    print(f"Cerebro Medusa generado exitosamente: {OUT_PATH}")
+    print(f"Total neuronas: {len(neurons)} con hasta 7 sinapsis + 1 salto mutante por neurona.")
 
 
 if __name__ == "__main__":

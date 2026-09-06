@@ -69,22 +69,18 @@ data class MedusaUiState(
     val selectedStarIds: Set<String> get() = selectedPath.toSet()
     val selectedCount: Int get() = selectedPath.size
     val isFormed: Boolean get() = selectedPath.isNotEmpty()
+    val level: Int get() = selectedPath.size
+    val maxLevels: Int get() = 3
 
     val starMap: Map<String, MedusaStar> by lazy {
         allStars.associateBy { it.id }
     }
 
     /**
-     * Flujo celestial del tentáculo:
-     * - En reposo: todas las estrellas del firmamento son visibles.
-     * - Con tentáculo activo: solo la columna vertebral seleccionada y sus ramas activas (máximo 4).
+     * Universo cósmico unificado:
+     * Todas las estrellas del firmamento permanecen vivas y navegables en el cosmos.
      */
-    val visibleStarIds: Set<String> get() {
-        if (selectedPath.isEmpty()) {
-            return allStars.map { it.id }.toSet()
-        }
-        return (selectedPath + activeBranchIds).toSet()
-    }
+    val visibleStarIds: Set<String> get() = allStars.map { it.id }.toSet()
 }
 
 class MedusaViewModel(application: Application) : AndroidViewModel(application) {
@@ -190,8 +186,13 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
                 currentPath.addAll(subPath)
             }
         } else {
-            // Se añade como siguiente eslabón del tentáculo
-            currentPath.add(starId)
+            // Tentáculo de hasta 3 niveles orgánicos: Origen -> Subgénero -> Matiz
+            if (currentPath.size >= 3) {
+                // Si ya alcanzó 3 niveles, sustituye el último matiz con la nueva elección
+                currentPath[currentPath.lastIndex] = starId
+            } else {
+                currentPath.add(starId)
+            }
         }
 
         val activeBranches = computeActiveBranches(currentState.allStars, currentPath)
@@ -203,7 +204,27 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             starPositions = newPositions
         )
 
-        Log.d("MedusaViewModel", "toggleStar: path=$currentPath, branches=$activeBranches")
+        Log.d("MedusaViewModel", "toggleStar: path=$currentPath (nivel ${currentPath.size}/3), branches=${activeBranches.size}")
+        updateRecommendations()
+    }
+
+    /**
+     * Retrocede un eslabón del tentáculo (vuelve al nivel anterior).
+     */
+    fun popLastStar() {
+        val currentState = _uiState.value
+        if (currentState.selectedPath.isEmpty()) return
+        val newPath = currentState.selectedPath.dropLast(1)
+        val activeBranches = computeActiveBranches(currentState.allStars, newPath)
+        val newPositions = calculateCongregatingPositions(currentState.allStars, newPath, activeBranches)
+
+        _uiState.value = currentState.copy(
+            selectedPath = newPath,
+            activeBranchIds = activeBranches,
+            starPositions = newPositions
+        )
+
+        Log.d("MedusaViewModel", "popLastStar: path=$newPath (nivel ${newPath.size}/3)")
         updateRecommendations()
     }
 
@@ -240,8 +261,8 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * Calcula hasta 4 ramas afines directas desde el último nodo seleccionado.
-     * Esto evita la acumulación y asegura un espaciado amplio y elegante.
+     * Calcula hasta 7 ramas sinápticas afines desde el último nodo seleccionado.
+     * Ofrece una constelación rica y variada de 6 a 8 tentáculos orgánicos vivos.
      */
     private fun computeActiveBranches(allStars: List<MedusaStar>, selectedPath: List<String>): List<String> {
         if (selectedPath.isEmpty()) return emptyList()
@@ -253,15 +274,16 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
         return lastStar.relatedStarIds
             .filter { it !in selectedSet }
             .distinct()
-            .take(4)
+            .take(7)
     }
 
     /**
-     * Calcula las posiciones del firmamento estelar:
+     * Calcula las posiciones de la criatura marina cósmica:
      * - En reposo: constelación completa en su cúpula y cuerpo original.
      * - Con tentáculo activo:
-     *   - La columna vertebral seleccionada desciende en el centro.
-     *   - Sus ramas activas (3 a 4 opciones) descienden en abanico amplio desde la punta del tentáculo.
+     *   - Columna vertebral del tentáculo seleccionada desciende en el eje central.
+     *   - Sus 6 a 8 ramas afines brotan en un abanico marino orgánico con profundidad escalonada.
+     *   - El resto de estrellas cósmicas flotan vivas en el firmamento sin desaparecer.
      */
     private fun calculateCongregatingPositions(
         allStars: List<MedusaStar>,
@@ -279,57 +301,53 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
 
         val numSelected = selectedPath.size
 
-        // 1. Columna vertebral del tentáculo seleccionado
+        // 1. Columna vertebral del tentáculo seleccionado (centro descendente)
         if (numSelected == 1) {
-            result[selectedPath[0]] = Pair(0.50f, 0.16f)
+            result[selectedPath[0]] = Pair(0.50f, 0.14f)
+        } else if (numSelected == 2) {
+            result[selectedPath[0]] = Pair(0.50f, 0.09f)
+            result[selectedPath[1]] = Pair(0.50f, 0.22f)
         } else {
-            // Nodos ancestros: perlas superiores a lo largo del cordón
+            // 3 niveles (o más)
             val numAncestors = numSelected - 1
-            val startY = 0.08f
-            val endY = (0.08f + (numAncestors - 1) * 0.07f).coerceAtMost(0.18f)
+            val startY = 0.07f
+            val endY = 0.17f
             val stepY = if (numAncestors > 1) (endY - startY) / (numAncestors - 1) else 0f
 
             for (i in 0 until numAncestors) {
                 val ancestorId = selectedPath[i]
-                val waveX = 0.50f + (if (i % 2 == 0) -0.012f else 0.012f)
-                val targetY = if (numAncestors == 1) 0.12f else (startY + i * stepY)
-                result[ancestorId] = Pair(waveX, targetY)
+                val waveX = 0.50f + (if (i % 2 == 0) -0.010f else 0.010f)
+                result[ancestorId] = Pair(waveX, startY + i * stepY)
             }
-
-            // Nodo activo actual: cápsula interactiva en el centro focal
-            val activeNodeId = selectedPath.last()
-            result[activeNodeId] = Pair(0.50f, 0.28f)
+            // Nodo activo de la punta
+            result[selectedPath.last()] = Pair(0.50f, 0.26f)
         }
 
-        // 2. Ramas o tentáculos afines descendentes desde la punta activa
+        // 2. Ramas activas: abanico marino envolvente con alternancia de profundidad (dos capas)
         val branchCount = activeBranches.size
         if (branchCount > 0) {
-            val branchBaseY = 0.62f
-
-            val minX = 0.18f
-            val maxX = 0.82f
+            val minX = 0.08f
+            val maxX = 0.92f
             val stepX = if (branchCount > 1) (maxX - minX) / (branchCount - 1) else 0f
 
             activeBranches.forEachIndexed { index, branchId ->
-                val targetX = if (branchCount == 1) 0.50f else (minX + index * stepX).coerceIn(0.12f, 0.88f)
+                val targetX = if (branchCount == 1) 0.50f else (minX + index * stepX).coerceIn(0.06f, 0.94f)
                 val normalizedIndex = if (branchCount > 1) index.toFloat() / (branchCount - 1) else 0.5f
-                val catenarySag = sin(normalizedIndex * Math.PI.toFloat()) * 0.05f
-                val targetY = (branchBaseY + catenarySag).coerceIn(0.50f, 0.78f)
+
+                // Escalón de dos niveles (capa frontal / capa profunda) para evitar colisiones y dar volumen:
+                val isLowerLayer = (index % 2 == 1)
+                val layerBaseY = if (isLowerLayer) 0.62f else 0.48f
+                val catenarySag = sin(normalizedIndex * Math.PI.toFloat()) * 0.04f
+                val targetY = (layerBaseY + catenarySag).coerceIn(0.42f, 0.74f)
 
                 result[branchId] = Pair(targetX, targetY)
             }
         }
 
-        // 3. Estrellas no activas: se alejan radialmente hacia el fondo cósmico exterior
+        // 3. Estrellas no activas: flotan en sus coordenadas celestiales naturales en el cosmos de fondo
         for (star in allStars) {
             if (star.id !in result) {
-                val dirX = star.baseNormX - 0.50f
-                val dirY = star.baseNormY - 0.30f
-                val length = kotlin.math.sqrt(dirX * dirX + dirY * dirY).coerceAtLeast(0.01f)
-                val driftDistance = 0.45f
-                val targetX = (star.baseNormX + (dirX / length) * driftDistance).coerceIn(-0.25f, 1.25f)
-                val targetY = (star.baseNormY + (dirY / length) * driftDistance).coerceIn(-0.25f, 1.25f)
-                result[star.id] = Pair(targetX, targetY)
+                result[star.id] = Pair(star.baseNormX, star.baseNormY)
             }
         }
 

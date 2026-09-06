@@ -151,13 +151,36 @@ fun MedusaConstellationView(
                 }
             } else {
                 // Estado de tentáculo activo:
+                // Fondo cósmico sutil: líneas tenues entre estrellas estelares lejanas
+                val starMap = allStars.associateBy { it.id }
+                val drawnPairs = mutableSetOf<String>()
+                for (star in allStars) {
+                    val pos1 = starPositions[star.id] ?: Pair(star.baseNormX, star.baseNormY)
+                    val p1 = Offset(w * pos1.first, h * pos1.second)
+                    for (relatedId in star.relatedStarIds) {
+                        val pairKey = if (star.id < relatedId) "${star.id}-$relatedId" else "$relatedId-${star.id}"
+                        if (drawnPairs.contains(pairKey)) continue
+                        drawnPairs.add(pairKey)
+                        val relatedStar = starMap[relatedId] ?: continue
+                        val pos2 = starPositions[relatedId] ?: Pair(relatedStar.baseNormX, relatedStar.baseNormY)
+                        val p2 = Offset(w * pos2.first, h * pos2.second)
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.04f),
+                            start = p1,
+                            end = p2,
+                            strokeWidth = 0.5f,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
+
                 // A) Columna vertebral del tentáculo (camino seleccionado iluminado en neón)
                 if (selectedPath.size > 1) {
                     for (i in 0 until selectedPath.size - 1) {
                         val id1 = selectedPath[i]
                         val id2 = selectedPath[i + 1]
-                        val pos1 = starPositions[id1] ?: Pair(0.50f, 0.16f)
-                        val pos2 = starPositions[id2] ?: Pair(0.50f, 0.32f)
+                        val pos1 = starPositions[id1] ?: Pair(0.50f, 0.14f)
+                        val pos2 = starPositions[id2] ?: Pair(0.50f, 0.26f)
                         val p1 = Offset(w * pos1.first, h * pos1.second)
                         val p2 = Offset(w * pos2.first, h * pos2.second)
 

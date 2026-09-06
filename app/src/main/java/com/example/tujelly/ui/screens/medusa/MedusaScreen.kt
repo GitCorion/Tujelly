@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Refresh
@@ -56,6 +57,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -108,9 +110,9 @@ fun MedusaScreen(
         }
     }
 
-    // Altura dinámica animada de la constelación
+    // Altura dinámica animada de la constelación (espacio amplio para los filamentos de la criatura marina)
     val constellationHeight by animateDpAsState(
-        targetValue = if (uiState.isFormed) 240.dp else 370.dp,
+        targetValue = if (uiState.isFormed) 285.dp else 370.dp,
         animationSpec = tween(durationMillis = 500),
         label = "constellationHeight"
     )
@@ -184,10 +186,11 @@ fun MedusaScreen(
 
                     // 2. Renderizado de estrellas puras
                     uiState.allStars.forEach { star ->
-                        val isVisible = uiState.visibleStarIds.contains(star.id)
                         val isInPath = uiState.selectedPath.contains(star.id)
                         val isActiveNode = uiState.selectedPath.lastOrNull() == star.id
                         val isAncestor = isInPath && !isActiveNode
+                        val isBranch = uiState.activeBranchIds.contains(star.id)
+                        val isCosmicBackground = uiState.isFormed && !isInPath && !isBranch
 
                         val targetPos = uiState.starPositions[star.id] ?: Pair(star.baseNormX, star.baseNormY)
 
@@ -201,7 +204,13 @@ fun MedusaScreen(
                             animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
                             label = "starY_${star.id}"
                         )
-                        val targetAlpha = if (isVisible) 1f else 0f
+                        val targetAlpha = if (!uiState.isFormed) {
+                            1f
+                        } else if (isInPath || isBranch) {
+                            1f
+                        } else {
+                            0.28f // Estrellas cósmicas titilantes de fondo
+                        }
                         val animatedAlpha by animateFloatAsState(
                             targetValue = targetAlpha,
                             animationSpec = tween(durationMillis = 400),
@@ -226,6 +235,7 @@ fun MedusaScreen(
                                     star = star,
                                     isSelected = isInPath,
                                     isAncestor = isAncestor,
+                                    isCosmicBackground = isCosmicBackground,
                                     accentColor = medusaColor,
                                     onClick = {
                                         Log.d("MedusaScreen", "Direct click on star: ${star.id}")
@@ -266,52 +276,79 @@ fun MedusaScreen(
                                 val activeWords = uiState.selectedPath
                                     .mapNotNull { id -> uiState.starMap[id]?.label }
                                     .joinToString(" → ")
+                                val levelNames = listOf("Origen", "Subgénero", "Matiz")
+                                val currentLevelIdx = (uiState.selectedPath.size - 1).coerceIn(0, 2)
+                                val currentLevelName = levelNames[currentLevelIdx]
+                                val countSuffix = if (uiState.recommendations.isNotEmpty()) " (${uiState.recommendations.size} títulos)" else ""
                                 Text(
-                                    text = "Tentáculo Formado: $activeWords",
+                                    text = "Tentáculo [$currentLevelName]: $activeWords$countSuffix",
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontFamily = FontFamily.Serif,
                                     fontWeight = FontWeight.SemiBold,
                                     letterSpacing = 0.4.sp,
                                     maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     softWrap = false
                                 )
-                                if (uiState.recommendations.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "(${uiState.recommendations.size} títulos)",
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 12.sp,
-                                        fontFamily = FontFamily.Serif
-                                    )
-                                }
                             }
 
                             Spacer(modifier = Modifier.width(16.dp))
 
-                            Button(
-                                onClick = { viewModel.resetConstellation() },
-                                colors = ButtonDefaults.colors(
-                                    containerColor = Color(0x18FFFFFF),
-                                    contentColor = Color(0xFFCBD5E1),
-                                    focusedContainerColor = medusaColor,
-                                    focusedContentColor = focusContent
-                                )
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Refresh,
-                                        contentDescription = "Reiniciar Tentáculo",
-                                        modifier = Modifier.size(13.dp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (uiState.selectedPath.size > 1) {
+                                    Button(
+                                        onClick = { viewModel.popLastStar() },
+                                        colors = ButtonDefaults.colors(
+                                            containerColor = Color(0x18FFFFFF),
+                                            contentColor = Color(0xFFCBD5E1),
+                                            focusedContainerColor = medusaColor,
+                                            focusedContentColor = focusContent
+                                        ),
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                                contentDescription = "Retroceder Nivel",
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Retroceder Nivel",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Button(
+                                    onClick = { viewModel.resetConstellation() },
+                                    colors = ButtonDefaults.colors(
+                                        containerColor = Color(0x18FFFFFF),
+                                        contentColor = Color(0xFFCBD5E1),
+                                        focusedContainerColor = medusaColor,
+                                        focusedContentColor = focusContent
                                     )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = "Reiniciar Tentáculo",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Refresh,
+                                            contentDescription = "Reiniciar Tentáculo",
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text(
+                                            text = "Reiniciar Tentáculo",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -452,6 +489,7 @@ private fun ConstellationAstroStar(
     star: MedusaStar,
     isSelected: Boolean,
     isAncestor: Boolean = false,
+    isCosmicBackground: Boolean = false,
     accentColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -488,8 +526,38 @@ private fun ConstellationAstroStar(
                 StarPoint(isFocused = isFocused, isSelected = true, accentColor = accentColor)
             }
         }
+    } else if (isCosmicBackground && !isFocused) {
+        // Estrella cósmica de fondo: punto estelar luminoso puro que no obstruye los tentáculos activos
+        Surface(
+            onClick = onClick,
+            shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
+            colors = ClickableSurfaceDefaults.colors(
+                containerColor = Color(0x18FFFFFF),
+                focusedContainerColor = accentColor.copy(alpha = 0.40f),
+                pressedContainerColor = accentColor.copy(alpha = 0.60f)
+            ),
+            border = ClickableSurfaceDefaults.border(
+                border = Border(BorderStroke(0.6.dp, Color(0x28FFFFFF)), shape = CircleShape),
+                focusedBorder = Border(BorderStroke(1.8.dp, Color.White), shape = CircleShape)
+            ),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.20f),
+            modifier = modifier
+                .size(20.dp)
+                .zIndex(1f)
+                .onFocusChanged { isFocused = it.isFocused }
+                .pointerInput(star.id) {
+                    detectTapGestures { onClick() }
+                }
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                StarPoint(isFocused = false, isSelected = false, accentColor = accentColor)
+            }
+        }
     } else {
-        // Cápsula activa o rama interactiva con ancho dinámico para no cortar texto
+        // Cápsula activa, rama interactiva de tentáculo o estrella de fondo al recibir foco
         Surface(
             onClick = onClick,
             shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(16.dp)),

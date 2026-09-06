@@ -25,7 +25,19 @@ class MedusaBrainRepository(private val context: Context) {
     private val cacheFile: File get() = File(context.filesDir, "medusa_brain.json")
 
     suspend fun loadBrain(): MedusaBrain? = withContext(Dispatchers.IO) {
-        readCache() ?: readAsset()
+        val cached = readCache()
+        val embedded = readAsset()
+        if (cached != null && embedded != null) {
+            if (embedded.brainVersion > cached.brainVersion) {
+                // El asset embebido es más reciente: invalidar la caché obsoleta
+                runCatching { cacheFile.delete() }
+                embedded
+            } else {
+                cached
+            }
+        } else {
+            cached ?: embedded
+        }
     }
 
     fun embeddedBrainVersion(): Int = readAsset()?.brainVersion ?: 0
@@ -33,8 +45,8 @@ class MedusaBrainRepository(private val context: Context) {
     fun cachedBrainVersion(): Int = readCache()?.brainVersion ?: 0
 
     /**
-     * Descarga la última versión del cerebro desde GitHub Releases y la cachea.
-     * Devuelve el [brainVersion] nuevo, o el actual si no hay asset disponible.
+     * Descarga la última versión del cerebro desde GitHub Releases y la cachea
+     * únicamente si es estrictamente superior a la versión local (embebida o en caché).
      */
     suspend fun refreshFromGitHub(
         owner: String = "GitCorion",
@@ -51,13 +63,17 @@ class MedusaBrainRepository(private val context: Context) {
                 if (!response.isSuccessful) throw Exception("Error descargando cerebro: HTTP ${response.code}")
                 val body = response.body?.string() ?: throw Exception("Cerebro vacío")
                 val brain = json.decodeFromString(MedusaBrain.serializer(), body)
-                val tmp = File(cacheFile.parentFile, "medusa_brain.tmp")
-                tmp.writeText(body)
-                if (!tmp.renameTo(cacheFile)) {
-                    cacheFile.delete()
-                    tmp.copyTo(cacheFile, overwrite = true)
+                if (brain.brainVersion > currentBrainVersion()) {
+                    val tmp = File(cacheFile.parentFile, "medusa_brain.tmp")
+                    tmp.writeText(body)
+                    if (!tmp.renameTo(cacheFile)) {
+                        cacheFile.delete()
+                        tmp.copyTo(cacheFile, overwrite = true)
+                    }
+                    brain.brainVersion
+                } else {
+                    currentBrainVersion()
                 }
-                brain.brainVersion
             }
         }
     }
