@@ -90,6 +90,7 @@ fun DetailScreen(
     }
 
     val uiState by viewModel.uiState.collectAsState()
+    val isMonochrome by viewModel.isMonochrome.collectAsState()
 
     Box(
         modifier = Modifier
@@ -104,7 +105,8 @@ fun DetailScreen(
                 ) {
                     com.example.tujelly.ui.components.JellyLoadingIndicator(
                         size = 84.dp,
-                        message = "Cargando detalles..."
+                        message = "Cargando detalles...",
+                        isMonochrome = isMonochrome
                     )
                 }
             }

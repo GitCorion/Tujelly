@@ -68,6 +68,7 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val accentColorKey by viewModel.accentColor.collectAsState()
+    val isMonochrome by viewModel.isMonochrome.collectAsState()
     val buttonStyleKey by viewModel.buttonStyle.collectAsState()
     val showTopIcons = buttonStyleKey != BUTTON_STYLE_TEXT_ONLY
     val showTopText = buttonStyleKey != BUTTON_STYLE_ICONS_ONLY
@@ -93,9 +94,14 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val headerLogo = if (isMonochrome) {
+                    com.example.tujelly.R.drawable.ic_tujelly_header_mono
+                } else {
+                    com.example.tujelly.R.drawable.ic_tujelly_header
+                }
                 androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = com.example.tujelly.R.drawable.ic_tujelly_header),
-                    contentDescription = "Tujelly",
+                    painter = androidx.compose.ui.res.painterResource(id = headerLogo),
+                    contentDescription = "TuJelly",
                     modifier = Modifier.height(42.dp)
                 )
 
@@ -331,7 +337,8 @@ fun HomeScreen(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     com.example.tujelly.ui.components.JellyLoadingIndicator(
                         size = 84.dp,
-                        message = "Cargando descubridor de plataformas..."
+                        message = "Cargando descubridor de plataformas...",
+                        isMonochrome = isMonochrome
                     )
                 }
             }

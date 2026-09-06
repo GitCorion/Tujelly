@@ -29,6 +29,9 @@ const val INDICATOR_THEME_MONOCHROME = "MONOCHROME"
 const val PLATFORM_LOGO_COLOR = "COLOR"
 const val PLATFORM_LOGO_MONOCHROME = "MONOCHROME"
 
+const val APP_THEME_ORIGINAL = "ORIGINAL"
+const val APP_THEME_MONOCHROME = "MONOCHROME"
+
 data class UserPreferences(
     val jellyfinServerUrl: String = "",
     val jellyfinUserId: String = "",
@@ -45,7 +48,10 @@ data class UserPreferences(
     val indicatorTheme: String = INDICATOR_THEME_COLOR,
     val platformLogoStyle: String = PLATFORM_LOGO_COLOR,
     val jellyfinLastSync: String = ""
-)
+) {
+    val isMonochrome: Boolean
+        get() = indicatorTheme == INDICATOR_THEME_MONOCHROME || accentColor == ACCENT_WHITE
+}
 
 class UserPreferencesRepository(private val context: Context) {
 
@@ -166,6 +172,20 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun updatePlatformLogoStyle(style: String) {
         context.dataStore.edit { prefs ->
             prefs[Keys.PLATFORM_LOGO_STYLE] = style
+        }
+    }
+
+    suspend fun setAppTheme(theme: String) {
+        context.dataStore.edit { prefs ->
+            if (theme == APP_THEME_MONOCHROME) {
+                prefs[Keys.ACCENT_COLOR] = ACCENT_WHITE
+                prefs[Keys.INDICATOR_THEME] = INDICATOR_THEME_MONOCHROME
+                prefs[Keys.PLATFORM_LOGO_STYLE] = PLATFORM_LOGO_MONOCHROME
+            } else {
+                prefs[Keys.ACCENT_COLOR] = ACCENT_CYAN
+                prefs[Keys.INDICATOR_THEME] = INDICATOR_THEME_COLOR
+                prefs[Keys.PLATFORM_LOGO_STYLE] = PLATFORM_LOGO_COLOR
+            }
         }
     }
 

@@ -11,9 +11,12 @@ import com.example.tujelly.domain.model.EpisodeItem
 import com.example.tujelly.domain.model.SeasonItem
 import com.example.tujelly.domain.model.SeriesStatus
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 sealed interface DetailUiState {
@@ -45,6 +48,10 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _uiState = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
+
+    val isMonochrome: StateFlow<Boolean> = userPreferencesRepository.userPreferencesFlow
+        .map { it.isMonochrome }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun loadDetail(itemId: String) {
         viewModelScope.launch {

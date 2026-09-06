@@ -36,8 +36,10 @@ import com.example.tujelly.R
 fun JellyLoadingIndicator(
     modifier: Modifier = Modifier,
     size: Dp = 72.dp,
-    message: String? = null
+    message: String? = null,
+    isMonochrome: Boolean = false
 ) {
+    val symbolRes = if (isMonochrome) R.drawable.ic_jelly_symbol_mono else R.drawable.ic_jelly_symbol
     val infiniteTransition = rememberInfiniteTransition(label = "JellySwim")
 
     // Realistic biological jellyfish propulsion cycle (2200ms total)
@@ -132,7 +134,7 @@ fun JellyLoadingIndicator(
         ) {
             // Soft glowing ambient halo behind the jellyfish
             Image(
-                painter = painterResource(id = R.drawable.ic_jelly_symbol),
+                painter = painterResource(id = symbolRes),
                 contentDescription = null,
                 modifier = Modifier
                     .size(size)
@@ -147,7 +149,7 @@ fun JellyLoadingIndicator(
 
             // Main crisp bioluminescent jellyfish RenderNode
             Image(
-                painter = painterResource(id = R.drawable.ic_jelly_symbol),
+                painter = painterResource(id = symbolRes),
                 contentDescription = "Cargando",
                 modifier = Modifier
                     .size(size)

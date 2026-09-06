@@ -144,6 +144,7 @@ fun PlayerScreen(
 
     val streamInfo by viewModel.streamInfo.collectAsState()
     val buttonStyle by viewModel.buttonStyle.collectAsState()
+    val isMonochrome by viewModel.isMonochrome.collectAsState()
 
     var showOverlayControls by remember { mutableStateOf(true) }
     var seekIndicatorText by remember { mutableStateOf<String?>(null) }
@@ -401,7 +402,8 @@ fun PlayerScreen(
                     ) {
                         com.example.tujelly.ui.components.JellyLoadingIndicator(
                             size = 28.dp,
-                            message = null
+                            message = null,
+                            isMonochrome = isMonochrome
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(

@@ -79,7 +79,8 @@ import com.example.tujelly.data.local.ACCENT_WHITE
 import com.example.tujelly.data.local.INDICATOR_THEME_COLOR
 import com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
 import com.example.tujelly.data.local.PLATFORM_LOGO_COLOR
-import com.example.tujelly.data.local.PLATFORM_LOGO_MONOCHROME
+import com.example.tujelly.data.local.APP_THEME_ORIGINAL
+import com.example.tujelly.data.local.APP_THEME_MONOCHROME
 import com.example.tujelly.ui.theme.TvAccent
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_AND_TEXT
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
@@ -231,16 +232,12 @@ fun SettingsScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(Color(0xFF0B0C12), Color(0xFF07070B))
-                )
-            )
+            .background(Color(0xFF07080E))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(28.dp)
+                .padding(24.dp)
         ) {
             // =========================================================================
             // SIDEBAR NAVEGACIÓN IZQUIERDA (250dp)
@@ -254,9 +251,14 @@ fun SettingsScreen(
                     .padding(16.dp)
             ) {
                 // Branding Header
+                val sidebarLogo = if (uiState.isMonochrome) {
+                    com.example.tujelly.R.drawable.ic_tujelly_header_mono
+                } else {
+                    com.example.tujelly.R.drawable.ic_tujelly_header
+                }
                 androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = com.example.tujelly.R.drawable.ic_tujelly_header),
-                    contentDescription = "Tujelly",
+                    painter = androidx.compose.ui.res.painterResource(id = sidebarLogo),
+                    contentDescription = "TuJelly",
                     modifier = Modifier.height(34.dp)
                 )
                 Spacer(modifier = Modifier.height(6.dp))
@@ -742,124 +744,41 @@ fun SettingsScreen(
 
                         3 -> {
                             // -----------------------------------------------------------------
-                            // CATEGORÍA 4: COLOR DE RESALTE & ESTILO DE BOTONES
+                            // CATEGORÍA 4: TEMA VISUAL DE TUJELLY (2 MODOS GLOBALES)
                             // -----------------------------------------------------------------
                             Text(
-                                text = "Color de Resalte y Foco",
+                                text = "Tema Visual de TuJelly",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Elige el color distintivo con el que se resaltarán los botones y elementos activos en tu TV para identificar claramente qué tienes seleccionado.",
+                                text = "Elige la personalidad visual de la app. Tu selección adapta armónicamente el logotipo, el foco del mando, la medusa de carga, los logos de plataformas y las insignias de estado.",
                                 color = Color(0xFF94A3B8),
                                 fontSize = 12.sp
                             )
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // Opción Color 1: Azul Cian Jellyfin
-                            AccentColorSelectionCard(
-                                title = "Azul Cian (Jellyfin)",
-                                description = "Tono cian brillante oficial de Jellyfin. Máxima visibilidad y contraste contra fondos oscuros.",
-                                accentColor = Color(0xFF00A4DC),
-                                isSelected = uiState.accentColor == ACCENT_CYAN,
-                                onClick = { viewModel.updateAccentColor(ACCENT_CYAN) }
+                            // Opción 1: Original TuJelly (Bioluminiscente Neón)
+                            MasterThemeSelectionCard(
+                                title = "Original TuJelly (Bioluminiscente)",
+                                description = "Colores neón cian y violeta combinados con el logotipo oficial. Resalte de foco en azul cian, logos de plataformas a color e insignias vivas.",
+                                isMonochrome = false,
+                                isSelected = !uiState.isMonochrome,
+                                onClick = { viewModel.setAppTheme(APP_THEME_ORIGINAL) }
                             )
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Opción Color 2: Ámbar Cine Cálido
-                            AccentColorSelectionCard(
-                                title = "Ámbar Cine (Cálido)",
-                                description = "Tono dorado ámbar cálido inspirado en los carteles de cine y proyectores clásicos.",
-                                accentColor = Color(0xFFF59E0B),
-                                isSelected = uiState.accentColor == ACCENT_AMBER,
-                                onClick = { viewModel.updateAccentColor(ACCENT_AMBER) }
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Opción Color 3: Blanco Puro Minimalista
-                            AccentColorSelectionCard(
-                                title = "Blanco Puro (Minimalista)",
-                                description = "Resalte blanco de alto contraste estilo Apple TV. Los elementos no seleccionados permanecen oscuros y translúcidos.",
-                                accentColor = Color.White,
-                                isSelected = uiState.accentColor == ACCENT_WHITE,
-                                onClick = { viewModel.updateAccentColor(ACCENT_WHITE) }
-                            )
-
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            Text(
-                                text = "Tema de Indicadores (Vistos, Favoritos y Series)",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Elige la paleta visual para las insignias de favoritos, completado de series y progreso de episodios.",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 12.sp
-                            )
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // Opción Tema 1: Color
-                            IndicatorThemeSelectionCard(
-                                title = "Color Vivo (Recomendado)",
-                                description = "Favoritos en Rojo pasión, Visto en Verde esmeralda y Progreso de episodios acentuado.",
-                                isSelected = uiState.indicatorTheme == INDICATOR_THEME_COLOR,
-                                isColorMode = true,
-                                onClick = { viewModel.updateIndicatorTheme(INDICATOR_THEME_COLOR) }
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Opción Tema 2: Monocromático
-                            IndicatorThemeSelectionCard(
-                                title = "Monocromático Minimalista",
-                                description = "Todos los iconos e indicadores en blanco puro de alto contraste sobre cristal ahumado.",
-                                isSelected = uiState.indicatorTheme == INDICATOR_THEME_MONOCHROME,
-                                isColorMode = false,
-                                onClick = { viewModel.updateIndicatorTheme(INDICATOR_THEME_MONOCHROME) }
-                            )
-
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            Text(
-                                text = "Estilo de Logos de Plataformas (Streaming)",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Elige si deseas ver las plataformas (Netflix, Disney+, Max, Prime, Apple TV+, Movistar+) con sus colores oficiales de marca o en blanco monocromático.",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 12.sp
-                            )
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            PlatformLogoStyleSelectionCard(
-                                title = "Color Original de Marca",
-                                description = "Logotipos oficiales en alta definición con sus tonalidades características (Rojo Netflix, Cyan Disney+, Azul Max, Azul Movistar+, etc.).",
-                                isSelected = uiState.platformLogoStyle == PLATFORM_LOGO_COLOR,
-                                isColorMode = true,
-                                onClick = { viewModel.updatePlatformLogoStyle(PLATFORM_LOGO_COLOR) }
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            PlatformLogoStyleSelectionCard(
-                                title = "Monocromático Blanco Puro",
-                                description = "Todos los logotipos de plataformas en blanco puro estilizado sobre cristal oscuro, diseño premium estilo tvOS.",
-                                isSelected = uiState.platformLogoStyle == PLATFORM_LOGO_MONOCHROME,
-                                isColorMode = false,
-                                onClick = { viewModel.updatePlatformLogoStyle(PLATFORM_LOGO_MONOCHROME) }
+                            // Opción 2: Monocromático (Blanco Puro Minimalista)
+                            MasterThemeSelectionCard(
+                                title = "Monocromático (Blanco Puro Minimalista)",
+                                description = "Estética minimalista estilo Apple TV / tvOS de alto contraste. Logotipo, medusa de carga, logos de plataformas e insignias en blanco puro sobre cristal oscuro.",
+                                isMonochrome = true,
+                                isSelected = uiState.isMonochrome,
+                                onClick = { viewModel.setAppTheme(APP_THEME_MONOCHROME) }
                             )
 
                             Spacer(modifier = Modifier.height(24.dp))
@@ -1313,6 +1232,107 @@ fun ButtonStyleSelectionCard(
                     containerColor = Color.White,
                     textColor = Color(0xFF0F172A),
                     borderColor = Color.White
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun MasterThemeSelectionCard(
+    title: String,
+    description: String,
+    isMonochrome: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isSelected) Color(0x28FFFFFF) else Color(0xFF131422),
+            focusedContainerColor = Color(0x40FFFFFF)
+        ),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(
+                border = BorderStroke(1.dp, if (isSelected) (if (isMonochrome) Color.White else Color(0xFF00A4DC)) else Color(0xFF222438)),
+                shape = RoundedCornerShape(10.dp)
+            ),
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, if (isMonochrome) Color.White else Color(0xFF00A4DC)),
+                shape = RoundedCornerShape(10.dp)
+            )
+        ),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Muestra visual del tema (Medusa + Acento)
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .background(
+                        if (isMonochrome) Color(0xFF181926) else Color(0x2200A4DC),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .border(
+                        1.dp,
+                        if (isMonochrome) Color(0x66FFFFFF) else Color(0x6600A4DC),
+                        RoundedCornerShape(8.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                val iconRes = if (isMonochrome) {
+                    com.example.tujelly.R.drawable.ic_jelly_symbol_mono
+                } else {
+                    com.example.tujelly.R.drawable.ic_jelly_symbol
+                }
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        color = if (isSelected) Color.White else Color(0xFFE2E8F0),
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                if (isMonochrome) Color.White else Color(0xFF00A4DC),
+                                CircleShape
+                            )
+                    )
+                }
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = description,
+                    color = Color(0xFF94A3B8),
+                    fontSize = 11.sp
+                )
+            }
+
+            if (isSelected) {
+                Spacer(modifier = Modifier.width(12.dp))
+                TvPill(
+                    text = "ACTIVO",
+                    containerColor = if (isMonochrome) Color.White else Color(0xFF00A4DC),
+                    textColor = Color(0xFF0F172A),
+                    borderColor = if (isMonochrome) Color.White else Color(0xFF00A4DC)
                 )
             }
         }

@@ -45,6 +45,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         .map { it.accentColor }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ACCENT_CYAN)
 
+    val isMonochrome: StateFlow<Boolean> = userPreferencesRepository.userPreferencesFlow
+        .map { it.isMonochrome }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val buttonStyle: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
         .map { it.buttonStyle }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY)

@@ -69,7 +69,10 @@ data class SettingsUiState(
     val isCheckingUpdate: Boolean = false,
     val updateInfo: com.example.tujelly.data.remote.github.UpdateInfo? = null,
     val downloadProgress: Float? = null
-)
+) {
+    val isMonochrome: Boolean
+        get() = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME || accentColor == com.example.tujelly.data.local.ACCENT_WHITE
+}
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -142,6 +145,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             userPreferencesRepository.updatePlatformLogoStyle(style)
             _uiState.value = _uiState.value.copy(platformLogoStyle = style)
+        }
+    }
+
+    fun setAppTheme(theme: String) {
+        viewModelScope.launch {
+            userPreferencesRepository.setAppTheme(theme)
+            val isMono = theme == com.example.tujelly.data.local.APP_THEME_MONOCHROME
+            _uiState.value = _uiState.value.copy(
+                accentColor = if (isMono) com.example.tujelly.data.local.ACCENT_WHITE else com.example.tujelly.data.local.ACCENT_CYAN,
+                indicatorTheme = if (isMono) com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME else com.example.tujelly.data.local.INDICATOR_THEME_COLOR,
+                platformLogoStyle = if (isMono) com.example.tujelly.data.local.PLATFORM_LOGO_MONOCHROME else com.example.tujelly.data.local.PLATFORM_LOGO_COLOR
+            )
         }
     }
 
