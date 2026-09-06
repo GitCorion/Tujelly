@@ -48,16 +48,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -116,6 +121,22 @@ fun MedusaScreen(
         animationSpec = tween(durationMillis = 500),
         label = "constellationHeight"
     )
+
+    val headRequester = remember { FocusRequester() }
+    val branchRequesters = remember { List(12) { FocusRequester() } }
+    val controlsRequester = remember { FocusRequester() }
+
+    val sortedBranchStars = remember(uiState.activeBranchIds, uiState.starPositions) {
+        uiState.activeBranchIds.mapNotNull { id -> uiState.starMap[id] }
+            .sortedBy { star ->
+                uiState.starPositions[star.id]?.first ?: star.baseNormX
+            }
+    }
+    val branchIndexMap = remember(sortedBranchStars) {
+        sortedBranchStars.mapIndexed { index, star -> star.id to index }.toMap()
+    }
+    val totalBranches = sortedBranchStars.size
+    val midBranchIdx = if (totalBranches > 0) totalBranches / 2 else 0
 
     Column(
         modifier = Modifier
@@ -221,13 +242,57 @@ fun MedusaScreen(
                             val posX = w * animatedNormX
                             val posY = h * animatedNormY
 
+                            val starFocusModifier = when {
+                                isActiveNode -> {
+                                    Modifier
+                                        .focusRequester(headRequester)
+                                        .focusProperties {
+                                            if (totalBranches > 0) {
+                                                down = branchRequesters[midBranchIdx.coerceIn(0, branchRequesters.lastIndex)]
+                                            } else {
+                                                down = controlsRequester
+                                            }
+                                        }
+                                }
+                                isBranch -> {
+                                    val bIdx = branchIndexMap[star.id] ?: 0
+                                    Modifier
+                                        .focusRequester(branchRequesters[bIdx.coerceIn(0, branchRequesters.lastIndex)])
+                                        .focusProperties {
+                                            up = headRequester
+                                            down = controlsRequester
+                                            if (bIdx > 0) {
+                                                left = branchRequesters[bIdx - 1]
+                                            }
+                                            if (bIdx < totalBranches - 1 && bIdx + 1 < branchRequesters.size) {
+                                                right = branchRequesters[bIdx + 1]
+                                            }
+                                        }
+                                }
+                                isAncestor -> {
+                                    Modifier.focusProperties {
+                                        down = headRequester
+                                    }
+                                }
+                                isCosmicBackground -> {
+                                    Modifier.focusProperties {
+                                        canFocus = false
+                                    }
+                                }
+                                else -> Modifier
+                            }
+
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .offset(x = posX, y = posY)
+                                    .layout { measurable, constraints ->
+                                        val placeable = measurable.measure(constraints)
+                                        layout(placeable.width, placeable.height) {
+                                            val x = (posX.toPx() - placeable.width / 2f).roundToInt()
+                                            val y = (posY.toPx() - placeable.height / 2f).roundToInt()
+                                            placeable.placeRelative(x, y)
+                                        }
+                                    }
                                     .graphicsLayer {
-                                        translationX = -size.width / 2f
-                                        translationY = -size.height / 2f
                                         alpha = animatedAlpha
                                     }
                             ) {
@@ -237,6 +302,7 @@ fun MedusaScreen(
                                     isAncestor = isAncestor,
                                     isCosmicBackground = isCosmicBackground,
                                     accentColor = medusaColor,
+                                    modifier = starFocusModifier,
                                     onClick = {
                                         Log.d("MedusaScreen", "Direct click on star: ${star.id}")
                                         viewModel.toggleStar(star.id)
@@ -305,7 +371,15 @@ fun MedusaScreen(
                                             focusedContainerColor = medusaColor,
                                             focusedContentColor = focusContent
                                         ),
-                                        modifier = Modifier.padding(end = 8.dp)
+                                        modifier = Modifier
+                                            .padding(end = 8.dp)
+                                            .focusProperties {
+                                                if (totalBranches > 0) {
+                                                    up = branchRequesters[midBranchIdx.coerceIn(0, branchRequesters.lastIndex)]
+                                                } else {
+                                                    up = headRequester
+                                                }
+                                            }
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Icon(
@@ -332,7 +406,14 @@ fun MedusaScreen(
                                         contentColor = Color(0xFFCBD5E1),
                                         focusedContainerColor = medusaColor,
                                         focusedContentColor = focusContent
-                                    )
+                                    ),
+                                    modifier = Modifier.focusProperties {
+                                        if (totalBranches > 0) {
+                                            up = branchRequesters[midBranchIdx.coerceIn(0, branchRequesters.lastIndex)]
+                                        } else {
+                                            up = headRequester
+                                        }
+                                    }
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
@@ -359,10 +440,31 @@ fun MedusaScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
                         ) {
-                            MedusaFormatFilter.entries.forEach { filter ->
+                            MedusaFormatFilter.entries.forEachIndexed { filterIdx, filter ->
                                 val isSelected = uiState.selectedFormat == filter
+                                val isFirstChip = filterIdx == 0
+                                val chipModifier = if (isFirstChip) {
+                                    Modifier
+                                        .focusRequester(controlsRequester)
+                                        .focusProperties {
+                                            if (totalBranches > 0) {
+                                                up = branchRequesters[midBranchIdx.coerceIn(0, branchRequesters.lastIndex)]
+                                            } else {
+                                                up = headRequester
+                                            }
+                                        }
+                                } else {
+                                    Modifier.focusProperties {
+                                        if (totalBranches > 0) {
+                                            up = branchRequesters[midBranchIdx.coerceIn(0, branchRequesters.lastIndex)]
+                                        } else {
+                                            up = headRequester
+                                        }
+                                    }
+                                }
                                 Surface(
                                     onClick = { viewModel.setFormatFilter(filter) },
+                                    modifier = chipModifier,
                                     shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
                                     colors = ClickableSurfaceDefaults.colors(
                                         containerColor = if (isSelected) medusaColor.copy(alpha = 0.25f) else Color(0x18FFFFFF),
@@ -526,35 +628,18 @@ private fun ConstellationAstroStar(
                 StarPoint(isFocused = isFocused, isSelected = true, accentColor = accentColor)
             }
         }
-    } else if (isCosmicBackground && !isFocused) {
-        // Estrella cósmica de fondo: punto estelar luminoso puro que no obstruye los tentáculos activos
-        Surface(
-            onClick = onClick,
-            shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
-            colors = ClickableSurfaceDefaults.colors(
-                containerColor = Color(0x18FFFFFF),
-                focusedContainerColor = accentColor.copy(alpha = 0.40f),
-                pressedContainerColor = accentColor.copy(alpha = 0.60f)
-            ),
-            border = ClickableSurfaceDefaults.border(
-                border = Border(BorderStroke(0.6.dp, Color(0x28FFFFFF)), shape = CircleShape),
-                focusedBorder = Border(BorderStroke(1.8.dp, Color.White), shape = CircleShape)
-            ),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.20f),
+    } else if (isCosmicBackground) {
+        // Estrella cósmica de fondo: punto estelar luminoso puro que no obstruye ni roba foco D-Pad en el tentáculo
+        Box(
             modifier = modifier
                 .size(20.dp)
                 .zIndex(1f)
-                .onFocusChanged { isFocused = it.isFocused }
                 .pointerInput(star.id) {
                     detectTapGestures { onClick() }
-                }
+                },
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                StarPoint(isFocused = false, isSelected = false, accentColor = accentColor)
-            }
+            StarPoint(isFocused = false, isSelected = false, accentColor = accentColor)
         }
     } else {
         // Cápsula activa, rama interactiva de tentáculo o estrella de fondo al recibir foco
