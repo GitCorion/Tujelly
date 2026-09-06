@@ -59,11 +59,17 @@ fun FavoritesScreen(
     onBack: () -> Unit,
     onPlayMedia: (String) -> Unit,
     onDetailMedia: (String) -> Unit,
+    onNavigateHome: () -> Unit = onBack,
+    onOpenMedusa: () -> Unit = {},
+    onOpenFavorites: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: FavoritesViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val accentColorKey by viewModel.accentColor.collectAsState()
     val buttonStyleKey by viewModel.buttonStyle.collectAsState()
+    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current
     val focusColor = TvAccent.getColor(accentColorKey)
     val focusContent = TvAccent.getFocusedContentColor(accentColorKey)
     val showIcons = buttonStyleKey != BUTTON_STYLE_TEXT_ONLY
@@ -101,8 +107,8 @@ fun FavoritesScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = state.message,
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleMedium
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyLarge
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
@@ -110,8 +116,8 @@ fun FavoritesScreen(
                             colors = ButtonDefaults.colors(
                                 containerColor = Color(0x22FFFFFF),
                                 contentColor = Color.White,
-                                focusedContainerColor = focusColor,
-                                focusedContentColor = focusContent
+                                focusedContainerColor = Color.White,
+                                focusedContentColor = Color(0xFF0F172A)
                             )
                         ) {
                             Text("Reintentar", fontWeight = FontWeight.Bold)
@@ -124,114 +130,99 @@ fun FavoritesScreen(
                 val currentHero = focusedItem ?: state.filteredItems.firstOrNull()
 
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Header Bar (Fixed at the top)
+                    // Universal Persistent TV TopBar
+                    com.example.tujelly.ui.components.TvTopBar(
+                        selectedTab = com.example.tujelly.ui.components.TvNavTab.FAVORITES,
+                        onNavigateHome = onNavigateHome,
+                        onOpenMedusa = onOpenMedusa,
+                        onOpenFavorites = onOpenFavorites,
+                        onOpenSearch = onOpenSearch,
+                        onOpenSettings = onOpenSettings,
+                        accentColorKey = accentColorKey,
+                        buttonStyleKey = buttonStyleKey,
+                        isMonochrome = isMonochrome
+                    )
+
+                    // Sub-Header: Title & Filter Chips Row
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 48.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 48.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.Favorite,
+                                contentDescription = null,
+                                tint = if (isMonochrome) Color.White else Color(0xFFEF4444),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Mis Favoritos",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            TvPill(
+                                text = "${state.allItems.size} ITEMS",
+                                containerColor = Color(0x18FFFFFF),
+                                textColor = Color(0xFFCBD5E1),
+                                borderColor = Color(0x22FFFFFF)
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Filter chips
+                            FavoriteFilter.entries.forEach { filter ->
+                                val isSelected = state.activeFilter == filter
                                 Button(
-                                    onClick = onBack,
+                                    onClick = { viewModel.setFilter(filter) },
                                     colors = ButtonDefaults.colors(
-                                        containerColor = Color(0x14FFFFFF),
-                                        contentColor = Color.White,
+                                        containerColor = if (isSelected) Color(0x33FFFFFF) else Color(0x0AFFFFFF),
+                                        contentColor = if (isSelected) Color.White else Color(0xFF94A3B8),
                                         focusedContainerColor = focusColor,
                                         focusedContentColor = focusContent
-                                    )
+                                    ),
+                                    shape = ButtonDefaults.shape(shape = RoundedCornerShape(16.dp))
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center
-                                    ) {
-                                        if (showIcons) {
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                                contentDescription = "Inicio",
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                        if (showText) {
-                                            if (showIcons) Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Inicio", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-                                        }
+                                    val label = when (filter) {
+                                        FavoriteFilter.ALL -> "Todos"
+                                        FavoriteFilter.MOVIES -> "Películas"
+                                        FavoriteFilter.SERIES -> "Series"
                                     }
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
                                 }
-
-                                Spacer(modifier = Modifier.width(20.dp))
-
-                                Icon(
-                                    imageVector = Icons.Rounded.Favorite,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(22.dp)
-                                )
-
-                                Spacer(modifier = Modifier.width(10.dp))
-
-                                Text(
-                                    text = "Mis Favoritos",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-
-                                Spacer(modifier = Modifier.width(12.dp))
-
-                                TvPill(
-                                    text = "${state.allItems.size} ITEMS",
-                                    containerColor = Color(0x18FFFFFF),
-                                    textColor = Color(0xFFCBD5E1),
-                                    borderColor = Color(0x22FFFFFF)
-                                )
                             }
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            Button(
+                                onClick = { viewModel.loadFavorites() },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = Color(0x14FFFFFF),
+                                    contentColor = Color.White,
+                                    focusedContainerColor = focusColor,
+                                    focusedContentColor = focusContent
+                                )
                             ) {
-                                // Filter chips
-                                FavoriteFilter.entries.forEach { filter ->
-                                    val isSelected = state.activeFilter == filter
-                                    Button(
-                                        onClick = { viewModel.setFilter(filter) },
-                                        colors = ButtonDefaults.colors(
-                                            containerColor = if (isSelected) Color(0x35FFFFFF) else Color(0x10FFFFFF),
-                                            contentColor = if (isSelected) Color.White else Color(0xFF94A3B8),
-                                            focusedContainerColor = Color.White,
-                                            focusedContentColor = Color(0xFF0F172A)
-                                        )
-                                    ) {
-                                        val label = when (filter) {
-                                            FavoriteFilter.ALL -> "Todos"
-                                            FavoriteFilter.MOVIES -> "Películas"
-                                            FavoriteFilter.SERIES -> "Series"
-                                        }
-                                        Text(text = label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                Button(
-                                    onClick = { viewModel.loadFavorites() },
-                                    colors = ButtonDefaults.colors(
-                                        containerColor = Color(0x14FFFFFF),
-                                        contentColor = Color.White,
-                                        focusedContainerColor = Color.White,
-                                        focusedContentColor = Color(0xFF0F172A)
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Refresh,
-                                        contentDescription = "Sincronizar",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = "Sincronizar",
+                                    modifier = Modifier.size(16.dp)
+                                )
                             }
                         }
+                    }
 
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         if (state.filteredItems.isEmpty()) {

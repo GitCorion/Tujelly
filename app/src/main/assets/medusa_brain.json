@@ -1,0 +1,411 @@
+{
+  "version": "2.0-neural-manifold",
+  "brainVersion": 1,
+  "totalNeurons": 18,
+  "neurons": [
+    {
+      "id": "neuron_01",
+      "label": "Distopías Sintéticas",
+      "genres": [
+        "ciencia ficción",
+        "cyberpunk",
+        "thriller"
+      ],
+      "keywords": [
+        "cyberpunk",
+        "futuro",
+        "ia",
+        "androide",
+        "neón",
+        "distopía"
+      ],
+      "synapticWeights": {
+        "neuron_17": 0.817,
+        "neuron_16": 0.246,
+        "neuron_14": 0.1
+      },
+      "mutantJump": "neuron_11"
+    },
+    {
+      "id": "neuron_02",
+      "label": "Fantasía Épica",
+      "genres": [
+        "fantasía",
+        "aventura"
+      ],
+      "keywords": [
+        "magia",
+        "dragones",
+        "reinos",
+        "épica",
+        "criaturas",
+        "fantasía"
+      ],
+      "synapticWeights": {
+        "neuron_11": 0.306,
+        "neuron_10": 0.248,
+        "neuron_18": 0.077
+      },
+      "mutantJump": "neuron_06"
+    },
+    {
+      "id": "neuron_03",
+      "label": "Cine Noir",
+      "genres": [
+        "crimen",
+        "misterio",
+        "thriller"
+      ],
+      "keywords": [
+        "noir",
+        "detective",
+        "policíaco",
+        "investigación",
+        "sombras",
+        "detectives"
+      ],
+      "synapticWeights": {
+        "neuron_12": 0.089,
+        "neuron_05": 0.074,
+        "neuron_01": 0.053
+      },
+      "mutantJump": "neuron_16"
+    },
+    {
+      "id": "neuron_04",
+      "label": "Terror Sobrenatural",
+      "genres": [
+        "terror",
+        "horror"
+      ],
+      "keywords": [
+        "fantasmas",
+        "maldición",
+        "sobrenatural",
+        "pesadilla",
+        "ocultismo",
+        "maldiciones"
+      ],
+      "synapticWeights": {
+        "neuron_14": 0.041,
+        "neuron_17": 0.007,
+        "neuron_16": 0.002
+      },
+      "mutantJump": "neuron_01"
+    },
+    {
+      "id": "neuron_05",
+      "label": "Comedia Romántica",
+      "genres": [
+        "comedia",
+        "romance"
+      ],
+      "keywords": [
+        "amor",
+        "humor",
+        "enredo",
+        "pareja",
+        "citas",
+        "comedia"
+      ],
+      "synapticWeights": {
+        "neuron_10": 0.389,
+        "neuron_18": 0.193,
+        "neuron_11": 0.187
+      },
+      "mutantJump": "neuron_18"
+    },
+    {
+      "id": "neuron_06",
+      "label": "Odisea Espacial",
+      "genres": [
+        "ciencia ficción",
+        "aventura"
+      ],
+      "keywords": [
+        "espacio",
+        "naves",
+        "galaxias",
+        "viaje",
+        "estrellas",
+        "viajes"
+      ],
+      "synapticWeights": {
+        "neuron_10": 0.205,
+        "neuron_17": 0.175,
+        "neuron_11": 0.107
+      },
+      "mutantJump": "neuron_02"
+    },
+    {
+      "id": "neuron_07",
+      "label": "Suspense Psicológico",
+      "genres": [
+        "thriller",
+        "misterio",
+        "drama"
+      ],
+      "keywords": [
+        "intriga",
+        "giro",
+        "tensión",
+        "psicológico",
+        "mente",
+        "tramas"
+      ],
+      "synapticWeights": {
+        "neuron_14": 0.047,
+        "neuron_17": 0.041,
+        "neuron_03": 0.04
+      },
+      "mutantJump": "neuron_01"
+    },
+    {
+      "id": "neuron_08",
+      "label": "Acción Extrema",
+      "genres": [
+        "acción",
+        "thriller"
+      ],
+      "keywords": [
+        "persecución",
+        "explosiones",
+        "velocidad",
+        "combate",
+        "adrenalina",
+        "acción"
+      ],
+      "synapticWeights": {
+        "neuron_16": 0.06,
+        "neuron_11": 0.054,
+        "neuron_13": 0.052
+      },
+      "mutantJump": "neuron_07"
+    },
+    {
+      "id": "neuron_09",
+      "label": "Drama Íntimo",
+      "genres": [
+        "drama"
+      ],
+      "keywords": [
+        "melancolía",
+        "nostalgia",
+        "autor",
+        "sentimientos",
+        "familia",
+        "íntimas"
+      ],
+      "synapticWeights": {
+        "neuron_10": 0.123,
+        "neuron_17": 0.062,
+        "neuron_03": 0.038
+      },
+      "mutantJump": "neuron_12"
+    },
+    {
+      "id": "neuron_10",
+      "label": "Animación Familiar",
+      "genres": [
+        "animación",
+        "familia",
+        "aventura",
+        "comedia"
+      ],
+      "keywords": [
+        "infantil",
+        "color",
+        "mágico",
+        "niños",
+        "aventura",
+        "animación"
+      ],
+      "synapticWeights": {
+        "neuron_05": 0.389,
+        "neuron_02": 0.248,
+        "neuron_06": 0.205
+      },
+      "mutantJump": "neuron_06"
+    },
+    {
+      "id": "neuron_11",
+      "label": "Universo Superhéroes",
+      "genres": [
+        "acción",
+        "fantasía",
+        "ciencia ficción"
+      ],
+      "keywords": [
+        "superhéroes",
+        "cómic",
+        "marvel",
+        "dc",
+        "poderes",
+        "extraordinarios"
+      ],
+      "synapticWeights": {
+        "neuron_02": 0.306,
+        "neuron_13": 0.237,
+        "neuron_17": 0.194
+      },
+      "mutantJump": "neuron_01"
+    },
+    {
+      "id": "neuron_12",
+      "label": "Atracos Mafiosos",
+      "genres": [
+        "crimen",
+        "drama",
+        "thriller"
+      ],
+      "keywords": [
+        "atraco",
+        "mafia",
+        "corrupción",
+        "robo",
+        "gánster",
+        "crimen"
+      ],
+      "synapticWeights": {
+        "neuron_03": 0.089,
+        "neuron_16": 0.085,
+        "neuron_17": 0.077
+      },
+      "mutantJump": "neuron_01"
+    },
+    {
+      "id": "neuron_13",
+      "label": "Post-Apocalipsis",
+      "genres": [
+        "ciencia ficción",
+        "acción",
+        "thriller"
+      ],
+      "keywords": [
+        "supervivencia",
+        "apocalipsis",
+        "desierto",
+        "aislado",
+        "ruinas",
+        "devastado"
+      ],
+      "synapticWeights": {
+        "neuron_11": 0.237,
+        "neuron_10": 0.124,
+        "neuron_15": 0.093
+      },
+      "mutantJump": "neuron_06"
+    },
+    {
+      "id": "neuron_14",
+      "label": "Misterio Esotérico",
+      "genres": [
+        "misterio",
+        "thriller"
+      ],
+      "keywords": [
+        "enigma",
+        "secreto",
+        "secta",
+        "oculto",
+        "ritual",
+        "enigmas"
+      ],
+      "synapticWeights": {
+        "neuron_01": 0.1,
+        "neuron_16": 0.089,
+        "neuron_07": 0.047
+      },
+      "mutantJump": "neuron_08"
+    },
+    {
+      "id": "neuron_15",
+      "label": "Frontera Western",
+      "genres": [
+        "western",
+        "drama"
+      ],
+      "keywords": [
+        "vaquero",
+        "frontera",
+        "desierto",
+        "duelo",
+        "caballo",
+        "vaqueros"
+      ],
+      "synapticWeights": {
+        "neuron_13": 0.093,
+        "neuron_17": 0.049,
+        "neuron_05": 0.035
+      },
+      "mutantJump": "neuron_18"
+    },
+    {
+      "id": "neuron_16",
+      "label": "Espionaje Político",
+      "genres": [
+        "thriller",
+        "drama",
+        "acción"
+      ],
+      "keywords": [
+        "espionaje",
+        "conspiración",
+        "política",
+        "inteligencia",
+        "traición",
+        "agentes"
+      ],
+      "synapticWeights": {
+        "neuron_01": 0.246,
+        "neuron_14": 0.089,
+        "neuron_12": 0.085
+      },
+      "mutantJump": "neuron_17"
+    },
+    {
+      "id": "neuron_17",
+      "label": "Ciencia Dura",
+      "genres": [
+        "ciencia ficción",
+        "drama"
+      ],
+      "keywords": [
+        "tecnología",
+        "ética",
+        "robot",
+        "laboratorio",
+        "futuro",
+        "ciencia"
+      ],
+      "synapticWeights": {
+        "neuron_01": 0.817,
+        "neuron_11": 0.194,
+        "neuron_06": 0.175
+      },
+      "mutantJump": "neuron_16"
+    },
+    {
+      "id": "neuron_18",
+      "label": "Pasión Prohibida",
+      "genres": [
+        "romance",
+        "drama"
+      ],
+      "keywords": [
+        "pasión",
+        "amor trágico",
+        "desengaño",
+        "seducción",
+        "prohibido",
+        "amores"
+      ],
+      "synapticWeights": {
+        "neuron_05": 0.193,
+        "neuron_02": 0.077,
+        "neuron_13": 0.049
+      },
+      "mutantJump": "neuron_15"
+    }
+  ]
+}

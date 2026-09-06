@@ -62,6 +62,8 @@ class MainActivity : ComponentActivity() {
             val indicatorTheme = if (isMonochrome) com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME else prefs.indicatorTheme
             val platformLogoStyle = if (isMonochrome) com.example.tujelly.data.local.PLATFORM_LOGO_MONOCHROME else prefs.platformLogoStyle
 
+            val accentColor = if (isMonochrome) com.example.tujelly.data.local.ACCENT_WHITE else prefs.accentColor
+
             TujellyTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -73,7 +75,8 @@ class MainActivity : ComponentActivity() {
                     androidx.compose.runtime.CompositionLocalProvider(
                         com.example.tujelly.ui.theme.LocalIsMonochromeTheme provides isMonochrome,
                         com.example.tujelly.ui.theme.LocalIndicatorTheme provides indicatorTheme,
-                        com.example.tujelly.ui.theme.LocalPlatformLogoStyle provides platformLogoStyle
+                        com.example.tujelly.ui.theme.LocalPlatformLogoStyle provides platformLogoStyle,
+                        com.example.tujelly.ui.theme.LocalAccentColor provides accentColor
                     ) {
                         TujellyApp(startOnboarding = !prefs.hasCompletedOnboarding)
                     }
@@ -167,6 +170,20 @@ fun TujellyApp(startOnboarding: Boolean = false) {
                 },
                 onDetailMedia = { itemId ->
                     navController.navigate("detail/$itemId")
+                },
+                onNavigateHome = {
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                },
+                onOpenMedusa = {
+                    navController.navigate("medusa")
+                },
+                onOpenSearch = {
+                    navController.navigate("search")
+                },
+                onOpenSettings = {
+                    navController.navigate("settings")
                 }
             )
         }
@@ -200,6 +217,23 @@ fun TujellyApp(startOnboarding: Boolean = false) {
                 },
                 onDetailMedia = { itemId ->
                     navController.navigate("detail/$itemId")
+                },
+                onNavigateHome = {
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                },
+                onOpenMedusa = {
+                    navController.navigate("medusa")
+                },
+                onOpenFavorites = {
+                    navController.navigate("favorites")
+                },
+                onOpenSearch = {
+                    navController.navigate("search")
+                },
+                onOpenSettings = {
+                    navController.navigate("settings")
                 }
             )
         }
@@ -219,6 +253,23 @@ fun TujellyApp(startOnboarding: Boolean = false) {
                 },
                 onDetailMedia = { itemId ->
                     navController.navigate("detail/$itemId")
+                },
+                onNavigateHome = {
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                },
+                onOpenMedusa = {
+                    navController.navigate("medusa")
+                },
+                onOpenFavorites = {
+                    navController.navigate("favorites")
+                },
+                onOpenSearch = {
+                    navController.navigate("search")
+                },
+                onOpenSettings = {
+                    navController.navigate("settings")
                 }
             )
         }

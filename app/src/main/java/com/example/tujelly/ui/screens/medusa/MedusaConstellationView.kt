@@ -30,8 +30,8 @@ import kotlin.random.Random
 fun MedusaConstellationView(
     modifier: Modifier = Modifier,
     allStars: List<MedusaStar> = emptyList(),
-    visibleStarIds: Set<String> = emptySet(),
-    selectedStarIds: Set<String> = emptySet(),
+    selectedPath: List<String> = emptyList(),
+    activeBranchIds: List<String> = emptyList(),
     starPositions: Map<String, Pair<Float, Float>> = emptyMap(),
     accentColor: Color = Color(0xFF38BDF8)
 ) {
@@ -84,7 +84,7 @@ fun MedusaConstellationView(
                 )
             }
 
-            // 2. Trazos estructurales de fondo de la medusa
+            // 2. Trazos estructurales de fondo de la cúpula
             val pApex = Offset(w * 0.50f, h * 0.08f)
             val pL1 = Offset(w * 0.44f, h * 0.11f)
             val pL2 = Offset(w * 0.37f, h * 0.15f)
@@ -101,9 +101,10 @@ fun MedusaConstellationView(
             val pR6 = Offset(w * 0.70f, h * 0.44f)
 
             val perimeterStars = listOf(pL6, pL5, pL4, pL3, pL2, pL1, pApex, pR1, pR2, pR3, pR4, pR5, pR6)
+            val domeAlpha = if (selectedPath.isEmpty()) 0.08f else 0.02f
             for (i in 0 until perimeterStars.size - 1) {
                 drawLine(
-                    color = Color.White.copy(alpha = 0.08f),
+                    color = Color.White.copy(alpha = domeAlpha),
                     start = perimeterStars[i],
                     end = perimeterStars[i + 1],
                     strokeWidth = 0.6f,
@@ -111,53 +112,93 @@ fun MedusaConstellationView(
                 )
             }
 
+            val dotAlpha = if (selectedPath.isEmpty()) 0.35f else 0.08f
             perimeterStars.forEach { pt ->
                 drawCircle(
-                    color = Color.White.copy(alpha = 0.35f),
+                    color = Color.White.copy(alpha = dotAlpha),
                     radius = 1.4f,
                     center = pt
                 )
             }
 
-            // 3. Conexiones dinámicas entre estrellas visibles y sus relaciones
-            val starMap = allStars.associateBy { it.id }
-            val drawnPairs = mutableSetOf<String>()
+            // 3. Trazos dinámicos del firmamento o del tentáculo
+            if (selectedPath.isEmpty()) {
+                // Estado de reposo: constelación astronómica interconectada suave
+                val starMap = allStars.associateBy { it.id }
+                val drawnPairs = mutableSetOf<String>()
 
-            for (star in allStars) {
-                if (!visibleStarIds.contains(star.id)) continue
+                for (star in allStars) {
+                    val pos1 = starPositions[star.id] ?: Pair(star.baseNormX, star.baseNormY)
+                    val p1 = Offset(w * pos1.first, h * pos1.second)
 
-                val pos1 = starPositions[star.id] ?: Pair(star.baseNormX, star.baseNormY)
-                val p1 = Offset(w * pos1.first, h * pos1.second)
+                    for (relatedId in star.relatedStarIds) {
+                        val pairKey = if (star.id < relatedId) "${star.id}-$relatedId" else "$relatedId-${star.id}"
+                        if (drawnPairs.contains(pairKey)) continue
+                        drawnPairs.add(pairKey)
 
-                for (relatedId in star.relatedStarIds) {
-                    if (!visibleStarIds.contains(relatedId)) continue
+                        val relatedStar = starMap[relatedId] ?: continue
+                        val pos2 = starPositions[relatedId] ?: Pair(relatedStar.baseNormX, relatedStar.baseNormY)
+                        val p2 = Offset(w * pos2.first, h * pos2.second)
 
-                    val pairKey = if (star.id < relatedId) "${star.id}-$relatedId" else "$relatedId-${star.id}"
-                    if (drawnPairs.contains(pairKey)) continue
-                    drawnPairs.add(pairKey)
-
-                    val relatedStar = starMap[relatedId] ?: continue
-                    val pos2 = starPositions[relatedId] ?: Pair(relatedStar.baseNormX, relatedStar.baseNormY)
-                    val p2 = Offset(w * pos2.first, h * pos2.second)
-
-                    val isStar1Selected = selectedStarIds.contains(star.id)
-                    val isStar2Selected = selectedStarIds.contains(relatedId)
-
-                    if (isStar1Selected && isStar2Selected) {
-                        // Ambas seleccionadas: haz estelar brillante que forma el camino iluminado congregado
-                        val auraColor = accentColor.copy(alpha = 0.35f * pulseGlow)
-                        val beamColor = Color.White.copy(alpha = (0.95f * pulseGlow).coerceIn(0.70f, 1f))
-                        drawLine(auraColor, p1, p2, strokeWidth = 5.5f, cap = StrokeCap.Round)
-                        drawLine(beamColor, p1, p2, strokeWidth = 2.0f, cap = StrokeCap.Round)
-                    } else if (isStar1Selected || isStar2Selected) {
-                        // Una seleccionada y la otra sugerida: rayo guía elegante hacia el núcleo
-                        val guideColor = Color.White.copy(alpha = 0.45f)
-                        drawLine(guideColor, p1, p2, strokeWidth = 1.2f, cap = StrokeCap.Round)
-                    } else {
-                        // Conexión entre sugerencias visibles
-                        val faintColor = Color.White.copy(alpha = 0.18f)
-                        drawLine(faintColor, p1, p2, strokeWidth = 0.85f, cap = StrokeCap.Round)
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.15f),
+                            start = p1,
+                            end = p2,
+                            strokeWidth = 0.85f,
+                            cap = StrokeCap.Round
+                        )
                     }
+                }
+            } else {
+                // Estado de tentáculo activo:
+                // A) Columna vertebral del tentáculo (camino seleccionado iluminado en neón)
+                if (selectedPath.size > 1) {
+                    for (i in 0 until selectedPath.size - 1) {
+                        val id1 = selectedPath[i]
+                        val id2 = selectedPath[i + 1]
+                        val pos1 = starPositions[id1] ?: Pair(0.50f, 0.16f)
+                        val pos2 = starPositions[id2] ?: Pair(0.50f, 0.32f)
+                        val p1 = Offset(w * pos1.first, h * pos1.second)
+                        val p2 = Offset(w * pos2.first, h * pos2.second)
+
+                        val auraColor = accentColor.copy(alpha = 0.45f * pulseGlow)
+                        val beamColor = Color.White.copy(alpha = (0.95f * pulseGlow).coerceIn(0.75f, 1f))
+                        drawLine(auraColor, p1, p2, strokeWidth = 6.5f, cap = StrokeCap.Round)
+                        drawLine(beamColor, p1, p2, strokeWidth = 2.2f, cap = StrokeCap.Round)
+                    }
+                }
+
+                // B) Hebras o tentáculos fluidos (curvas Bezier ondulantes) desde la punta del tentáculo
+                val tipId = selectedPath.last()
+                val tipPos = starPositions[tipId] ?: Pair(0.50f, 0.16f)
+                val pTip = Offset(w * tipPos.first, h * tipPos.second)
+
+                activeBranchIds.forEachIndexed { branchIndex, branchId ->
+                    val branchPos = starPositions[branchId] ?: return@forEachIndexed
+                    val pBranch = Offset(w * branchPos.first, h * branchPos.second)
+
+                    // Curva Bezier orgánica con sutil oscilación marina
+                    val sway = sin(twinklePhase + branchIndex * 1.5f) * 10f
+                    val cp1 = Offset(pTip.x + sway * 0.2f, pTip.y + (pBranch.y - pTip.y) * 0.45f)
+                    val cp2 = Offset(pBranch.x + sway * 0.8f, pTip.y + (pBranch.y - pTip.y) * 0.78f)
+
+                    val tentaclePath = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(pTip.x, pTip.y)
+                        cubicTo(cp1.x, cp1.y, cp2.x, cp2.y, pBranch.x, pBranch.y)
+                    }
+
+                    // Halo exterior bioluminiscente del tentáculo
+                    drawPath(
+                        path = tentaclePath,
+                        color = accentColor.copy(alpha = 0.30f * pulseGlow),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.5f, cap = StrokeCap.Round)
+                    )
+                    // Hilo interior de luz cristalina
+                    drawPath(
+                        path = tentaclePath,
+                        color = Color.White.copy(alpha = 0.65f),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2f, cap = StrokeCap.Round)
+                    )
                 }
             }
         }

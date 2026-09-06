@@ -15,6 +15,7 @@ data class MediaItem(
     val type: String = "Movie",
     val posterUrl: String? = null,
     val backdropUrl: String? = null,
+    val logoUrl: String? = null,
     val rating: Float? = null,
     val year: Int? = null,
     val source: MediaSource = MediaSource.JELLYFIN,

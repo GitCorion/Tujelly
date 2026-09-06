@@ -180,6 +180,9 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
         val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
         val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
 
+        val effectiveLogoId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
+        val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/$effectiveLogoId/Images/Logo?$authParam" else null
+
         val total = totalItemCount
         val unplayed = unplayedItemCount
         val played = if (total != null && unplayed != null) (total - unplayed).coerceAtLeast(0) else null
@@ -191,6 +194,7 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
             type = type,
             posterUrl = posterUrl,
             backdropUrl = backdropUrl,
+            logoUrl = logoUrl,
             rating = communityRating,
             year = productionYear,
             source = source,

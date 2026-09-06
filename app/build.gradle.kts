@@ -25,8 +25,8 @@ android {
         applicationId = "com.example.tujelly"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.2.1"
+        versionCode = 16
+        versionName = "1.3.0"
     }
 
     signingConfigs {
@@ -81,11 +81,12 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.retrofit.kotlinx.serialization)
 
-    // Local Storage
+    // Local Storage & Background Work
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
     implementation(libs.datastore.preferences)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // Navigation & Images
     implementation(libs.navigation.compose)

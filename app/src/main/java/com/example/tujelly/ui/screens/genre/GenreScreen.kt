@@ -46,9 +46,15 @@ fun GenreScreen(
     onBack: () -> Unit,
     onPlayMedia: (String) -> Unit,
     onDetailMedia: (String) -> Unit,
+    onNavigateHome: () -> Unit = onBack,
+    onOpenMedusa: () -> Unit = {},
+    onOpenFavorites: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: GenreViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current
 
     LaunchedEffect(genreName) {
         viewModel.loadGenreFeed(genreName)
@@ -83,18 +89,6 @@ fun GenreScreen(
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyLarge
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = onBack,
-                        colors = ButtonDefaults.colors(
-                            containerColor = Color(0xFF1E2034),
-                            contentColor = Color.White,
-                            focusedContainerColor = Color(0xFF4F46E5),
-                            focusedContentColor = Color.White
-                        )
-                    ) {
-                        Text("Volver", fontWeight = FontWeight.Bold)
-                    }
                 }
             }
         }
@@ -110,66 +104,35 @@ fun GenreScreen(
                     )
             ) {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    // Header Bar
+                    // Universal Persistent TV TopBar
                     item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 48.dp, vertical = 20.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
+                        com.example.tujelly.ui.components.TvTopBar(
+                            selectedTab = com.example.tujelly.ui.components.TvNavTab.NONE,
+                            onNavigateHome = onNavigateHome,
+                            onOpenMedusa = onOpenMedusa,
+                            onOpenFavorites = onOpenFavorites,
+                            onOpenSearch = onOpenSearch,
+                            onOpenSettings = onOpenSettings,
+                            accentColorKey = com.example.tujelly.data.local.ACCENT_CYAN,
+                            buttonStyleKey = com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY,
+                            isMonochrome = isMonochrome,
+                            titleBadge = {
                                 Box(
                                     modifier = Modifier
-                                        .background(Color(0xFF1E2034), RoundedCornerShape(4.dp))
-                                        .border(1.dp, Color(0xFF312E81), RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                        .background(Color(0x22FFFFFF), RoundedCornerShape(16.dp))
+                                        .border(0.75.dp, Color(0x33FFFFFF), RoundedCornerShape(16.dp))
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
                                 ) {
                                     Text(
-                                        text = "GÉNERO",
-                                        color = Color(0xFFC7D2FE),
+                                        text = "GÉNERO • ${state.genreName.uppercase()}",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 10.sp,
                                         letterSpacing = 0.5.sp
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = state.genreName,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = 1.sp
-                                )
-                                Text(
-                                    text = "Explorar catálogo de ${state.genreName} disponible en tu servidor",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF94A3B8)
-                                )
                             }
-
-                            Button(
-                                onClick = onBack,
-                                colors = ButtonDefaults.colors(
-                                    containerColor = Color(0xFF1E2034),
-                                    contentColor = Color.White,
-                                    focusedContainerColor = Color(0xFF4F46E5),
-                                    focusedContentColor = Color.White
-                                )
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Inicio", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-                        }
+                        )
                     }
 
                     // Hero Banner for focused item

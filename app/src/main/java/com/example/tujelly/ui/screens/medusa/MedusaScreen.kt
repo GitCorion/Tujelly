@@ -50,6 +50,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -70,6 +71,8 @@ import com.example.tujelly.R
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
 import com.example.tujelly.data.local.BUTTON_STYLE_TEXT_ONLY
 import com.example.tujelly.ui.components.MediaCard
+import com.example.tujelly.ui.components.TvNavTab
+import com.example.tujelly.ui.components.TvTopBar
 import com.example.tujelly.ui.theme.TvAccent
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -117,224 +120,19 @@ fun MedusaScreen(
             .background(Color(0xFF060709)) // Negro estelar puro
     ) {
         // =========================================================================
-        // CABECERA IDÉNTICA Y HOMOGÉNEA CON HOME
+        // CABECERA UNIVERSAL HOMOGÉNEA CON TODAS LAS PANTALLAS
         // =========================================================================
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 48.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .padding(end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val headerLogo = if (isMonochrome) {
-                    R.drawable.ic_tujelly_header_mono
-                } else {
-                    R.drawable.ic_tujelly_header
-                }
-                Image(
-                    painter = painterResource(id = headerLogo),
-                    contentDescription = "TuJelly",
-                    modifier = Modifier.height(38.dp)
-                )
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.wrapContentWidth()
-            ) {
-                Button(
-                    onClick = onNavigateHome,
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x0AFFFFFF),
-                        contentColor = Color(0xFF64748B),
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            Icon(
-                                imageVector = Icons.Rounded.Home,
-                                contentDescription = "Inicio",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Inicio",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-
-                var isMedusaFocused by remember { mutableStateOf(false) }
-                Button(
-                    onClick = { /* Ya en Medusa */ },
-                    modifier = Modifier.onFocusChanged { isMedusaFocused = it.isFocused },
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x24FFFFFF),
-                        contentColor = Color.White,
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    ),
-                    border = ButtonDefaults.border(
-                        border = Border(
-                            border = BorderStroke(1.dp, focusColor.copy(alpha = 0.6f)),
-                            shape = RoundedCornerShape(20.dp)
-                        ),
-                        focusedBorder = Border(
-                            border = BorderStroke(2.dp, focusColor),
-                            shape = RoundedCornerShape(20.dp)
-                        )
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            val medusaSymbol = if (isMonochrome) {
-                                if (isMedusaFocused) R.drawable.ic_jelly_symbol_mono_dark else R.drawable.ic_jelly_symbol_mono
-                            } else {
-                                R.drawable.ic_jelly_symbol
-                            }
-                            Image(
-                                painter = painterResource(id = medusaSymbol),
-                                contentDescription = "Medusa",
-                                modifier = Modifier.size(16.dp),
-                                colorFilter = if (isMonochrome) {
-                                    if (isMedusaFocused) androidx.compose.ui.graphics.ColorFilter.tint(focusContent) else androidx.compose.ui.graphics.ColorFilter.tint(Color.White)
-                                } else null
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Medusa",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = onOpenFavorites,
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x0AFFFFFF),
-                        contentColor = Color(0xFF64748B),
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            Icon(
-                                imageVector = Icons.Rounded.Favorite,
-                                contentDescription = "Favoritos",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Favoritos",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = onOpenSearch,
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x0AFFFFFF),
-                        contentColor = Color(0xFF64748B),
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            Icon(
-                                imageVector = Icons.Rounded.Search,
-                                contentDescription = "Buscar",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Buscar",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = onOpenSettings,
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x0AFFFFFF),
-                        contentColor = Color(0xFF64748B),
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            Icon(
-                                imageVector = Icons.Rounded.Tune,
-                                contentDescription = "Ajustes",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Ajustes",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        TvTopBar(
+            selectedTab = TvNavTab.MEDUSA,
+            onNavigateHome = onNavigateHome,
+            onOpenMedusa = { /* Ya en Medusa */ },
+            onOpenFavorites = onOpenFavorites,
+            onOpenSearch = onOpenSearch,
+            onOpenSettings = onOpenSettings,
+            accentColorKey = accentColorKey,
+            buttonStyleKey = buttonStyleKey,
+            isMonochrome = isMonochrome
+        )
 
         // =========================================================================
         // CUERPO: CONSTELACIÓN ESTELAR DE IDEAS ("DE MÁS A MENOS")
@@ -373,56 +171,70 @@ fun MedusaScreen(
                     val w = maxWidth
                     val h = maxHeight
 
-                    // 1. Trazos celestes conectores y líneas guía congregadas
+                    // 1. Trazos celestes conectores y tentáculos fluidos
                     MedusaConstellationView(
                         modifier = Modifier.fillMaxSize(),
                         allStars = uiState.allStars,
-                        visibleStarIds = uiState.visibleStarIds,
-                        selectedStarIds = uiState.selectedStarIds,
+                        selectedPath = uiState.selectedPath,
+                        activeBranchIds = uiState.activeBranchIds,
                         starPositions = uiState.starPositions,
                         accentColor = medusaColor
                     )
 
-                    // 2. Renderizado de estrellas puras (flujo "de más a menos")
+                    // 2. Renderizado de estrellas puras
                     uiState.allStars.forEach { star ->
                         val isVisible = uiState.visibleStarIds.contains(star.id)
-                        val isSelected = uiState.selectedStarIds.contains(star.id)
+                        val isInPath = uiState.selectedPath.contains(star.id)
+                        val isActiveNode = uiState.selectedPath.lastOrNull() == star.id
+                        val isAncestor = isInPath && !isActiveNode
 
                         val targetPos = uiState.starPositions[star.id] ?: Pair(star.baseNormX, star.baseNormY)
 
                         val animatedNormX by animateFloatAsState(
                             targetValue = targetPos.first,
-                            animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                            animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
                             label = "starX_${star.id}"
                         )
                         val animatedNormY by animateFloatAsState(
                             targetValue = targetPos.second,
-                            animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                            animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
                             label = "starY_${star.id}"
                         )
+                        val targetAlpha = if (isVisible) 1f else 0f
+                        val animatedAlpha by animateFloatAsState(
+                            targetValue = targetAlpha,
+                            animationSpec = tween(durationMillis = 400),
+                            label = "starAlpha_${star.id}"
+                        )
 
-                        if (isVisible) {
+                        if (animatedAlpha > 0.02f) {
                             val posX = w * animatedNormX
                             val posY = h * animatedNormY
 
-                            val starWidth = 145.dp
-                            val starHeight = 38.dp
-                            val offsetX = if (star.textOnLeft) posX - 125.dp else posX - 20.dp
-                            val offsetY = posY - 19.dp
+                            val starWidth = if (isAncestor) 28.dp else 120.dp
+                            val starHeight = if (isAncestor) 28.dp else 32.dp
+                            val offsetX = posX - (starWidth / 2)
+                            val offsetY = posY - (starHeight / 2)
 
-                            ConstellationAstroStar(
-                                star = star,
-                                isSelected = isSelected,
-                                accentColor = medusaColor,
-                                onClick = {
-                                    Log.d("MedusaScreen", "Direct click on star: ${star.id}")
-                                    viewModel.toggleStar(star.id)
-                                },
+                            Box(
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
                                     .offset(x = offsetX, y = offsetY)
                                     .size(width = starWidth, height = starHeight)
-                            )
+                                    .graphicsLayer { alpha = animatedAlpha }
+                            ) {
+                                ConstellationAstroStar(
+                                    star = star,
+                                    isSelected = isInPath,
+                                    isAncestor = isAncestor,
+                                    accentColor = medusaColor,
+                                    onClick = {
+                                        Log.d("MedusaScreen", "Direct click on star: ${star.id}")
+                                        viewModel.toggleStar(star.id)
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                     }
                 }
@@ -453,11 +265,11 @@ fun MedusaScreen(
                                         .background(medusaColor, CircleShape)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                val activeWords = uiState.allStars
-                                    .filter { uiState.selectedStarIds.contains(it.id) }
-                                    .joinToString(" • ") { it.label }
+                                val activeWords = uiState.selectedPath
+                                    .mapNotNull { id -> uiState.starMap[id]?.label }
+                                    .joinToString(" → ")
                                 Text(
-                                    text = "Constelación Congregada: $activeWords",
+                                    text = "Tentáculo Formado: $activeWords",
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontFamily = FontFamily.Serif,
@@ -466,6 +278,15 @@ fun MedusaScreen(
                                     maxLines = 1,
                                     softWrap = false
                                 )
+                                if (uiState.recommendations.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "(${uiState.recommendations.size} títulos)",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Serif
+                                    )
+                                }
                             }
 
                             Spacer(modifier = Modifier.width(16.dp))
@@ -482,12 +303,12 @@ fun MedusaScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
                                         imageVector = Icons.Rounded.Refresh,
-                                        contentDescription = "Reiniciar",
+                                        contentDescription = "Reiniciar Tentáculo",
                                         modifier = Modifier.size(13.dp)
                                     )
                                     Spacer(modifier = Modifier.width(5.dp))
                                     Text(
-                                        text = "Reiniciar Sky",
+                                        text = "Reiniciar Tentáculo",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
@@ -514,7 +335,7 @@ fun MedusaScreen(
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        text = "Alineando ideas congregadas con tu catálogo...",
+                                        text = "Alineando tentáculo con tu catálogo...",
                                         color = Color(0xFF94A3B8),
                                         fontSize = 13.sp,
                                         fontFamily = FontFamily.Serif
@@ -529,7 +350,7 @@ fun MedusaScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "No se encontraron títulos alineados con esta combinación en tu biblioteca.",
+                                    text = "No se encontraron títulos alineados con este tentáculo en tu biblioteca.",
                                     color = Color(0xFF94A3B8),
                                     fontSize = 13.sp,
                                     fontFamily = FontFamily.Serif,
@@ -563,7 +384,7 @@ fun MedusaScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "✦ Selecciona una o más ideas de la constelación para agrupar y descubrir títulos",
+                            text = "✦ Navega por las estrellas celestes para despertar un tentáculo y descubrir títulos afines",
                             color = Color(0x60FFFFFF),
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Serif,
@@ -586,73 +407,91 @@ fun MedusaScreen(
 private fun ConstellationAstroStar(
     star: MedusaStar,
     isSelected: Boolean,
+    isAncestor: Boolean = false,
     accentColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
-    Surface(
-        onClick = onClick,
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = Color(0x18FFFFFF),
-            pressedContainerColor = Color(0x30FFFFFF)
-        ),
-        border = ClickableSurfaceDefaults.border(
-            border = Border.None,
-            focusedBorder = Border(BorderStroke(1.dp, Color(0x60FFFFFF)))
-        ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
-        modifier = modifier
-            .zIndex(if (isSelected || isFocused) 5f else 2f)
-            .onFocusChanged { isFocused = it.isFocused }
-            .pointerInput(star.id) {
-                detectTapGestures {
-                    Log.d("MedusaScreen", "Pointer tap gesture on star: ${star.id}")
-                    onClick()
+    if (isAncestor) {
+        // Perla sináptica elegante sobre el cordón del tentáculo (no satura ni se superpone)
+        Surface(
+            onClick = onClick,
+            shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
+            colors = ClickableSurfaceDefaults.colors(
+                containerColor = accentColor.copy(alpha = 0.25f),
+                focusedContainerColor = accentColor.copy(alpha = 0.60f),
+                pressedContainerColor = accentColor.copy(alpha = 0.80f)
+            ),
+            border = ClickableSurfaceDefaults.border(
+                border = Border(BorderStroke(1.dp, accentColor.copy(alpha = 0.70f)), shape = CircleShape),
+                focusedBorder = Border(BorderStroke(2.dp, Color.White), shape = CircleShape)
+            ),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.30f),
+            modifier = modifier
+                .zIndex(if (isFocused) 10f else 4f)
+                .onFocusChanged { isFocused = it.isFocused }
+                .pointerInput(star.id) {
+                    detectTapGestures { onClick() }
                 }
-            }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = if (star.textOnLeft) Arrangement.End else Arrangement.Start
         ) {
-            if (star.textOnLeft) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                StarPoint(isFocused = isFocused, isSelected = true, accentColor = accentColor)
+            }
+        }
+    } else {
+        // Cápsula activa o rama interactiva completa
+        Surface(
+            onClick = onClick,
+            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(16.dp)),
+            colors = ClickableSurfaceDefaults.colors(
+                containerColor = when {
+                    isSelected -> accentColor.copy(alpha = 0.24f)
+                    else -> Color(0x10FFFFFF)
+                },
+                focusedContainerColor = accentColor.copy(alpha = 0.35f),
+                pressedContainerColor = accentColor.copy(alpha = 0.50f)
+            ),
+            border = ClickableSurfaceDefaults.border(
+                border = if (isSelected) {
+                    Border(BorderStroke(1.2.dp, accentColor.copy(alpha = 0.85f)), shape = RoundedCornerShape(16.dp))
+                } else {
+                    Border(BorderStroke(0.8.dp, Color(0x22FFFFFF)), shape = RoundedCornerShape(16.dp))
+                },
+                focusedBorder = Border(BorderStroke(1.8.dp, Color.White), shape = RoundedCornerShape(16.dp))
+            ),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.10f),
+            modifier = modifier
+                .zIndex(if (isFocused) 10f else if (isSelected) 5f else 2f)
+                .onFocusChanged { isFocused = it.isFocused }
+                .pointerInput(star.id) {
+                    detectTapGestures { onClick() }
+                }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                StarPoint(isFocused = isFocused, isSelected = isSelected, accentColor = accentColor)
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = star.label,
                     color = when {
                         isFocused -> Color.White
-                        isSelected -> Color(0xFFF1F5F9)
-                        else -> Color(0xBBFFFFFF)
+                        isSelected -> Color(0xFFF8FAFC)
+                        else -> Color(0xDDFFFFFF)
                     },
-                    fontSize = if (isFocused) 14.sp else 13.sp,
+                    fontSize = if (isFocused) 12.5.sp else 12.sp,
                     fontFamily = FontFamily.Serif,
-                    fontWeight = if (isFocused || isSelected) FontWeight.Bold else FontWeight.Normal,
-                    letterSpacing = 0.3.sp,
-                    maxLines = 1,
-                    softWrap = false
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                StarPoint(isFocused = isFocused, isSelected = isSelected, accentColor = accentColor)
-            } else {
-                StarPoint(isFocused = isFocused, isSelected = isSelected, accentColor = accentColor)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = star.label,
-                    color = when {
-                        isFocused -> Color.White
-                        isSelected -> Color(0xFFF1F5F9)
-                        else -> Color(0xBBFFFFFF)
-                    },
-                    fontSize = if (isFocused) 14.sp else 13.sp,
-                    fontFamily = FontFamily.Serif,
-                    fontWeight = if (isFocused || isSelected) FontWeight.Bold else FontWeight.Normal,
-                    letterSpacing = 0.3.sp,
+                    fontWeight = if (isFocused || isSelected) FontWeight.Bold else FontWeight.Medium,
+                    letterSpacing = 0.25.sp,
                     maxLines = 1,
                     softWrap = false
                 )

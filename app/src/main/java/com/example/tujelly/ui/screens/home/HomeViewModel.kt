@@ -69,6 +69,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var isFeedLoading = false
 
     init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val count = mediaRepository.getLocalCount()
+            MediaRepository.checkActiveWorkerSync(application, count)
+        }
         viewModelScope.launch {
             var wasSyncing = false
             MediaRepository.syncProgress.collect { progress ->

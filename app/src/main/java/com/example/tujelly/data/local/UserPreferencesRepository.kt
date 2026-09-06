@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "tujelly_settings")
@@ -55,7 +57,7 @@ data class UserPreferences(
         get() = indicatorTheme == INDICATOR_THEME_MONOCHROME || accentColor == ACCENT_WHITE
 }
 
-class UserPreferencesRepository(private val context: Context) {
+class UserPreferencesRepository(val context: Context) {
 
     private object Keys {
         val JELLYFIN_SERVER_URL = stringPreferencesKey("jellyfin_server_url")
@@ -73,6 +75,9 @@ class UserPreferencesRepository(private val context: Context) {
         val INDICATOR_THEME = stringPreferencesKey("indicator_theme")
         val PLATFORM_LOGO_STYLE = stringPreferencesKey("platform_logo_style")
         val JELLYFIN_LAST_SYNC = stringPreferencesKey("jellyfin_last_sync")
+        val JELLYFIN_SYNC_CHECKPOINT_VIEW_INDEX = intPreferencesKey("jellyfin_sync_checkpoint_view_index")
+        val JELLYFIN_SYNC_CHECKPOINT_OFFSET = intPreferencesKey("jellyfin_sync_checkpoint_offset")
+        val JELLYFIN_SYNC_CHECKPOINT_TOTAL = intPreferencesKey("jellyfin_sync_checkpoint_total")
         val SELECTED_PLATFORMS = stringPreferencesKey("selected_platforms")
         val HAS_COMPLETED_ONBOARDING = stringPreferencesKey("has_completed_onboarding")
     }
@@ -221,5 +226,30 @@ class UserPreferencesRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[Keys.HAS_COMPLETED_ONBOARDING] = true.toString()
         }
+    }
+
+    suspend fun saveSyncCheckpoint(viewIndex: Int, offset: Int, totalSynced: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.JELLYFIN_SYNC_CHECKPOINT_VIEW_INDEX] = viewIndex
+            prefs[Keys.JELLYFIN_SYNC_CHECKPOINT_OFFSET] = offset
+            prefs[Keys.JELLYFIN_SYNC_CHECKPOINT_TOTAL] = totalSynced
+        }
+    }
+
+    suspend fun clearSyncCheckpoint() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(Keys.JELLYFIN_SYNC_CHECKPOINT_VIEW_INDEX)
+            prefs.remove(Keys.JELLYFIN_SYNC_CHECKPOINT_OFFSET)
+            prefs.remove(Keys.JELLYFIN_SYNC_CHECKPOINT_TOTAL)
+        }
+    }
+
+    suspend fun getSyncCheckpoint(): Triple<Int, Int, Int> {
+        val prefs = context.dataStore.data.first()
+        return Triple(
+            prefs[Keys.JELLYFIN_SYNC_CHECKPOINT_VIEW_INDEX] ?: 0,
+            prefs[Keys.JELLYFIN_SYNC_CHECKPOINT_OFFSET] ?: 0,
+            prefs[Keys.JELLYFIN_SYNC_CHECKPOINT_TOTAL] ?: 0
+        )
     }
 }

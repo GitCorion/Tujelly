@@ -567,6 +567,9 @@ class GetHomeFeedUseCase(
         val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
         val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
 
+        val effectiveLogoId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
+        val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/$effectiveLogoId/Images/Logo?$authParam" else null
+
         val isContinueWatching = source == MediaSource.JELLYFIN && playbackPositionTicks > 0
         val effectiveTitle = if (type.equals("Episode", ignoreCase = true) && !seriesName.isNullOrEmpty()) {
             if (isContinueWatching) {
@@ -607,6 +610,7 @@ class GetHomeFeedUseCase(
             type = effectiveType,
             posterUrl = posterUrl,
             backdropUrl = backdropUrl,
+            logoUrl = logoUrl,
             rating = effectiveRating,
             year = productionYear,
             source = source,

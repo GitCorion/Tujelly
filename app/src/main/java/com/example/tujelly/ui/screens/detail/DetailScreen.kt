@@ -99,7 +99,6 @@ fun DetailScreen(
     val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current || isMonochromeFlow
 
     val playButtonFocusRequester = remember { FocusRequester() }
-    val backButtonFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(uiState) {
         if (uiState is DetailUiState.Success) {
@@ -204,42 +203,11 @@ fun DetailScreen(
                         )
                 )
 
-                // Floating Back Button at top-left (Clean Android TV standard)
-                Button(
-                    onClick = onBack,
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x18FFFFFF),
-                        contentColor = Color.White,
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    ),
-                    shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(start = 48.dp, top = 26.dp)
-                        .focusRequester(backButtonFocusRequester)
-                        .focusProperties {
-                            down = playButtonFocusRequester
-                        }
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        if (state.buttonStyle != BUTTON_STYLE_ICONS_ONLY) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Volver", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-
                 // Main Content Layout
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(start = 48.dp, end = 48.dp, top = 74.dp, bottom = 24.dp),
+                        .padding(start = 48.dp, end = 48.dp, top = 40.dp, bottom = 24.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Poster Card
@@ -409,9 +377,6 @@ fun DetailScreen(
                                 shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
                                 modifier = Modifier
                                     .focusRequester(playButtonFocusRequester)
-                                    .focusProperties {
-                                        up = backButtonFocusRequester
-                                    }
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     if (showIcons) {

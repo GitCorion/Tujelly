@@ -13,6 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.runtime.Composable
@@ -23,7 +29,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -52,24 +62,62 @@ fun EpisodeCard(
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val focusBorderColor = TvAccent.getColor(accentColor)
+    val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
+    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current ||
+            indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
+    val activeGlowColor = if (isMonochrome) Color.White else focusBorderColor
 
-    Card(
-        onClick = onClick,
-        colors = CardDefaults.colors(
-            containerColor = if (isFocused) Color(0xFF1E222D) else Color(0xFF111319),
-            focusedContainerColor = Color(0xFF1E222D)
+    val infiniteTransition = rememberInfiniteTransition(label = "EpisodeCardGlow")
+    val pulseGlow by infiniteTransition.animateFloat(
+        initialValue = 0.50f,
+        targetValue = 0.90f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
         ),
-        scale = CardDefaults.scale(focusedScale = 1.05f),
+        label = "episodePulseGlow"
+    )
+
+    Box(
         modifier = modifier
-            .width(220.dp)
-            .onFocusChanged { isFocused = it.isFocused }
-            .clip(RoundedCornerShape(10.dp))
-            .border(
-                width = if (isFocused) 2.dp else 0.75.dp,
-                color = if (isFocused) focusBorderColor else Color(0x18FFFFFF),
-                shape = RoundedCornerShape(10.dp)
-            )
+            .drawBehind {
+                if (isFocused) {
+                    val glowRadius = size.width * 0.75f
+                    val glowCenter = Offset(size.width / 2f, size.height * 0.45f)
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                activeGlowColor.copy(alpha = 0.42f * pulseGlow),
+                                activeGlowColor.copy(alpha = 0.20f * pulseGlow),
+                                activeGlowColor.copy(alpha = 0.05f * pulseGlow),
+                                Color.Transparent
+                            ),
+                            center = glowCenter,
+                            radius = glowRadius
+                        ),
+                        topLeft = Offset(-24.dp.toPx(), -24.dp.toPx()),
+                        size = Size(size.width + 48.dp.toPx(), size.height + 48.dp.toPx())
+                    )
+                }
+            }
     ) {
+        Card(
+            onClick = onClick,
+            colors = CardDefaults.colors(
+                containerColor = if (isFocused) Color(0xFF1E222D) else Color(0xFF111319),
+                focusedContainerColor = Color(0xFF1E222D)
+            ),
+            scale = CardDefaults.scale(focusedScale = 1.0f),
+            modifier = Modifier
+                .width(220.dp)
+                .onFocusChanged { isFocused = it.isFocused }
+                .clip(RoundedCornerShape(10.dp))
+                .border(
+                    width = if (isFocused) 1.5.dp else 0.5.dp,
+                    color = if (isFocused) focusBorderColor else Color(0x18FFFFFF),
+                    shape = RoundedCornerShape(10.dp)
+                )
+        ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             // Thumbnail
             Box(
@@ -186,3 +234,5 @@ fun EpisodeCard(
         }
     }
 }
+}
+

@@ -49,6 +49,11 @@ fun BrandScreen(
     onBack: () -> Unit,
     onPlayMedia: (String) -> Unit,
     onDetailMedia: (String) -> Unit,
+    onNavigateHome: () -> Unit = onBack,
+    onOpenMedusa: () -> Unit = {},
+    onOpenFavorites: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: BrandViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -91,18 +96,6 @@ fun BrandScreen(
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyLarge
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = onBack,
-                        colors = ButtonDefaults.colors(
-                            containerColor = Color(0xFF1E2034),
-                            contentColor = Color.White,
-                            focusedContainerColor = focusColor,
-                            focusedContentColor = focusContent
-                        )
-                    ) {
-                        Text("Volver", fontWeight = FontWeight.Bold)
-                    }
                 }
             }
         }
@@ -121,69 +114,43 @@ fun BrandScreen(
                     .background(Brush.verticalGradient(colors = gradientColors))
             ) {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    // Header Bar
+                    // Universal Persistent TV TopBar
                     item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 48.dp, vertical = 20.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
+                        com.example.tujelly.ui.components.TvTopBar(
+                            selectedTab = com.example.tujelly.ui.components.TvNavTab.NONE,
+                            onNavigateHome = onNavigateHome,
+                            onOpenMedusa = onOpenMedusa,
+                            onOpenFavorites = onOpenFavorites,
+                            onOpenSearch = onOpenSearch,
+                            onOpenSettings = onOpenSettings,
+                            accentColorKey = accentColorKey,
+                            buttonStyleKey = buttonStyleKey,
+                            isMonochrome = isMonochrome,
+                            titleBadge = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(Color(0xFF131422))
-                                        .border(1.dp, Color(0xFF222438), RoundedCornerShape(10.dp))
-                                        .padding(8.dp),
-                                    contentAlignment = Alignment.Center
+                                        .background(Color(0x22FFFFFF), RoundedCornerShape(16.dp))
+                                        .border(0.75.dp, Color(0x33FFFFFF), RoundedCornerShape(16.dp))
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
                                 ) {
                                     val iconRes = if (isMonochrome) brand.iconMonoRes else brand.iconRes
                                     Image(
                                         painter = painterResource(id = iconRes),
-                                        contentDescription = brand.name
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column {
-                                    Text(
-                                        text = brand.name,
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Black,
-                                        letterSpacing = 1.sp
-                                    )
-                                    Text(
-                                        text = "Catálogo oficial disponible en tu servidor Jellyfin",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFF94A3B8)
-                                    )
-                                }
-                            }
-
-                            Button(
-                                onClick = onBack,
-                                colors = ButtonDefaults.colors(
-                                    containerColor = Color(0xFF1E2034),
-                                    contentColor = Color.White,
-                                    focusedContainerColor = focusColor,
-                                    focusedContentColor = focusContent
-                                )
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = null,
-                                        tint = Color.White,
+                                        contentDescription = brand.name,
                                         modifier = Modifier.size(16.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Inicio", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = brand.name.uppercase(),
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.5.sp
+                                    )
                                 }
                             }
-                        }
+                        )
                     }
 
                     // Hero Banner for focused item

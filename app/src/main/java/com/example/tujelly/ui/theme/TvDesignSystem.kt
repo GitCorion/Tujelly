@@ -155,4 +155,8 @@ val LocalIsMonochromeTheme = androidx.compose.runtime.compositionLocalOf {
     false
 }
 
+val LocalAccentColor = androidx.compose.runtime.compositionLocalOf {
+    com.example.tujelly.data.local.ACCENT_CYAN
+}
+
 

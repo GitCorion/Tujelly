@@ -83,84 +83,49 @@ fun SearchScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 48.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                TvPill(
-                    text = "BUSCADOR",
-                    containerColor = Color(0x18FFFFFF),
-                    textColor = Color(0xFFE2E8F0),
-                    borderColor = Color(0x22FFFFFF),
-                    fontSizeSp = 11,
-                    horizontalPadDp = 10.dp,
-                    verticalPadDp = 6.dp
-                )
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                OutlinedTextField(
-                    value = uiState.query,
-                    onValueChange = { viewModel.onQueryChange(it) },
-                    singleLine = true,
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    placeholder = {
-                        Text("Buscar película o serie...", color = Color(0xFF64748B), fontSize = 15.sp)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth(0.8f)
-                        .focusRequester(focusRequester),
-                    textStyle = TextStyle(color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0x18FFFFFF),
-                        unfocusedContainerColor = Color(0x10FFFFFF),
-                        focusedBorderColor = Color.White,
-                        unfocusedBorderColor = Color(0x22FFFFFF),
-                        cursorColor = Color.White
-                    )
-                )
-            }
+            TvPill(
+                text = "BUSCADOR",
+                containerColor = Color(0x18FFFFFF),
+                textColor = Color(0xFFE2E8F0),
+                borderColor = Color(0x22FFFFFF),
+                fontSizeSp = 11,
+                horizontalPadDp = 10.dp,
+                verticalPadDp = 6.dp
+            )
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            Button(
-                onClick = onBack,
-                colors = ButtonDefaults.colors(
-                    containerColor = Color(0x14FFFFFF),
-                    contentColor = Color.White,
-                    focusedContainerColor = focusColor,
-                    focusedContentColor = focusContent
+            OutlinedTextField(
+                value = uiState.query,
+                onValueChange = { viewModel.onQueryChange(it) },
+                singleLine = true,
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                placeholder = {
+                    Text("Buscar película o serie...", color = Color(0xFF64748B), fontSize = 15.sp)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+                textStyle = TextStyle(color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = Color(0x18FFFFFF),
+                    unfocusedContainerColor = Color(0x10FFFFFF),
+                    focusedBorderColor = Color.White,
+                    unfocusedBorderColor = Color(0x22FFFFFF),
+                    cursorColor = Color.White
                 )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    if (showIcons) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Inicio",
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                    if (showText) {
-                        if (showIcons) Spacer(modifier = Modifier.width(6.dp))
-                        Text("Inicio", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-                    }
-                }
-            }
+            )
         }
 
         LazyColumn(modifier = Modifier.fillMaxSize()) {

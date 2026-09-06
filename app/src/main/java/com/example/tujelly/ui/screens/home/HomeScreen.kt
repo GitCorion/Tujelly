@@ -17,9 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewResponder
+import androidx.compose.foundation.relocation.bringIntoViewResponder
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Dns
@@ -35,14 +38,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Border
@@ -85,6 +91,7 @@ fun HomeScreen(
     val focusColor = TvAccent.getColor(accentColorKey)
     val focusContent = TvAccent.getFocusedContentColor(accentColorKey)
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
     val syncProgress by viewModel.syncProgress.collectAsState()
     val localMediaCount by viewModel.localMediaCount.collectAsState()
@@ -94,318 +101,21 @@ fun HomeScreen(
             .fillMaxSize()
             .padding(top = 8.dp)
     ) {
-        // Luxury TV Top Bar Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 48.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .padding(end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val headerLogo = if (isMonochrome) {
-                    com.example.tujelly.R.drawable.ic_tujelly_header_mono
-                } else {
-                    com.example.tujelly.R.drawable.ic_tujelly_header
-                }
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = headerLogo),
-                    contentDescription = "TuJelly",
-                    modifier = Modifier.height(42.dp)
-                )
+        // Universal Persistent TV TopBar
+        com.example.tujelly.ui.components.TvTopBar(
+            selectedTab = com.example.tujelly.ui.components.TvNavTab.HOME,
+            onNavigateHome = { /* Ya en Inicio */ },
+            onOpenMedusa = onOpenMedusa,
+            onOpenFavorites = onOpenFavorites,
+            onOpenSearch = onOpenSearch,
+            onOpenSettings = onOpenSettings,
+            accentColorKey = accentColorKey,
+            buttonStyleKey = buttonStyleKey,
+            isMonochrome = isMonochrome,
+            syncProgress = syncProgress,
+            localMediaCount = localMediaCount
+        )
 
-                if (syncProgress.isSyncing) {
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .background(if (isMonochrome) Color(0x22FFFFFF) else Color(0x2238BDF8), RoundedCornerShape(16.dp))
-                            .border(0.75.dp, if (isMonochrome) Color(0x55FFFFFF) else Color(0x5538BDF8), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        androidx.compose.material3.CircularProgressIndicator(
-                            color = if (isMonochrome) Color.White else Color(0xFF38BDF8),
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(11.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        val currentNum = syncProgress.current.coerceAtLeast(localMediaCount)
-                        val progressText = if (syncProgress.total > 0) {
-                            val displayCur = currentNum.coerceAtMost(syncProgress.total)
-                            val formattedCur = String.format("%,d", displayCur).replace(',', '.')
-                            val formattedTot = String.format("%,d", syncProgress.total).replace(',', '.')
-                            "$formattedCur / $formattedTot"
-                        } else if (localMediaCount > 0) {
-                            "${String.format("%,d", localMediaCount).replace(',', '.')} cargados..."
-                        } else {
-                            "Conectando..."
-                        }
-                        Text(
-                            text = "Sincronizando: $progressText",
-                            color = Color(0xFFE2E8F0),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            softWrap = false
-                        )
-                    }
-                } else if (syncProgress.message.isNotBlank() && (syncProgress.message.contains("401") || syncProgress.message.contains("Error") || syncProgress.message.contains("caducada", ignoreCase = true))) {
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .background(Color(0x30EF4444), RoundedCornerShape(16.dp))
-                            .border(0.75.dp, Color(0x70EF4444), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.WarningAmber,
-                            contentDescription = null,
-                            tint = Color(0xFFFCA5A5),
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = syncProgress.message,
-                            color = Color(0xFFFEE2E2),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            softWrap = false
-                        )
-                    }
-                } else if (localMediaCount > 0) {
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .background(Color(0x18FFFFFF), RoundedCornerShape(16.dp))
-                            .border(0.75.dp, Color(0x22FFFFFF), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Movie,
-                            contentDescription = null,
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        val formattedCount = String.format("%,d", localMediaCount).replace(',', '.')
-                        Text(
-                            text = "$formattedCount títulos",
-                            color = Color(0xFFCBD5E1),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                }
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.wrapContentWidth()
-            ) {
-                // Discover (active tab)
-                Button(
-                    onClick = { /* Already on Home */ },
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x24FFFFFF),
-                        contentColor = Color.White,
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    ),
-                    border = ButtonDefaults.border(
-                        border = Border(
-                            border = BorderStroke(1.dp, focusColor.copy(alpha = 0.6f)),
-                            shape = RoundedCornerShape(20.dp)
-                        ),
-                        focusedBorder = Border(
-                            border = BorderStroke(2.dp, focusColor),
-                            shape = RoundedCornerShape(20.dp)
-                        )
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            Icon(
-                                imageVector = Icons.Rounded.Home,
-                                contentDescription = "Inicio",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Inicio",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-
-                // Medusa Button
-                var isMedusaFocused by remember { mutableStateOf(false) }
-                Button(
-                    onClick = onOpenMedusa,
-                    modifier = Modifier.onFocusChanged { isMedusaFocused = it.isFocused },
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x0AFFFFFF),
-                        contentColor = Color(0xFF64748B),
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            val medusaSymbol = if (isMonochrome) {
-                                if (isMedusaFocused) com.example.tujelly.R.drawable.ic_jelly_symbol_mono_dark else com.example.tujelly.R.drawable.ic_jelly_symbol_mono
-                            } else {
-                                com.example.tujelly.R.drawable.ic_jelly_symbol
-                            }
-                            androidx.compose.foundation.Image(
-                                painter = androidx.compose.ui.res.painterResource(id = medusaSymbol),
-                                contentDescription = "Medusa",
-                                modifier = Modifier.size(16.dp),
-                                colorFilter = if (isMonochrome) {
-                                    if (isMedusaFocused) androidx.compose.ui.graphics.ColorFilter.tint(focusContent) else androidx.compose.ui.graphics.ColorFilter.tint(Color(0xFF64748B))
-                                } else null
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Medusa",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-
-                // Favorites Button (inactive tab: muted slate, translucent)
-                Button(
-                    onClick = onOpenFavorites,
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x0AFFFFFF),
-                        contentColor = Color(0xFF64748B),
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            Icon(
-                                imageVector = Icons.Rounded.Favorite,
-                                contentDescription = "Favoritos",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Favoritos",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-
-                // Search Button (inactive tab: muted slate, translucent)
-                Button(
-                    onClick = onOpenSearch,
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x0AFFFFFF),
-                        contentColor = Color(0xFF64748B),
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            Icon(
-                                imageVector = Icons.Rounded.Search,
-                                contentDescription = "Buscar",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Buscar",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-
-                // Settings Button (inactive tab: muted slate, translucent)
-                Button(
-                    onClick = onOpenSettings,
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color(0x0AFFFFFF),
-                        contentColor = Color(0xFF64748B),
-                        focusedContainerColor = focusColor,
-                        focusedContentColor = focusContent
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (showTopIcons) {
-                            Icon(
-                                imageVector = Icons.Rounded.Tune,
-                                contentDescription = "Ajustes",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (showTopText) {
-                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Ajustes",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                }
-            }
-        }
 
         when (val state = uiState) {
             is HomeUiState.Loading -> {
@@ -563,13 +273,41 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     item {
-                        HeroBanner(
-                            item = state.focusedItem,
-                            onPlayClick = { item -> onPlayMedia(item.id) },
-                            onDetailClick = { item -> onDetailMedia(item.id) },
-                            accentColor = accentColorKey,
-                            buttonStyle = buttonStyleKey
-                        )
+                        @OptIn(ExperimentalFoundationApi::class)
+                        val heroBringIntoViewResponder = remember(listState) {
+                            object : BringIntoViewResponder {
+                                override fun calculateRectForParent(localRect: Rect): Rect {
+                                    // Retornar Rect.Zero indica a la LazyColumn que el banner ya está 100% visible
+                                    // y evita que haga scroll hacia arriba cortando la cabecera al hacer foco en sus botones.
+                                    return Rect.Zero
+                                }
+
+                                override suspend fun bringChildIntoView(localRect: () -> Rect?) {
+                                    listState.scrollToItem(0, 0)
+                                }
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewResponder(heroBringIntoViewResponder)
+                                .onFocusChanged { focusState ->
+                                    if (focusState.hasFocus) {
+                                        coroutineScope.launch {
+                                            listState.scrollToItem(0, 0)
+                                        }
+                                    }
+                                }
+                        ) {
+                            HeroBanner(
+                                item = state.focusedItem,
+                                onPlayClick = { item -> onPlayMedia(item.id) },
+                                onDetailClick = { item -> onDetailMedia(item.id) },
+                                accentColor = accentColorKey,
+                                buttonStyle = buttonStyleKey
+                            )
+                        }
                     }
 
                     item {

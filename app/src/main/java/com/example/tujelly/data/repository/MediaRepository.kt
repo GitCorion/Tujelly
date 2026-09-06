@@ -14,6 +14,14 @@ import com.example.tujelly.data.remote.trakt.TraktMediaDto
 import com.example.tujelly.domain.model.EpisodeItem
 import com.example.tujelly.domain.model.SeasonItem
 import com.example.tujelly.domain.model.SeriesStatus
+import android.content.Context
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
+import com.example.tujelly.data.worker.JellyfinSyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,6 +52,28 @@ class MediaRepository(
         val syncProgress: StateFlow<SyncProgress> = _syncProgress.asStateFlow()
         private val syncMutex = Mutex()
         private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        fun updateProgress(progress: SyncProgress) {
+            _syncProgress.value = progress
+        }
+
+        fun checkActiveWorkerSync(context: Context, localCount: Int = 0) {
+            try {
+                val workInfos = WorkManager.getInstance(context)
+                    .getWorkInfosForUniqueWork(JellyfinSyncWorker.WORK_NAME)
+                    .get()
+                val activeWork = workInfos.firstOrNull { !it.state.isFinished }
+                if (activeWork != null && !_syncProgress.value.isSyncing) {
+                    val grand = maxOf(34966, localCount)
+                    _syncProgress.value = SyncProgress(
+                        isSyncing = true,
+                        current = localCount,
+                        total = grand,
+                        message = "Sincronizando en segundo plano..."
+                    )
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     fun startBackgroundSync(
@@ -52,21 +82,48 @@ class MediaRepository(
         token: String,
         lastSyncTimestamp: String? = null,
         forceFullSync: Boolean = false,
+        context: Context? = null,
         onSyncCompleted: ((String) -> Unit)? = null
     ) {
         if (serverUrl.isBlank() || userId.isBlank() || token.isBlank()) return
-        if (_syncProgress.value.isSyncing || syncMutex.isLocked) return
-        syncScope.launch {
-            syncJellyfinLibrary(
-                serverUrl = serverUrl,
-                userId = userId,
-                token = token,
-                lastSyncTimestamp = lastSyncTimestamp,
-                forceFullSync = forceFullSync,
-                onSyncCompleted = { newTs ->
-                    onSyncCompleted?.invoke(newTs)
-                }
+
+        val targetContext = context ?: userPreferencesRepository?.context
+        if (targetContext != null) {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+
+            val inputData = workDataOf(
+                JellyfinSyncWorker.KEY_SERVER_URL to serverUrl,
+                JellyfinSyncWorker.KEY_USER_ID to userId,
+                JellyfinSyncWorker.KEY_TOKEN to token,
+                JellyfinSyncWorker.KEY_FORCE_FULL_SYNC to forceFullSync
             )
+
+            val syncWorkRequest = OneTimeWorkRequestBuilder<JellyfinSyncWorker>()
+                .setConstraints(constraints)
+                .setInputData(inputData)
+                .build()
+
+            WorkManager.getInstance(targetContext).enqueueUniqueWork(
+                JellyfinSyncWorker.WORK_NAME,
+                if (forceFullSync) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
+                syncWorkRequest
+            )
+        } else {
+            if (_syncProgress.value.isSyncing || syncMutex.isLocked) return
+            syncScope.launch {
+                syncJellyfinLibrary(
+                    serverUrl = serverUrl,
+                    userId = userId,
+                    token = token,
+                    lastSyncTimestamp = lastSyncTimestamp,
+                    forceFullSync = forceFullSync,
+                    onSyncCompleted = { newTs ->
+                        onSyncCompleted?.invoke(newTs)
+                    }
+                )
+            }
         }
     }
     private fun buildJellyfinAuthHeader(clientName: String = "Tujelly", deviceId: String = "AndroidTV", version: String = "1.0.0", token: String = ""): String {
@@ -314,31 +371,43 @@ class MediaRepository(
                 }
 
                 // =========================================================================
-                // CAMINO 2: SINCRONIZACIÓN COMPLETA GLOBAL
+                // CAMINO 2: SINCRONIZACIÓN COMPLETA GLOBAL CON RESUMEN / CHECKPOINTS
                 // =========================================================================
                 val fields = "ProviderIds,PrimaryImageTag,CommunityRating,UserData,ItemCounts,RecursiveItemCount"
                 val pageSize = 200
-                var totalSynced = 0
+
+                // Leer checkpoint previo si no es forzada desde cero
+                val checkpoint = if (!forceFullSync) userPreferencesRepository?.getSyncCheckpoint() else null
+                val savedViewIndex = checkpoint?.first ?: 0
+                val savedOffset = checkpoint?.second ?: 0
+                val savedTotalSynced = checkpoint?.third ?: 0
+
+                var totalSynced = if (savedTotalSynced > 0) savedTotalSynced else 0
                 // Estimación inicial del catálogo: 35.000 títulos
-                var grandTotal = 34966
+                var grandTotal = maxOf(34966, totalSynced)
 
                 _syncProgress.value = SyncProgress(
                     isSyncing = true,
                     current = totalSynced,
                     total = grandTotal,
-                    message = "Sincronizando: 0 / $grandTotal"
+                    message = if (totalSynced > 0) "Reanudando sincronización: $totalSynced / $grandTotal" else "Sincronizando: 0 / $grandTotal"
                 )
 
                 val viewsToSync = if (mediaViews.isNotEmpty()) mediaViews else listOf(null)
                 var cumulativeViewTotal = 0
 
-                for (view in viewsToSync) {
+                for ((viewIndex, view) in viewsToSync.withIndex()) {
+                    if (viewIndex < savedViewIndex) {
+                        // Vista ya procesada en ejecución anterior
+                        continue
+                    }
+
                     val viewId = view?.id
                     val isSeries = view?.collectionType.equals("tvshows", ignoreCase = true) || view?.name.equals("Series", ignoreCase = true)
                     val itemType = if (isSeries) "Series" else if (view != null) "Movie" else "Movie,Series"
                     val isRecursive = !isSeries // Series son hijas directas del CollectionFolder, Movies pueden estar en subcarpetas
 
-                    var startIndex = 0
+                    var startIndex = if (viewIndex == savedViewIndex) savedOffset else 0
                     var viewTotal = 0
 
                     do {
@@ -393,6 +462,13 @@ class MediaRepository(
                         startIndex += items.size
                         totalSynced += items.size
 
+                        // Guardar checkpoint en DataStore tras cada bloque persistido
+                        userPreferencesRepository?.saveSyncCheckpoint(
+                            viewIndex = viewIndex,
+                            offset = startIndex,
+                            totalSynced = totalSynced
+                        )
+
                         val effectiveTotal = maxOf(grandTotal, totalSynced)
                         _syncProgress.value = SyncProgress(
                             isSyncing = true,
@@ -408,6 +484,8 @@ class MediaRepository(
                         delay(60L)
                     } while (viewTotal == 0 || startIndex < viewTotal)
                 }
+
+                userPreferencesRepository?.clearSyncCheckpoint()
 
                 val nowTimestamp = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()
                 userPreferencesRepository?.updateJellyfinLastSync(nowTimestamp)
