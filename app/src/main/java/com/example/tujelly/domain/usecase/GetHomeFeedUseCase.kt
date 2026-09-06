@@ -47,11 +47,11 @@ class GetHomeFeedUseCase(
             serverUrl = prefs.jellyfinServerUrl,
             userId = prefs.jellyfinUserId,
             token = prefs.jellyfinAccessToken,
-            limit = 50
+            limit = 100
         )
 
         // 1. Cruzar las producciones más aclamadas globalmente de TMDB con la biblioteca local
-        val tmdbBlockbusters = if (prefs.tmdbApiKey.isNotBlank()) {
+        val tmdbTopRated = if (prefs.tmdbApiKey.isNotBlank()) {
             runCatching {
                 val topRated = mediaRepository.getTmdbTopRated(prefs.tmdbApiKey).getOrDefault(emptyList())
                 filterToLibraryUseCase.filterTmdbItems(
@@ -59,20 +59,41 @@ class GetHomeFeedUseCase(
                     serverUrl = prefs.jellyfinServerUrl,
                     userId = prefs.jellyfinUserId,
                     token = prefs.jellyfinAccessToken,
-                    maxCandidates = 60
-                ).filter { it.type.equals("Movie", ignoreCase = true) }
+                    maxCandidates = 80
+                )
             }.getOrDefault(emptyList())
         } else emptyList()
+
+        val tmdbBlockbusters = tmdbTopRated.filter { it.type.equals("Movie", ignoreCase = true) }
+        val tmdbTopSeries = tmdbTopRated.filter { it.type.equals("Series", ignoreCase = true) }
 
         // 2. Filtrar películas con masa crítica de votos para evitar fakes de 10 estrellas sin votos
         val curatedServerMovies = if (prefs.tmdbApiKey.isNotBlank()) {
             filterHighQualityMovies(topMoviesServer, prefs.tmdbApiKey)
         } else {
-            topMoviesServer.filter { (it.communityRating ?: 0f) >= 7.0f && !it.backdropImageTag.isNullOrEmpty() }
+            topMoviesServer.filter {
+                val r = it.communityRating ?: 0f
+                r in 7.0f..9.5f && !it.backdropImageTag.isNullOrEmpty()
+            }
         }
 
         // Fusión inteligente: Priorizar verdaderas grandes producciones y completar sin duplicados
         val curatedTopMovies = (tmdbBlockbusters + curatedServerMovies)
+            .distinctBy { it.id }
+            .take(20)
+
+        // 3. Filtrar series con masa crítica de votos para evitar adulteraciones de 10 estrellas de 1 solo voto
+        val curatedServerSeries = if (prefs.tmdbApiKey.isNotBlank()) {
+            filterHighQualitySeries(topSeriesServer, prefs.tmdbApiKey)
+        } else {
+            topSeriesServer.filter {
+                val r = it.communityRating ?: 0f
+                r in 7.0f..9.5f && !it.backdropImageTag.isNullOrEmpty()
+            }
+        }
+
+        // Fusión inteligente de Series: Priorizar series de prestigio contrastado mundialmente y completar sin duplicados
+        val curatedTopSeries = (tmdbTopSeries + curatedServerSeries)
             .distinctBy { it.id }
             .take(20)
 
@@ -89,12 +110,12 @@ class GetHomeFeedUseCase(
             )
         }
 
-        if (topSeriesServer.isNotEmpty()) {
-            shownMediaIds.addAll(topSeriesServer.map { it.id })
+        if (curatedTopSeries.isNotEmpty()) {
+            shownMediaIds.addAll(curatedTopSeries.map { it.id })
             sections.add(
                 HomeSection(
                     title = "Series Destacadas",
-                    items = topSeriesServer.map {
+                    items = curatedTopSeries.map {
                         it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
                     },
                     badge = "SERIES"
@@ -470,14 +491,17 @@ class GetHomeFeedUseCase(
         val candidates = validMovies.filter { it.tmdbId != null }
 
         if (candidates.isEmpty()) {
-            return validMovies.filter { (it.communityRating ?: 0f) >= 7.0f }.take(20)
+            return validMovies.filter {
+                val r = it.communityRating ?: 0f
+                r in 7.0f..9.5f
+            }.take(20)
         }
 
         val checked = candidates.mapNotNull { movie ->
             val tmdbId = movie.tmdbId?.toLongOrNull() ?: return@mapNotNull null
-            val stats = mediaRepository.getTmdbVoteStats(tmdbApiKey, tmdbId)
+            val stats = mediaRepository.getTmdbVoteStats(tmdbApiKey, tmdbId, isTv = false)
                 ?: return@mapNotNull null
-            Triple(movie, stats.voteCount, stats.voteAverage)
+            Triple(movie.copy(communityRating = stats.voteAverage), stats.voteCount, stats.voteAverage)
         }
 
         val passed = checked
@@ -485,7 +509,49 @@ class GetHomeFeedUseCase(
             .sortedByDescending { (_, count, avg) -> avg * 10f + kotlin.math.min(count, 5000) / 500f }
             .map { it.first }
 
-        return if (passed.isNotEmpty()) passed else validMovies.filter { (it.communityRating ?: 0f) >= 7.0f }.take(20)
+        return if (passed.isNotEmpty()) passed else validMovies.filter {
+            val r = it.communityRating ?: 0f
+            r in 7.0f..9.5f
+        }.take(20)
+    }
+
+    /**
+     * Filtra las series del servidor contra TMDB para descartar títulos con nota
+     * adulterada o inflada por poquísimos votos (ej. documentales o telenovelas con 1 voto de 10).
+     * Exige una masa crítica de votos (mínimo 50 votos en TMDB y nota >= 6.8),
+     * pondera por volumen de votos para dar prioridad a series de prestigio contrastado,
+     * y reemplaza la nota local adulterada por la nota real ponderada de TMDB.
+     */
+    private suspend fun filterHighQualitySeries(
+        series: List<JellyfinMediaEntity>,
+        tmdbApiKey: String
+    ): List<JellyfinMediaEntity> {
+        val validSeries = series.filter { !it.backdropImageTag.isNullOrEmpty() || !it.overview.isNullOrBlank() }
+        val candidates = validSeries.filter { it.tmdbId != null }
+
+        if (candidates.isEmpty()) {
+            return validSeries.filter {
+                val r = it.communityRating ?: 0f
+                r in 7.0f..9.5f
+            }.take(20)
+        }
+
+        val checked = candidates.mapNotNull { s ->
+            val tmdbId = s.tmdbId?.toLongOrNull() ?: return@mapNotNull null
+            val stats = mediaRepository.getTmdbVoteStats(tmdbApiKey, tmdbId, isTv = true)
+                ?: return@mapNotNull null
+            Triple(s.copy(communityRating = stats.voteAverage), stats.voteCount, stats.voteAverage)
+        }
+
+        val passed = checked
+            .filter { (_, count, avg) -> count >= 50 && avg >= 6.8f }
+            .sortedByDescending { (_, count, avg) -> avg * 10f + kotlin.math.min(count, 5000) / 500f }
+            .map { it.first }
+
+        return if (passed.isNotEmpty()) passed else validSeries.filter {
+            val r = it.communityRating ?: 0f
+            r in 7.0f..9.5f
+        }.take(20)
     }
 
     private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem {
@@ -527,6 +593,13 @@ class GetHomeFeedUseCase(
             isPlayed
         }
 
+        val effectiveRating = when {
+            communityRating == null -> null
+            communityRating > 9.5f -> null // Descartar notas infladas de un único voto (ej: 10.0, 9.7) no ponderadas
+            communityRating <= 0f -> null
+            else -> communityRating
+        }
+
         return MediaItem(
             id = id,
             title = effectiveTitle,
@@ -534,7 +607,7 @@ class GetHomeFeedUseCase(
             type = effectiveType,
             posterUrl = posterUrl,
             backdropUrl = backdropUrl,
-            rating = communityRating,
+            rating = effectiveRating,
             year = productionYear,
             source = source,
             playbackPositionTicks = playbackPositionTicks,

@@ -54,16 +54,16 @@ interface JellyfinDao {
     @Query("SELECT * FROM jellyfin_media WHERE type = 'Series' ORDER BY title ASC")
     suspend fun getSeries(): List<JellyfinMediaEntity>
 
-    @Query("SELECT * FROM jellyfin_media WHERE type IN ('Movie', 'Series') ORDER BY communityRating DESC LIMIT :limit")
+    @Query("SELECT * FROM jellyfin_media WHERE type IN ('Movie', 'Series') AND communityRating >= 7.0 AND communityRating <= 9.5 ORDER BY communityRating DESC LIMIT :limit")
     suspend fun getTopRatedLocal(limit: Int = 20): List<JellyfinMediaEntity>
 
-    @Query("SELECT * FROM jellyfin_media WHERE type = 'Movie' AND communityRating >= 7.0 ORDER BY communityRating DESC LIMIT :limit")
+    @Query("SELECT * FROM jellyfin_media WHERE type = 'Movie' AND communityRating >= 7.0 AND communityRating <= 9.5 ORDER BY communityRating DESC LIMIT :limit")
     suspend fun getTopMoviesLocal(limit: Int = 20): List<JellyfinMediaEntity>
 
-    @Query("SELECT * FROM jellyfin_media WHERE type = 'Series' ORDER BY communityRating DESC LIMIT :limit")
+    @Query("SELECT * FROM jellyfin_media WHERE type = 'Series' AND communityRating >= 7.0 AND communityRating <= 9.5 ORDER BY communityRating DESC LIMIT :limit")
     suspend fun getTopSeriesLocal(limit: Int = 20): List<JellyfinMediaEntity>
 
-    @Query("SELECT * FROM jellyfin_media WHERE type IN ('Movie', 'Series') AND (LOWER(genres) LIKE '%' || LOWER(:genre) || '%' OR LOWER(title) LIKE '%' || LOWER(:genre) || '%') ORDER BY communityRating DESC LIMIT :limit")
+    @Query("SELECT * FROM jellyfin_media WHERE type IN ('Movie', 'Series') AND (communityRating IS NULL OR communityRating <= 9.5) AND (LOWER(genres) LIKE '%' || LOWER(:genre) || '%' OR LOWER(title) LIKE '%' || LOWER(:genre) || '%') ORDER BY communityRating DESC LIMIT :limit")
     suspend fun getItemsByGenre(genre: String, limit: Int = 40): List<JellyfinMediaEntity>
 
     @Query("SELECT genres FROM jellyfin_media WHERE (isPlayed = 1 OR playbackPositionTicks > 0) AND genres IS NOT NULL AND genres != '' LIMIT 300")

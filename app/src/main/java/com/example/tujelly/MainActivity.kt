@@ -21,6 +21,7 @@ import androidx.navigation.navArgument
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.NonInteractiveSurfaceDefaults
 import androidx.tv.material3.Surface
+import com.example.tujelly.ui.screens.medusa.MedusaScreen
 import com.example.tujelly.ui.screens.brand.BrandScreen
 import com.example.tujelly.ui.screens.detail.DetailScreen
 import com.example.tujelly.ui.screens.favorites.FavoritesScreen
@@ -124,6 +125,34 @@ fun TujellyApp(startOnboarding: Boolean = false) {
                 },
                 onOpenGenre = { genreName ->
                     navController.navigate("genre/$genreName")
+                },
+                onOpenMedusa = {
+                    navController.navigate("medusa")
+                }
+            )
+        }
+
+        composable("medusa") {
+            MedusaScreen(
+                onNavigateHome = {
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                },
+                onOpenFavorites = {
+                    navController.navigate("favorites")
+                },
+                onOpenSearch = {
+                    navController.navigate("search")
+                },
+                onOpenSettings = {
+                    navController.navigate("settings")
+                },
+                onPlayMedia = { itemId ->
+                    navController.navigate("player/$itemId")
+                },
+                onDetailMedia = { itemId ->
+                    navController.navigate("detail/$itemId")
                 }
             )
         }

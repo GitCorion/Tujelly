@@ -574,11 +574,16 @@ class MediaRepository(
 
     data class TmdbVoteStats(val voteCount: Int, val voteAverage: Float)
 
-    suspend fun getTmdbVoteStats(apiKey: String, tmdbId: Long): TmdbVoteStats? {
+    suspend fun getTmdbVoteStats(apiKey: String, tmdbId: Long, isTv: Boolean = false): TmdbVoteStats? {
         return runCatching {
             val api = NetworkClientFactory.createService("https://api.themoviedb.org/3/", TmdbApiService::class.java)
-            val d = api.getMovieDetails(movieId = tmdbId, apiKey = apiKey)
-            TmdbVoteStats(voteCount = d.voteCount ?: 0, voteAverage = d.voteAverage ?: 0f)
+            if (isTv) {
+                val d = api.getTvDetails(seriesId = tmdbId, apiKey = apiKey)
+                TmdbVoteStats(voteCount = d.voteCount ?: 0, voteAverage = d.voteAverage ?: 0f)
+            } else {
+                val d = api.getMovieDetails(movieId = tmdbId, apiKey = apiKey)
+                TmdbVoteStats(voteCount = d.voteCount ?: 0, voteAverage = d.voteAverage ?: 0f)
+            }
         }.getOrNull()
     }
 

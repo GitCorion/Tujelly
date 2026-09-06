@@ -273,7 +273,9 @@ fun HeroBanner(
                                 Text(
                                     text = "Reproducir",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
@@ -306,7 +308,9 @@ fun HeroBanner(
                                 Text(
                                     text = "Detalles",
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }

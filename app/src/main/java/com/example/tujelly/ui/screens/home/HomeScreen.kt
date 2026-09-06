@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Favorite
@@ -30,6 +33,10 @@ import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -64,6 +71,7 @@ fun HomeScreen(
     onOpenFavorites: () -> Unit = {},
     onOpenBrand: (String) -> Unit = {},
     onOpenGenre: (String) -> Unit = {},
+    onOpenMedusa: () -> Unit = {},
     viewModel: HomeViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -94,7 +102,12 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .padding(end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 val headerLogo = if (isMonochrome) {
                     com.example.tujelly.R.drawable.ic_tujelly_header_mono
                 } else {
@@ -136,7 +149,10 @@ fun HomeScreen(
                             text = "Sincronizando: $progressText",
                             color = Color(0xFFE2E8F0),
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false
                         )
                     }
                 } else if (syncProgress.message.isNotBlank() && (syncProgress.message.contains("401") || syncProgress.message.contains("Error") || syncProgress.message.contains("caducada", ignoreCase = true))) {
@@ -159,7 +175,10 @@ fun HomeScreen(
                             text = syncProgress.message,
                             color = Color(0xFFFEE2E2),
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false
                         )
                     }
                 } else if (localMediaCount > 0) {
@@ -183,7 +202,9 @@ fun HomeScreen(
                             text = "$formattedCount títulos",
                             color = Color(0xFFCBD5E1),
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -191,7 +212,8 @@ fun HomeScreen(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.wrapContentWidth()
             ) {
                 // Discover (active tab)
                 Button(
@@ -229,7 +251,53 @@ fun HomeScreen(
                             Text(
                                 text = "Inicio",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+
+                // Medusa Button
+                var isMedusaFocused by remember { mutableStateOf(false) }
+                Button(
+                    onClick = onOpenMedusa,
+                    modifier = Modifier.onFocusChanged { isMedusaFocused = it.isFocused },
+                    colors = ButtonDefaults.colors(
+                        containerColor = Color(0x0AFFFFFF),
+                        contentColor = Color(0xFF64748B),
+                        focusedContainerColor = focusColor,
+                        focusedContentColor = focusContent
+                    )
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        if (showTopIcons) {
+                            val medusaSymbol = if (isMonochrome) {
+                                if (isMedusaFocused) com.example.tujelly.R.drawable.ic_jelly_symbol_mono_dark else com.example.tujelly.R.drawable.ic_jelly_symbol_mono
+                            } else {
+                                com.example.tujelly.R.drawable.ic_jelly_symbol
+                            }
+                            androidx.compose.foundation.Image(
+                                painter = androidx.compose.ui.res.painterResource(id = medusaSymbol),
+                                contentDescription = "Medusa",
+                                modifier = Modifier.size(16.dp),
+                                colorFilter = if (isMonochrome) {
+                                    if (isMedusaFocused) androidx.compose.ui.graphics.ColorFilter.tint(focusContent) else androidx.compose.ui.graphics.ColorFilter.tint(Color(0xFF64748B))
+                                } else null
+                            )
+                        }
+                        if (showTopText) {
+                            if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Medusa",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -261,7 +329,9 @@ fun HomeScreen(
                             Text(
                                 text = "Favoritos",
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -293,7 +363,9 @@ fun HomeScreen(
                             Text(
                                 text = "Buscar",
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -325,7 +397,9 @@ fun HomeScreen(
                             Text(
                                 text = "Ajustes",
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -384,7 +458,7 @@ fun HomeScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = "Configurar Servidor Jellyfin", fontWeight = FontWeight.Bold)
+                                Text(text = "Configurar Servidor Jellyfin", fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                             }
                         }
                     }
@@ -432,7 +506,7 @@ fun HomeScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text(text = "Sincronizar", fontWeight = FontWeight.Bold)
+                                    Text(text = "Sincronizar", fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                                 }
                             }
 
@@ -445,7 +519,7 @@ fun HomeScreen(
                                     focusedContentColor = Color(0xFF0F172A)
                                 )
                             ) {
-                                Text(text = "Ajustes", fontWeight = FontWeight.SemiBold)
+                                Text(text = "Ajustes", fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                             }
                         }
                     }

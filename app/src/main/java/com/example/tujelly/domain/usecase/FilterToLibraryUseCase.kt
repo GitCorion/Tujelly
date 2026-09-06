@@ -58,12 +58,17 @@ class FilterToLibraryUseCase(
             val title = item.title ?: item.name ?: return@mapNotNull null
             val year = (item.releaseDate ?: item.firstAirDate)?.take(4)?.toIntOrNull()
 
-            mediaRepository.findLocal(
+            val entity = mediaRepository.findLocal(
                 tmdbId = tmdbId,
                 imdbId = null,
                 title = title,
                 year = year
             )
+            if (entity != null && item.voteAverage != null && item.voteAverage > 0f) {
+                entity.copy(communityRating = item.voteAverage)
+            } else {
+                entity
+            }
         }.filter { seenIds.add(it.id) }
     }
 }

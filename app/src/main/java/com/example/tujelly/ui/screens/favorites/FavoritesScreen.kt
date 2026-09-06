@@ -155,7 +155,7 @@ fun FavoritesScreen(
                                         }
                                         if (showText) {
                                             if (showIcons) Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Inicio", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("Inicio", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                                         }
                                     }
                                 }
@@ -209,7 +209,7 @@ fun FavoritesScreen(
                                             FavoriteFilter.MOVIES -> "Películas"
                                             FavoriteFilter.SERIES -> "Series"
                                         }
-                                        Text(text = label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(text = label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                                     }
                                 }
 

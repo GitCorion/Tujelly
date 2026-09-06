@@ -106,7 +106,9 @@ fun TvPill(
             color = textColor,
             fontSize = fontSizeSp.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.5.sp
+            letterSpacing = 0.5.sp,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

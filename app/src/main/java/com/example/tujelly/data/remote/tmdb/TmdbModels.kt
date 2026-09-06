@@ -42,7 +42,10 @@ data class TmdbTvDetailDto(
     @SerialName("status") val status: String? = null,
     @SerialName("number_of_seasons") val numberOfSeasons: Int? = null,
     @SerialName("number_of_episodes") val numberOfEpisodes: Int? = null,
-    @SerialName("in_production") val inProduction: Boolean? = null
+    @SerialName("in_production") val inProduction: Boolean? = null,
+    @SerialName("vote_average") val voteAverage: Float? = null,
+    @SerialName("vote_count") val voteCount: Int? = null,
+    @SerialName("popularity") val popularity: Double? = null
 )
 
 @Serializable
