@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -211,17 +212,15 @@ fun MedusaScreen(
                             val posX = w * animatedNormX
                             val posY = h * animatedNormY
 
-                            val starWidth = if (isAncestor) 28.dp else 120.dp
-                            val starHeight = if (isAncestor) 28.dp else 32.dp
-                            val offsetX = posX - (starWidth / 2)
-                            val offsetY = posY - (starHeight / 2)
-
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
-                                    .offset(x = offsetX, y = offsetY)
-                                    .size(width = starWidth, height = starHeight)
-                                    .graphicsLayer { alpha = animatedAlpha }
+                                    .offset(x = posX, y = posY)
+                                    .graphicsLayer {
+                                        translationX = -size.width / 2f
+                                        translationY = -size.height / 2f
+                                        alpha = animatedAlpha
+                                    }
                             ) {
                                 ConstellationAstroStar(
                                     star = star,
@@ -231,8 +230,7 @@ fun MedusaScreen(
                                     onClick = {
                                         Log.d("MedusaScreen", "Direct click on star: ${star.id}")
                                         viewModel.toggleStar(star.id)
-                                    },
-                                    modifier = Modifier.fillMaxSize()
+                                    }
                                 )
                             }
                         }
@@ -430,6 +428,7 @@ private fun ConstellationAstroStar(
             ),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.30f),
             modifier = modifier
+                .size(28.dp)
                 .zIndex(if (isFocused) 10f else 4f)
                 .onFocusChanged { isFocused = it.isFocused }
                 .pointerInput(star.id) {
@@ -444,7 +443,7 @@ private fun ConstellationAstroStar(
             }
         }
     } else {
-        // Cápsula activa o rama interactiva completa
+        // Cápsula activa o rama interactiva con ancho dinámico para no cortar texto
         Surface(
             onClick = onClick,
             shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(16.dp)),
@@ -464,8 +463,9 @@ private fun ConstellationAstroStar(
                 },
                 focusedBorder = Border(BorderStroke(1.8.dp, Color.White), shape = RoundedCornerShape(16.dp))
             ),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.10f),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
             modifier = modifier
+                .wrapContentSize()
                 .zIndex(if (isFocused) 10f else if (isSelected) 5f else 2f)
                 .onFocusChanged { isFocused = it.isFocused }
                 .pointerInput(star.id) {
@@ -474,8 +474,9 @@ private fun ConstellationAstroStar(
         ) {
             Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp),
+                    .wrapContentWidth()
+                    .height(32.dp)
+                    .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
@@ -488,10 +489,10 @@ private fun ConstellationAstroStar(
                         isSelected -> Color(0xFFF8FAFC)
                         else -> Color(0xDDFFFFFF)
                     },
-                    fontSize = if (isFocused) 12.5.sp else 12.sp,
+                    fontSize = if (isFocused) 12.sp else 11.5.sp,
                     fontFamily = FontFamily.Serif,
                     fontWeight = if (isFocused || isSelected) FontWeight.Bold else FontWeight.Medium,
-                    letterSpacing = 0.25.sp,
+                    letterSpacing = 0.2.sp,
                     maxLines = 1,
                     softWrap = false
                 )

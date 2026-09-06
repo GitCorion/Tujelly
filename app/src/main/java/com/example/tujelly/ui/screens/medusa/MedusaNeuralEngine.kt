@@ -24,12 +24,12 @@ class MedusaNeuralEngine {
     fun buildStars(brain: MedusaBrain, items: List<JellyfinMediaEntity>): List<MedusaStar> {
         val relevance = buildItemRelevance(brain, items)
         val affinities = computeUserAffinities(brain, items, relevance)
-        val yByNeuron = assignMorphologyY(brain, affinities)
-        val xByNeuron = assignMorphologyX(brain)
+        val positions = assignMedusaMorphology(brain, affinities)
 
         return brain.neurons.map { neuron ->
-            val normX = xByNeuron[neuron.id] ?: 0.5f
-            val normY = yByNeuron[neuron.id] ?: 0.5f
+            val pos = positions[neuron.id] ?: Pair(0.5f, 0.5f)
+            val normX = pos.first
+            val normY = pos.second
 
             val related = neuron.synapticWeights.entries
                 .sortedByDescending { it.value }
@@ -138,49 +138,43 @@ class MedusaNeuralEngine {
         }
     }
 
-    private fun assignMorphologyY(brain: MedusaBrain, affinities: Map<String, Double>): Map<String, Float> {
-        val sortedIds = brain.neurons
-            .sortedByDescending { affinities[it.id] ?: 0.0 }
-            .map { it.id }
-
-        val cupola = sortedIds.take(5)
-        val body = sortedIds.drop(5).take(8)
-        val tentacles = sortedIds.drop(13)
-
-        val result = mutableMapOf<String, Float>()
-        cupola.forEachIndexed { i, id -> result[id] = 0.08f + (0.22f - 0.08f) * (i / 4f) }
-        body.forEachIndexed { i, id -> result[id] = 0.25f + (0.50f - 0.25f) * (i / 7f) }
-        tentacles.forEachIndexed { i, id -> result[id] = 0.52f + (0.78f - 0.52f) * (i / 4f) }
-        return result
-    }
-
     /**
-     * Distribuye X en [0.15, 0.85] ordenando las neuronas por similitud angular
-     * (overlap de géneros/keywords) para que las afines queden próximas.
+     * Proyecta las 18 neuronas en la morfología celestial de la Medusa (cúpula, cuerpo y tentáculos).
+     * Las neuronas con mayor afinidad de usuario ocupan la corona superior.
+     * La distribución 2D previene solapamientos y líneas diagonales apiñadas.
      */
-    private fun assignMorphologyX(brain: MedusaBrain): Map<String, Float> {
-        val neurons = brain.neurons
-        if (neurons.isEmpty()) return emptyMap()
+    private fun assignMedusaMorphology(brain: MedusaBrain, affinities: Map<String, Double>): Map<String, Pair<Float, Float>> {
+        val sorted = brain.neurons.sortedByDescending { affinities[it.id] ?: 0.0 }
+        val slots = listOf(
+            // Cúpula superior (los 5 conceptos favoritos/más vistos en la corona)
+            Pair(0.50f, 0.09f),
+            Pair(0.32f, 0.16f),
+            Pair(0.68f, 0.16f),
+            Pair(0.18f, 0.23f),
+            Pair(0.82f, 0.23f),
 
-        val byId = neurons.associateBy { it.id }
-        val remaining = neurons.map { it.id }.toMutableList()
-        val order = mutableListOf<String>()
+            // Cuerpo y manto (7 conceptos centrales)
+            Pair(0.50f, 0.28f),
+            Pair(0.34f, 0.31f),
+            Pair(0.66f, 0.31f),
+            Pair(0.19f, 0.39f),
+            Pair(0.39f, 0.42f),
+            Pair(0.61f, 0.42f),
+            Pair(0.81f, 0.39f),
 
-        var current = remaining.removeAt(0)
-        order.add(current)
-        while (remaining.isNotEmpty()) {
-            val cur = byId[current] ?: break
-            val next = remaining.maxByOrNull { id -> neuronSimilarity(cur, byId[id] ?: return@maxByOrNull 0.0) } ?: break
-            remaining.remove(next)
-            order.add(next)
-            current = next
-        }
-        order.addAll(remaining)
+            // Tentáculos inferiores flotantes (6 conceptos periféricos/nicho)
+            Pair(0.22f, 0.54f),
+            Pair(0.78f, 0.54f),
+            Pair(0.42f, 0.58f),
+            Pair(0.58f, 0.58f),
+            Pair(0.30f, 0.72f),
+            Pair(0.70f, 0.72f)
+        )
 
-        val denom = (order.size - 1).coerceAtLeast(1)
-        val result = mutableMapOf<String, Float>()
-        order.forEachIndexed { index, id ->
-            result[id] = 0.15f + (index.toFloat() / denom) * 0.70f
+        val result = mutableMapOf<String, Pair<Float, Float>>()
+        sorted.forEachIndexed { index, neuron ->
+            val slot = slots.getOrElse(index) { Pair(0.50f, 0.50f) }
+            result[neuron.id] = slot
         }
         return result
     }
@@ -198,18 +192,6 @@ class MedusaNeuralEngine {
             if (k.length >= 3 && titleLower.contains(k.lowercase())) score += 0.5
         }
         return score
-    }
-
-    private fun neuronSimilarity(a: MedusaNeuron, b: MedusaNeuron): Double {
-        val genreSim = jaccard(a.genres.map { it.lowercase() }.toSet(), b.genres.map { it.lowercase() }.toSet())
-        val keywordSim = jaccard(a.keywords.map { it.lowercase() }.toSet(), b.keywords.map { it.lowercase() }.toSet())
-        return genreSim + 0.5 * keywordSim
-    }
-
-    private fun jaccard(a: Set<String>, b: Set<String>): Double {
-        val union = a.union(b).size.toDouble()
-        if (union == 0.0) return 0.0
-        return a.intersect(b).size.toDouble() / union
     }
 
     private fun splitGenres(genres: String?): Set<String> {
