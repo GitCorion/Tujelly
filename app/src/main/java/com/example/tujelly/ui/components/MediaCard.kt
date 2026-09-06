@@ -50,7 +50,7 @@ import com.example.tujelly.ui.theme.TvRatingBadge
 fun MediaCard(
     item: MediaItem,
     onClick: () -> Unit,
-    onFocus: () -> Unit,
+    onFocus: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -135,7 +135,8 @@ fun MediaCard(
                     }
 
                     val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
-                    val isMonochrome = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
+                    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current ||
+                            indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
 
                     val isTvSeries = item.type.equals("Series", ignoreCase = true)
                     val hasEpisodeProgress = !item.isPlayed &&

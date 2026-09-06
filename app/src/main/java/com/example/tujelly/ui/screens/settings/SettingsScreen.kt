@@ -726,18 +726,37 @@ fun SettingsScreen(
                                     .padding(16.dp)
                             ) {
                                 Column {
-                                    Text(
-                                        text = "Integración de Plataformas de Streaming",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.SemiBold,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Netflix • Prime Video • Disney+ • Max • Apple TV+ • SkyShowtime\nLas tendencias de estas plataformas se cruzan automáticamente con los contenidos disponibles en tu servidor de Jellyfin.",
-                                        color = Color(0xFF94A3B8),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "Plataformas de Streaming",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.SemiBold,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "Marca las plataformas cuyas tendencias quieres cruzar con tu biblioteca Jellyfin.",
+                                                color = Color(0xFF94A3B8),
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    com.example.tujelly.data.model.SUPPORTED_PLATFORMS.forEach { platform ->
+                                        val selected = platform.id in uiState.selectedPlatforms
+                                        PlatformToggleRow(
+                                            platform = platform,
+                                            isSelected = selected,
+                                            onToggle = { viewModel.togglePlatform(platform.id) }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1641,6 +1660,83 @@ private fun PlatformLogoStyleSelectionCard(
                     textColor = Color(0xFF0F172A),
                     borderColor = Color.White
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PlatformToggleRow(
+    platform: com.example.tujelly.data.model.StreamPlatform,
+    isSelected: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    Surface(
+        onClick = onToggle,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .onFocusChanged { isFocused = it.isFocused },
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isFocused) Color(0x22FFFFFF) else Color(0x10FFFFFF),
+            focusedContainerColor = Color(0x28FFFFFF)
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(border = BorderStroke(0.75.dp, if (isSelected) Color(0x664F46E5) else Color(0x18FFFFFF))),
+            focusedBorder = Border(border = BorderStroke(2.dp, Color.White))
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .height(28.dp)
+                    .width(52.dp)
+                    .background(Color(0xFF111319), RoundedCornerShape(6.dp))
+                    .border(0.75.dp, Color(0x33FFFFFF), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 4.dp, vertical = 3.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = platform.iconRes),
+                    contentDescription = platform.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = platform.name,
+                    color = Color(0xFFF1F5F9),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (isSelected) Color(0xFF4F46E5) else Color(0x18FFFFFF))
+                    .border(1.dp, if (isSelected) Color(0xFF6366F1) else Color(0x22FFFFFF), RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isSelected) {
+                    Text(text = "✓", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
             }
         }
     }

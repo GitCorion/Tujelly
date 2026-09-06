@@ -572,6 +572,16 @@ class MediaRepository(
         }
     }
 
+    data class TmdbVoteStats(val voteCount: Int, val voteAverage: Float)
+
+    suspend fun getTmdbVoteStats(apiKey: String, tmdbId: Long): TmdbVoteStats? {
+        return runCatching {
+            val api = NetworkClientFactory.createService("https://api.themoviedb.org/3/", TmdbApiService::class.java)
+            val d = api.getMovieDetails(movieId = tmdbId, apiKey = apiKey)
+            TmdbVoteStats(voteCount = d.voteCount ?: 0, voteAverage = d.voteAverage ?: 0f)
+        }.getOrNull()
+    }
+
     suspend fun getTmdbTrailerUrl(apiKey: String, tmdbId: Long, isTv: Boolean = false): String? {
         return runCatching {
             val api = NetworkClientFactory.createService("https://api.themoviedb.org/3/", TmdbApiService::class.java)
@@ -836,6 +846,38 @@ class MediaRepository(
 
     suspend fun getItemsByGenre(genre: String): List<JellyfinMediaEntity> {
         return jellyfinDao.getItemsByGenre(genre)
+    }
+
+    suspend fun getRecommendedMovies(excludeIds: Set<String>, limit: Int = 20): List<JellyfinMediaEntity> {
+        val topGenres = getMostWatchedGenres().take(4)
+        val resultList = mutableListOf<JellyfinMediaEntity>()
+        val addedIds = mutableSetOf<String>().apply { addAll(excludeIds) }
+
+        // 1. Obtener películas de los géneros más vistos
+        for (genre in topGenres) {
+            val genreItems = jellyfinDao.getItemsByGenre(genre)
+                .filter { it.type.equals("Movie", ignoreCase = true) && it.id !in addedIds }
+            for (item in genreItems) {
+                resultList.add(item)
+                addedIds.add(item.id)
+                if (resultList.size >= limit) break
+            }
+            if (resultList.size >= limit) break
+        }
+
+        // 2. Rellenar con otras películas valoradas de la biblioteca local que no se hayan mostrado
+        if (resultList.size < limit) {
+            val remaining = jellyfinDao.getMovies()
+                .filter { it.id !in addedIds }
+                .sortedByDescending { it.communityRating ?: 0f }
+            for (item in remaining) {
+                resultList.add(item)
+                addedIds.add(item.id)
+                if (resultList.size >= limit) break
+            }
+        }
+
+        return resultList
     }
 
     suspend fun getSeasons(serverUrl: String, userId: String, token: String, seriesId: String): List<SeasonItem> {

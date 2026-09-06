@@ -3,12 +3,15 @@ package com.example.tujelly
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -23,6 +26,7 @@ import com.example.tujelly.ui.screens.detail.DetailScreen
 import com.example.tujelly.ui.screens.favorites.FavoritesScreen
 import com.example.tujelly.ui.screens.genre.GenreScreen
 import com.example.tujelly.ui.screens.home.HomeScreen
+import com.example.tujelly.ui.screens.onboarding.PlatformSelectionScreen
 import com.example.tujelly.ui.screens.player.PlayerScreen
 import com.example.tujelly.ui.screens.search.SearchScreen
 import com.example.tujelly.ui.screens.settings.SettingsScreen
@@ -41,22 +45,36 @@ class MainActivity : ComponentActivity() {
         setContent {
             val userPrefsRepo = remember { com.example.tujelly.data.local.UserPreferencesRepository(applicationContext) }
             val currentPrefs by userPrefsRepo.userPreferencesFlow.collectAsState(initial = null)
-            val indicatorTheme = currentPrefs?.indicatorTheme ?: com.example.tujelly.data.local.INDICATOR_THEME_COLOR
-            val platformLogoStyle = currentPrefs?.platformLogoStyle ?: com.example.tujelly.data.local.PLATFORM_LOGO_COLOR
+
+            val prefs = currentPrefs
+            if (prefs == null) {
+                // Fondo neutro mientras se cargan las preferencias de almacenamiento para evitar el parpadeo de onboarding
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF0C0C12))
+                )
+                return@setContent
+            }
+
+            val isMonochrome = prefs.isMonochrome
+            val indicatorTheme = if (isMonochrome) com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME else prefs.indicatorTheme
+            val platformLogoStyle = if (isMonochrome) com.example.tujelly.data.local.PLATFORM_LOGO_MONOCHROME else prefs.platformLogoStyle
 
             TujellyTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     shape = RectangleShape,
                     colors = NonInteractiveSurfaceDefaults.colors(
-                        containerColor = androidx.compose.ui.graphics.Color(0xFF0C0C12)
+                        containerColor = Color(0xFF0C0C12)
                     )
                 ) {
                     androidx.compose.runtime.CompositionLocalProvider(
+                        com.example.tujelly.ui.theme.LocalIsMonochromeTheme provides isMonochrome,
                         com.example.tujelly.ui.theme.LocalIndicatorTheme provides indicatorTheme,
                         com.example.tujelly.ui.theme.LocalPlatformLogoStyle provides platformLogoStyle
                     ) {
-                        TujellyApp()
+                        TujellyApp(startOnboarding = !prefs.hasCompletedOnboarding)
                     }
                 }
             }
@@ -66,13 +84,24 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun TujellyApp() {
+fun TujellyApp(startOnboarding: Boolean = false) {
     val navController = rememberNavController()
+    val startDestination = if (startOnboarding) "onboarding" else "home"
 
     NavHost(
         navController = navController,
-        startDestination = "home"
+        startDestination = startDestination
     ) {
+        composable("onboarding") {
+            PlatformSelectionScreen(
+                onDone = {
+                    navController.navigate("home") {
+                        popUpTo("onboarding") { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable("home") {
             HomeScreen(
                 onPlayMedia = { itemId ->

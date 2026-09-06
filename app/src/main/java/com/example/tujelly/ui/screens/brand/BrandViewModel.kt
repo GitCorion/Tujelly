@@ -11,9 +11,12 @@ import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class BrandInfo(
@@ -21,11 +24,10 @@ data class BrandInfo(
     val name: String,
     val providerId: String,
     val iconRes: Int,
+    val iconMonoRes: Int,
     val accentColor: androidx.compose.ui.graphics.Color,
     val gradientStart: androidx.compose.ui.graphics.Color
-)
-
-sealed interface BrandUiState {
+)sealed interface BrandUiState {
     object Loading : BrandUiState
     data class Success(
         val brand: BrandInfo,
@@ -42,6 +44,18 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
     private val mediaRepository = com.example.tujelly.data.repository.MediaRepository(database.jellyfinDao())
     private val filterToLibraryUseCase = FilterToLibraryUseCase(mediaRepository)
 
+    val accentColor: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
+        .map { it.accentColor }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.example.tujelly.data.local.ACCENT_CYAN)
+
+    val buttonStyle: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
+        .map { it.buttonStyle }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY)
+
+    val isMonochrome: StateFlow<Boolean> = userPreferencesRepository.userPreferencesFlow
+        .map { it.isMonochrome }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     private val _uiState = MutableStateFlow<BrandUiState>(BrandUiState.Loading)
     val uiState: StateFlow<BrandUiState> = _uiState.asStateFlow()
 
@@ -55,15 +69,18 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            val brand = when (brandId.lowercase()) {
-                "netflix" -> BrandInfo("netflix", "NETFLIX", "8", com.example.tujelly.R.drawable.ic_brand_netflix, androidx.compose.ui.graphics.Color(0xFFE50914), androidx.compose.ui.graphics.Color(0xFF1E0507))
-                "disney" -> BrandInfo("disney", "DISNEY+", "337", com.example.tujelly.R.drawable.ic_brand_disney, androidx.compose.ui.graphics.Color(0xFF1B4DFF), androidx.compose.ui.graphics.Color(0xFF040D2D))
-                "max" -> BrandInfo("max", "MAX", "1899|384", com.example.tujelly.R.drawable.ic_brand_max, androidx.compose.ui.graphics.Color(0xFF002BE7), androidx.compose.ui.graphics.Color(0xFF020A24))
-                "prime" -> BrandInfo("prime", "PRIME VIDEO", "119", com.example.tujelly.R.drawable.ic_brand_prime, androidx.compose.ui.graphics.Color(0xFF00A8E1), androidx.compose.ui.graphics.Color(0xFF02141C))
-                "apple" -> BrandInfo("apple", "APPLE TV+", "350", com.example.tujelly.R.drawable.ic_brand_apple, androidx.compose.ui.graphics.Color(0xFFE2E8F0), androidx.compose.ui.graphics.Color(0xFF101116))
-                "movistar" -> BrandInfo("movistar", "MOVISTAR+", "2241|149", com.example.tujelly.R.drawable.ic_brand_movistar, androidx.compose.ui.graphics.Color(0xFF019DF4), androidx.compose.ui.graphics.Color(0xFF020B20))
-                else -> BrandInfo("netflix", "NETFLIX", "8", com.example.tujelly.R.drawable.ic_brand_netflix, androidx.compose.ui.graphics.Color(0xFFE50914), androidx.compose.ui.graphics.Color(0xFF1E0507))
-            }
+            val platform = com.example.tujelly.data.model.platformById(brandId)
+                ?: com.example.tujelly.data.model.SUPPORTED_PLATFORMS.first()
+
+            val brand = BrandInfo(
+                id = platform.id,
+                name = platform.name,
+                providerId = platform.providerId,
+                iconRes = platform.iconRes,
+                iconMonoRes = platform.iconMonoRes,
+                accentColor = platform.accentColor,
+                gradientStart = platform.gradientStart
+            )
 
             val sections = mutableListOf<HomeSection>()
             val api = NetworkClientFactory.createService("https://api.themoviedb.org/3/", TmdbApiService::class.java)

@@ -31,29 +31,20 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
-import com.example.tujelly.R
-
-data class BrandTile(
-    val id: String,
-    val name: String,
-    val iconRes: Int,
-    val iconMonoRes: Int = iconRes
-)
-
-val BRAND_TILES = listOf(
-    BrandTile("netflix", "NETFLIX", R.drawable.ic_brand_netflix, R.drawable.ic_brand_netflix_mono),
-    BrandTile("disney", "DISNEY+", R.drawable.ic_brand_disney, R.drawable.ic_brand_disney_mono),
-    BrandTile("max", "MAX", R.drawable.ic_brand_max, R.drawable.ic_brand_max_mono),
-    BrandTile("prime", "PRIME VIDEO", R.drawable.ic_brand_prime, R.drawable.ic_brand_prime_mono),
-    BrandTile("apple", "APPLE TV+", R.drawable.ic_brand_apple, R.drawable.ic_brand_apple_mono),
-    BrandTile("movistar", "MOVISTAR+", R.drawable.ic_brand_movistar, R.drawable.ic_brand_movistar_mono)
-)
+import com.example.tujelly.data.model.SUPPORTED_PLATFORMS
 
 @Composable
 fun BrandTileRow(
     onSelectBrand: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    visiblePlatforms: Set<String>? = null
 ) {
+    val platforms = if (visiblePlatforms != null) {
+        SUPPORTED_PLATFORMS.filter { it.id in visiblePlatforms }
+    } else {
+        SUPPORTED_PLATFORMS
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -64,10 +55,10 @@ fun BrandTileRow(
             contentPadding = PaddingValues(horizontal = 48.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
         ) {
-            items(BRAND_TILES, key = { it.id }) { brand ->
+            items(platforms, key = { it.id }) { platform ->
                 BrandCard(
-                    brand = brand,
-                    onClick = { onSelectBrand(brand.id) }
+                    brand = platform,
+                    onClick = { onSelectBrand(platform.id) }
                 )
             }
         }
@@ -77,14 +68,15 @@ fun BrandTileRow(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun BrandCard(
-    brand: BrandTile,
+    brand: com.example.tujelly.data.model.StreamPlatform,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val logoStyle = com.example.tujelly.ui.theme.LocalPlatformLogoStyle.current
     val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
-    val isMonochrome = logoStyle == com.example.tujelly.data.local.PLATFORM_LOGO_MONOCHROME ||
+    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current ||
+            logoStyle == com.example.tujelly.data.local.PLATFORM_LOGO_MONOCHROME ||
             (logoStyle == com.example.tujelly.data.local.PLATFORM_LOGO_COLOR && indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME)
 
     val iconRes = if (isMonochrome) brand.iconMonoRes else brand.iconRes

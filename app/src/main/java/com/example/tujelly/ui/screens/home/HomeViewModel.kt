@@ -53,12 +53,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         .map { it.buttonStyle }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY)
 
+    val selectedPlatforms: StateFlow<Set<String>> = userPreferencesRepository.userPreferencesFlow
+        .map { it.selectedPlatforms }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
     val syncProgress: StateFlow<com.example.tujelly.data.repository.SyncProgress> = MediaRepository.syncProgress
     val localMediaCount: StateFlow<Int> = mediaRepository.getMediaCountFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private var lastSections: List<HomeSection>? = null
+    private var lastGenres: List<String> = emptyList()
+    private var isFeedLoading = false
 
     init {
         viewModelScope.launch {
@@ -99,7 +107,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun loadFeedForPrefs(prefs: UserPreferences) {
-        _uiState.value = HomeUiState.Loading
+        if (isFeedLoading) return
+        isFeedLoading = true
+
+        // Si ya tenemos snapshot previo, lo mostramos de inmediato (sin spinner) y refrescamos en segundo plano.
+        val cached = lastSections
+        if (!cached.isNullOrEmpty()) {
+            val currentFocused = (_uiState.value as? HomeUiState.Success)?.focusedItem
+            _uiState.value = HomeUiState.Success(
+                sections = cached,
+                genres = lastGenres,
+                focusedItem = currentFocused ?: cached.firstOrNull()?.items?.firstOrNull()
+            )
+        } else {
+            _uiState.value = HomeUiState.Loading
+        }
 
         // Launch background sync (delta sync if already populated, or full sync if empty)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -113,25 +135,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 var hasEmitted = false
-                val userGenres = mediaRepository.getMostWatchedGenres()
+                lastGenres = mediaRepository.getMostWatchedGenres()
 
                 getHomeFeedUseCase(prefs).collect { sections ->
                     if (sections.isNotEmpty()) {
                         hasEmitted = true
+                        lastSections = sections
+                        lastGenres = mediaRepository.getMostWatchedGenres()
                         val currentFocused = (_uiState.value as? HomeUiState.Success)?.focusedItem
                         val firstItem = currentFocused ?: sections.firstOrNull()?.items?.firstOrNull()
                         _uiState.value = HomeUiState.Success(
                             sections = sections,
-                            genres = userGenres,
+                            genres = lastGenres,
                             focusedItem = firstItem
                         )
                     }
                 }
-                if (!hasEmitted) {
+                if (!hasEmitted && lastSections.isNullOrEmpty()) {
                     _uiState.value = HomeUiState.EmptyLibrary(prefs.jellyfinServerUrl)
                 }
             } catch (e: Exception) {
-                _uiState.value = HomeUiState.Error(e.localizedMessage ?: "Error conectando con Jellyfin")
+                if (lastSections.isNullOrEmpty()) {
+                    _uiState.value = HomeUiState.Error(e.localizedMessage ?: "Error conectando con Jellyfin")
+                }
+            } finally {
+                isFeedLoading = false
             }
         }
     }

@@ -104,7 +104,8 @@ fun EpisodeCard(
                 // Watched badge
                 if (episode.isPlayed) {
                     val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
-                    val isMonochrome = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
+                    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current ||
+                            indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
 
                     Box(
                         modifier = Modifier

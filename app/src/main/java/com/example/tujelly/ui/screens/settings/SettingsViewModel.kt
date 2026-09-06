@@ -68,7 +68,8 @@ data class SettingsUiState(
     // GitHub App Updates
     val isCheckingUpdate: Boolean = false,
     val updateInfo: com.example.tujelly.data.remote.github.UpdateInfo? = null,
-    val downloadProgress: Float? = null
+    val downloadProgress: Float? = null,
+    val selectedPlatforms: Set<String> = emptySet()
 ) {
     val isMonochrome: Boolean
         get() = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME || accentColor == com.example.tujelly.data.local.ACCENT_WHITE
@@ -107,6 +108,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 accentColor = prefs.accentColor,
                 indicatorTheme = prefs.indicatorTheme,
                 platformLogoStyle = prefs.platformLogoStyle,
+                selectedPlatforms = prefs.selectedPlatforms,
                 isJellyfinConnected = isJfConnected,
                 isTraktConnected = prefs.traktAccessToken.isNotBlank()
             )
@@ -145,6 +147,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             userPreferencesRepository.updatePlatformLogoStyle(style)
             _uiState.value = _uiState.value.copy(platformLogoStyle = style)
+        }
+    }
+
+    fun togglePlatform(platformId: String) {
+        val current = _uiState.value.selectedPlatforms
+        val updated = if (platformId in current) current - platformId else current + platformId
+        _uiState.value = _uiState.value.copy(selectedPlatforms = updated)
+        viewModelScope.launch {
+            userPreferencesRepository.updateSelectedPlatforms(updated)
         }
     }
 

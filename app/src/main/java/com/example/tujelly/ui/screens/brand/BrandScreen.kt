@@ -52,6 +52,11 @@ fun BrandScreen(
     viewModel: BrandViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val isMonochrome by viewModel.isMonochrome.collectAsState()
+    val accentColorKey by viewModel.accentColor.collectAsState()
+    val buttonStyleKey by viewModel.buttonStyle.collectAsState()
+    val focusColor = com.example.tujelly.ui.theme.TvAccent.getColor(accentColorKey)
+    val focusContent = com.example.tujelly.ui.theme.TvAccent.getFocusedContentColor(accentColorKey)
 
     LaunchedEffect(brandId) {
         viewModel.loadBrandFeed(brandId)
@@ -65,10 +70,10 @@ fun BrandScreen(
                     .background(Color(0xFF090A0F)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Cargando catálogo de la plataforma...",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White
+                com.example.tujelly.ui.components.JellyLoadingIndicator(
+                    size = 72.dp,
+                    message = "Cargando catálogo de la plataforma...",
+                    isMonochrome = isMonochrome
                 )
             }
         }
@@ -92,8 +97,8 @@ fun BrandScreen(
                         colors = ButtonDefaults.colors(
                             containerColor = Color(0xFF1E2034),
                             contentColor = Color.White,
-                            focusedContainerColor = Color(0xFF4F46E5),
-                            focusedContentColor = Color.White
+                            focusedContainerColor = focusColor,
+                            focusedContentColor = focusContent
                         )
                     ) {
                         Text("Volver", fontWeight = FontWeight.Bold)
@@ -104,15 +109,16 @@ fun BrandScreen(
 
         is BrandUiState.Success -> {
             val brand = state.brand
+            val gradientColors = if (isMonochrome) {
+                listOf(Color(0xFF141622), Color(0xFF07070B))
+            } else {
+                listOf(brand.gradientStart, Color(0xFF07070B))
+            }
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(brand.gradientStart, Color(0xFF07070B))
-                        )
-                    )
+                    .background(Brush.verticalGradient(colors = gradientColors))
             ) {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     // Header Bar
@@ -134,8 +140,9 @@ fun BrandScreen(
                                         .padding(8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
+                                    val iconRes = if (isMonochrome) brand.iconMonoRes else brand.iconRes
                                     Image(
-                                        painter = painterResource(id = brand.iconRes),
+                                        painter = painterResource(id = iconRes),
                                         contentDescription = brand.name
                                     )
                                 }
@@ -161,8 +168,8 @@ fun BrandScreen(
                                 colors = ButtonDefaults.colors(
                                     containerColor = Color(0xFF1E2034),
                                     contentColor = Color.White,
-                                    focusedContainerColor = Color(0xFF4F46E5),
-                                    focusedContentColor = Color.White
+                                    focusedContainerColor = focusColor,
+                                    focusedContentColor = focusContent
                                 )
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -184,7 +191,9 @@ fun BrandScreen(
                         HeroBanner(
                             item = state.focusedItem,
                             onPlayClick = { item -> onPlayMedia(item.id) },
-                            onDetailClick = { item -> onDetailMedia(item.id) }
+                            onDetailClick = { item -> onDetailMedia(item.id) },
+                            accentColor = accentColorKey,
+                            buttonStyle = buttonStyleKey
                         )
                     }
 

@@ -20,7 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dns
-import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Refresh
@@ -70,6 +70,7 @@ fun HomeScreen(
     val accentColorKey by viewModel.accentColor.collectAsState()
     val isMonochrome by viewModel.isMonochrome.collectAsState()
     val buttonStyleKey by viewModel.buttonStyle.collectAsState()
+    val selectedPlatforms by viewModel.selectedPlatforms.collectAsState()
     val showTopIcons = buttonStyleKey != BUTTON_STYLE_TEXT_ONLY
     val showTopText = buttonStyleKey != BUTTON_STYLE_ICONS_ONLY
 
@@ -110,12 +111,12 @@ fun HomeScreen(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .background(Color(0x2238BDF8), RoundedCornerShape(16.dp))
-                            .border(0.75.dp, Color(0x5538BDF8), RoundedCornerShape(16.dp))
+                            .background(if (isMonochrome) Color(0x22FFFFFF) else Color(0x2238BDF8), RoundedCornerShape(16.dp))
+                            .border(0.75.dp, if (isMonochrome) Color(0x55FFFFFF) else Color(0x5538BDF8), RoundedCornerShape(16.dp))
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
                         androidx.compose.material3.CircularProgressIndicator(
-                            color = Color(0xFF38BDF8),
+                            color = if (isMonochrome) Color.White else Color(0xFF38BDF8),
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(11.dp)
                         )
@@ -218,15 +219,15 @@ fun HomeScreen(
                     ) {
                         if (showTopIcons) {
                             Icon(
-                                imageVector = Icons.Rounded.Explore,
-                                contentDescription = "Descubrir",
+                                imageVector = Icons.Rounded.Home,
+                                contentDescription = "Inicio",
                                 modifier = Modifier.size(16.dp)
                             )
                         }
                         if (showTopText) {
                             if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Descubrir",
+                                text = "Inicio",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -512,7 +513,8 @@ fun HomeScreen(
                         BrandTileRow(
                             onSelectBrand = { brandId ->
                                 onOpenBrand(brandId)
-                            }
+                            },
+                            visiblePlatforms = selectedPlatforms.takeIf { it.isNotEmpty() }
                         )
                     }
 

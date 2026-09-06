@@ -149,4 +149,8 @@ val LocalPlatformLogoStyle = androidx.compose.runtime.compositionLocalOf {
     com.example.tujelly.data.local.PLATFORM_LOGO_COLOR
 }
 
+val LocalIsMonochromeTheme = androidx.compose.runtime.compositionLocalOf {
+    false
+}
+
 

@@ -42,6 +42,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -63,6 +67,7 @@ import com.example.tujelly.data.local.BUTTON_STYLE_TEXT_ONLY
 import com.example.tujelly.domain.model.SeriesStatusType
 import com.example.tujelly.ui.components.EpisodeCard
 import com.example.tujelly.ui.components.InAppTrailerPlayer
+import com.example.tujelly.ui.components.MediaCard
 import com.example.tujelly.ui.theme.TvAccent
 import com.example.tujelly.ui.theme.TvPill
 import com.example.tujelly.ui.theme.TvRatingBadge
@@ -90,7 +95,20 @@ fun DetailScreen(
     }
 
     val uiState by viewModel.uiState.collectAsState()
-    val isMonochrome by viewModel.isMonochrome.collectAsState()
+    val isMonochromeFlow by viewModel.isMonochrome.collectAsState()
+    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current || isMonochromeFlow
+
+    val playButtonFocusRequester = remember { FocusRequester() }
+    val backButtonFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(uiState) {
+        if (uiState is DetailUiState.Success) {
+            delay(120)
+            runCatching {
+                playButtonFocusRequester.requestFocus()
+            }
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -199,6 +217,10 @@ fun DetailScreen(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(start = 48.dp, top = 26.dp)
+                        .focusRequester(backButtonFocusRequester)
+                        .focusProperties {
+                            down = playButtonFocusRequester
+                        }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -244,8 +266,7 @@ fun DetailScreen(
                             .weight(1f)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
-                        val isMonochrome = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
+                        // isMonochrome is already computed in outer scope (line 98)
 
                         // Title
                         Text(
@@ -287,15 +308,15 @@ fun DetailScreen(
                                 when (state.seriesStatus.type) {
                                     SeriesStatusType.CANCELED -> {
                                         TvPill(
-                                            text = "🔴 ${state.seriesStatus.label}",
-                                            containerColor = Color(0x33EF4444),
-                                            textColor = Color(0xFFFCA5A5),
-                                            borderColor = Color(0x66EF4444)
+                                            text = if (isMonochrome) state.seriesStatus.label else "🔴 ${state.seriesStatus.label}",
+                                            containerColor = if (isMonochrome) Color(0x18FFFFFF) else Color(0x33EF4444),
+                                            textColor = if (isMonochrome) Color.White else Color(0xFFFCA5A5),
+                                            borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x66EF4444)
                                         )
                                     }
                                     SeriesStatusType.ENDED -> {
                                         TvPill(
-                                            text = "⚪ ${state.seriesStatus.label}",
+                                            text = if (isMonochrome) state.seriesStatus.label else "⚪ ${state.seriesStatus.label}",
                                             containerColor = Color(0x18FFFFFF),
                                             textColor = Color(0xFFE2E8F0),
                                             borderColor = Color(0x33FFFFFF)
@@ -303,10 +324,10 @@ fun DetailScreen(
                                     }
                                     SeriesStatusType.CONTINUING -> {
                                         TvPill(
-                                            text = "🟢 ${state.seriesStatus.label}",
-                                            containerColor = Color(0x2E10B981),
-                                            textColor = Color(0xFF6EE7B7),
-                                            borderColor = Color(0x5510B981)
+                                            text = if (isMonochrome) state.seriesStatus.label else "🟢 ${state.seriesStatus.label}",
+                                            containerColor = if (isMonochrome) Color(0x18FFFFFF) else Color(0x2E10B981),
+                                            textColor = if (isMonochrome) Color.White else Color(0xFF6EE7B7),
+                                            borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x5510B981)
                                         )
                                     }
                                     SeriesStatusType.UNKNOWN -> {}
@@ -384,7 +405,13 @@ fun DetailScreen(
                                     contentColor = Color.White,
                                     focusedContainerColor = focusColor,
                                     focusedContentColor = focusContent
-                                )
+                                ),
+                                shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
+                                modifier = Modifier
+                                    .focusRequester(playButtonFocusRequester)
+                                    .focusProperties {
+                                        up = backButtonFocusRequester
+                                    }
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     if (showIcons) {
@@ -519,33 +546,31 @@ fun DetailScreen(
                             }
                         }
 
-                        // Overview Synopsis Box
-                        if (!entity.overview.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xFF111220), RoundedCornerShape(12.dp))
-                                    .border(1.dp, Color(0xFF222438), RoundedCornerShape(12.dp))
-                                    .padding(18.dp)
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "Sinopsis",
-                                        color = Color(0xFFCBD5E1),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 1.sp
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = entity.overview!!,
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            lineHeight = 22.sp
-                                        ),
-                                        color = Color(0xFFE2E8F0)
-                                    )
-                                }
+                        // Overview Synopsis Box (ALWAYS present right under buttons)
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF111220), RoundedCornerShape(12.dp))
+                                .border(1.dp, Color(0xFF222438), RoundedCornerShape(12.dp))
+                                .padding(18.dp)
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Sinopsis",
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = entity.overview?.takeIf { it.isNotBlank() } ?: "Sin descripción disponible para este título.",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        lineHeight = 22.sp
+                                    ),
+                                    color = Color(0xFFE2E8F0)
+                                )
                             }
                         }
 
@@ -579,7 +604,7 @@ fun DetailScreen(
                                                 border = Border(
                                                     border = BorderStroke(
                                                         1.dp,
-                                                        if (isSelected) focusColor.copy(alpha = 0.6f) else Color(0x18FFFFFF)
+                                                        if (isSelected) (if (isMonochrome) Color.White.copy(alpha = 0.6f) else focusColor.copy(alpha = 0.6f)) else Color(0x18FFFFFF)
                                                     ),
                                                     shape = RoundedCornerShape(16.dp)
                                                 ),
@@ -647,6 +672,85 @@ fun DetailScreen(
                                 }
                             }
                         }
+
+                        // Discrete Recommendations Section at the Very Bottom
+                        if (state.similarItems.isNotEmpty() || (state.genreItems.isNotEmpty() && !state.genreName.isNullOrBlank())) {
+                            Spacer(modifier = Modifier.height(44.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(Color(0x18FFFFFF))
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            if (state.similarItems.isNotEmpty()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TvPill(
+                                        text = "RECOMENDADO",
+                                        containerColor = Color(0x18FFFFFF),
+                                        textColor = Color(0xFFCBD5E1),
+                                        borderColor = Color(0x22FFFFFF)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "TÍTULOS SIMILARES",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    items(state.similarItems, key = { it.id }) { item ->
+                                        MediaCard(
+                                            item = item,
+                                            onClick = {
+                                                viewModel.loadDetail(item.id)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (state.genreItems.isNotEmpty() && !state.genreName.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(28.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TvPill(
+                                        text = "GÉNERO",
+                                        containerColor = Color(0x18FFFFFF),
+                                        textColor = Color(0xFFCBD5E1),
+                                        borderColor = Color(0x22FFFFFF)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "MÁS DE ${state.genreName!!.uppercase()}",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    items(state.genreItems, key = { it.id }) { item ->
+                                        MediaCard(
+                                            item = item,
+                                            onClick = {
+                                                viewModel.loadDetail(item.id)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -672,7 +776,7 @@ fun DetailScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     CircularProgressIndicator(
-                        color = Color(0xFF38BDF8),
+                        color = if (isMonochrome) Color.White else Color(0xFF38BDF8),
                         strokeWidth = 3.5.dp,
                         modifier = Modifier.size(50.dp)
                     )

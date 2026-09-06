@@ -47,7 +47,9 @@ data class UserPreferences(
     val accentColor: String = ACCENT_CYAN,
     val indicatorTheme: String = INDICATOR_THEME_COLOR,
     val platformLogoStyle: String = PLATFORM_LOGO_COLOR,
-    val jellyfinLastSync: String = ""
+    val jellyfinLastSync: String = "",
+    val selectedPlatforms: Set<String> = emptySet(),
+    val hasCompletedOnboarding: Boolean = false
 ) {
     val isMonochrome: Boolean
         get() = indicatorTheme == INDICATOR_THEME_MONOCHROME || accentColor == ACCENT_WHITE
@@ -71,6 +73,8 @@ class UserPreferencesRepository(private val context: Context) {
         val INDICATOR_THEME = stringPreferencesKey("indicator_theme")
         val PLATFORM_LOGO_STYLE = stringPreferencesKey("platform_logo_style")
         val JELLYFIN_LAST_SYNC = stringPreferencesKey("jellyfin_last_sync")
+        val SELECTED_PLATFORMS = stringPreferencesKey("selected_platforms")
+        val HAS_COMPLETED_ONBOARDING = stringPreferencesKey("has_completed_onboarding")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
@@ -96,7 +100,13 @@ class UserPreferencesRepository(private val context: Context) {
             accentColor = prefs[Keys.ACCENT_COLOR] ?: ACCENT_CYAN,
             indicatorTheme = prefs[Keys.INDICATOR_THEME] ?: INDICATOR_THEME_COLOR,
             platformLogoStyle = prefs[Keys.PLATFORM_LOGO_STYLE] ?: PLATFORM_LOGO_COLOR,
-            jellyfinLastSync = prefs[Keys.JELLYFIN_LAST_SYNC] ?: ""
+            jellyfinLastSync = prefs[Keys.JELLYFIN_LAST_SYNC] ?: "",
+            selectedPlatforms = (prefs[Keys.SELECTED_PLATFORMS] ?: "")
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .toSet(),
+            hasCompletedOnboarding = prefs[Keys.HAS_COMPLETED_ONBOARDING] == true.toString()
         )
     }
 
@@ -198,6 +208,18 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun clearJellyfinLastSync() {
         context.dataStore.edit { prefs ->
             prefs.remove(Keys.JELLYFIN_LAST_SYNC)
+        }
+    }
+
+    suspend fun updateSelectedPlatforms(platforms: Set<String>) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.SELECTED_PLATFORMS] = platforms.sorted().joinToString(",")
+        }
+    }
+
+    suspend fun markOnboardingCompleted() {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.HAS_COMPLETED_ONBOARDING] = true.toString()
         }
     }
 }

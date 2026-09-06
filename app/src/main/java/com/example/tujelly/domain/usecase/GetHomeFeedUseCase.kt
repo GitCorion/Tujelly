@@ -32,28 +32,56 @@ class GetHomeFeedUseCase(
         }
 
         val sections = mutableListOf<HomeSection>()
+        val shownMediaIds = mutableSetOf<String>()
 
         // =========================================================================
-        // PASO 0: GRANDES PRODUCCIONES DE TU SERVIDOR (Garantizado 20 ítems del servidor)
+        // PASO 0: GRANDES PRODUCCIONES DE TU SERVIDOR (Selección de alta calidad)
         // =========================================================================
         val topMoviesServer = mediaRepository.getTopRatedMoviesServer(
             serverUrl = prefs.jellyfinServerUrl,
             userId = prefs.jellyfinUserId,
             token = prefs.jellyfinAccessToken,
-            limit = 20
+            limit = 100
         )
         val topSeriesServer = mediaRepository.getTopRatedSeriesServer(
             serverUrl = prefs.jellyfinServerUrl,
             userId = prefs.jellyfinUserId,
             token = prefs.jellyfinAccessToken,
-            limit = 20
+            limit = 50
         )
 
-        if (topMoviesServer.isNotEmpty()) {
+        // 1. Cruzar las producciones más aclamadas globalmente de TMDB con la biblioteca local
+        val tmdbBlockbusters = if (prefs.tmdbApiKey.isNotBlank()) {
+            runCatching {
+                val topRated = mediaRepository.getTmdbTopRated(prefs.tmdbApiKey).getOrDefault(emptyList())
+                filterToLibraryUseCase.filterTmdbItems(
+                    tmdbItems = topRated,
+                    serverUrl = prefs.jellyfinServerUrl,
+                    userId = prefs.jellyfinUserId,
+                    token = prefs.jellyfinAccessToken,
+                    maxCandidates = 60
+                ).filter { it.type.equals("Movie", ignoreCase = true) }
+            }.getOrDefault(emptyList())
+        } else emptyList()
+
+        // 2. Filtrar películas con masa crítica de votos para evitar fakes de 10 estrellas sin votos
+        val curatedServerMovies = if (prefs.tmdbApiKey.isNotBlank()) {
+            filterHighQualityMovies(topMoviesServer, prefs.tmdbApiKey)
+        } else {
+            topMoviesServer.filter { (it.communityRating ?: 0f) >= 7.0f && !it.backdropImageTag.isNullOrEmpty() }
+        }
+
+        // Fusión inteligente: Priorizar verdaderas grandes producciones y completar sin duplicados
+        val curatedTopMovies = (tmdbBlockbusters + curatedServerMovies)
+            .distinctBy { it.id }
+            .take(20)
+
+        if (curatedTopMovies.isNotEmpty()) {
+            shownMediaIds.addAll(curatedTopMovies.map { it.id })
             sections.add(
                 HomeSection(
                     title = "Grandes Producciones de tu colección",
-                    items = topMoviesServer.map {
+                    items = curatedTopMovies.map {
                         it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
                     },
                     badge = "DESTACADO"
@@ -62,6 +90,7 @@ class GetHomeFeedUseCase(
         }
 
         if (topSeriesServer.isNotEmpty()) {
+            shownMediaIds.addAll(topSeriesServer.map { it.id })
             sections.add(
                 HomeSection(
                     title = "Series Destacadas",
@@ -89,6 +118,7 @@ class GetHomeFeedUseCase(
         }.getOrDefault(emptyList())
 
         if (resumeItems.isNotEmpty()) {
+            shownMediaIds.addAll(resumeItems.map { it.id })
             val continueSection = HomeSection(
                 title = "Continuar Viendo",
                 items = resumeItems.take(15).map {
@@ -123,6 +153,7 @@ class GetHomeFeedUseCase(
         }
 
         if (latestItems.isNotEmpty()) {
+            shownMediaIds.addAll(latestItems.map { it.id })
             val latestSection = HomeSection(
                 title = "Añadido recientemente",
                 items = latestItems.take(20).map {
@@ -136,54 +167,103 @@ class GetHomeFeedUseCase(
         }
 
         // =========================================================================
-        // PASO 2: RECOMENDACIÓN PERSONALIZADA ("Porque viste [Título]")
+        // PASO 2: RECOMENDACIÓN PERSONALIZADA ("Porque viste [Título]" o "Recomendados de [Género]")
         // =========================================================================
-        if (prefs.tmdbApiKey.isNotBlank()) {
-            val referenceItem = resumeItems.firstOrNull { it.tmdbId != null }
-                ?: recentlyPlayedItems.firstOrNull { it.tmdbId != null }
-                ?: topMoviesServer.firstOrNull { it.tmdbId != null }
+        val watchedReferenceItem = resumeItems.firstOrNull { it.tmdbId != null }
+            ?: recentlyPlayedItems.firstOrNull { it.tmdbId != null }
 
-            if (referenceItem != null) {
-                try {
-                    val tmdbIdLong = referenceItem.tmdbId?.toLongOrNull()
-                    if (tmdbIdLong != null) {
-                        val isTv = referenceItem.type.equals("Series", ignoreCase = true) ||
-                                referenceItem.type.equals("Episode", ignoreCase = true)
-                        val recsResult = mediaRepository.getTmdbRecommendations(
-                            apiKey = prefs.tmdbApiKey,
-                            tmdbId = tmdbIdLong,
-                            isTv = isTv
-                        ).getOrDefault(emptyList())
+        var recommendationAdded = false
 
-                        if (recsResult.isNotEmpty()) {
-                            val matchedRecs = filterToLibraryUseCase.filterTmdbItems(
-                                tmdbItems = recsResult.take(15),
+        if (watchedReferenceItem != null && prefs.tmdbApiKey.isNotBlank()) {
+            try {
+                val tmdbIdLong = watchedReferenceItem.tmdbId?.toLongOrNull()
+                if (tmdbIdLong != null) {
+                    val isTv = watchedReferenceItem.type.equals("Series", ignoreCase = true) ||
+                            watchedReferenceItem.type.equals("Episode", ignoreCase = true)
+                    val recsResult = mediaRepository.getTmdbRecommendations(
+                        apiKey = prefs.tmdbApiKey,
+                        tmdbId = tmdbIdLong,
+                        isTv = isTv
+                    ).getOrDefault(emptyList())
+
+                    if (recsResult.isNotEmpty()) {
+                        val refGenres = watchedReferenceItem.genres?.split(",", ";")
+                            ?.map { it.trim().lowercase() }
+                            ?.filter { it.isNotBlank() } ?: emptyList()
+
+                        val matchedRecs = filterToLibraryUseCase.filterTmdbItems(
+                            tmdbItems = recsResult,
+                            serverUrl = prefs.jellyfinServerUrl,
+                            userId = prefs.jellyfinUserId,
+                            token = prefs.jellyfinAccessToken,
+                            maxCandidates = 30
+                        ).filter { candidate ->
+                            candidate.id != watchedReferenceItem.id &&
+                                    candidate.id !in shownMediaIds &&
+                                    (refGenres.isEmpty() || candidate.genres.orEmpty().split(",", ";").any { g -> g.trim().lowercase() in refGenres })
+                        }.take(15)
+
+                        // Si tras filtrar por género no hay suficientes, relajar el filtro de género pero mantener no mostrados
+                        val finalRecs = if (matchedRecs.size >= 3) matchedRecs else {
+                            filterToLibraryUseCase.filterTmdbItems(
+                                tmdbItems = recsResult,
                                 serverUrl = prefs.jellyfinServerUrl,
                                 userId = prefs.jellyfinUserId,
                                 token = prefs.jellyfinAccessToken,
-                                maxCandidates = 20
-                            ).filter { it.id != referenceItem.id }
+                                maxCandidates = 30
+                            ).filter { candidate ->
+                                candidate.id != watchedReferenceItem.id && candidate.id !in shownMediaIds
+                            }.take(15)
+                        }
 
-                            if (matchedRecs.isNotEmpty()) {
-                                sections.add(
-                                    HomeSection(
-                                        title = "Porque viste ${referenceItem.title}",
-                                        items = matchedRecs.map {
-                                            it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_RECOMMENDATION)
-                                        },
-                                        badge = "RECOMENDADO"
-                                    )
+                        if (finalRecs.size >= 3) {
+                            shownMediaIds.addAll(finalRecs.map { it.id })
+                            sections.add(
+                                HomeSection(
+                                    title = "Porque viste ${watchedReferenceItem.title}",
+                                    items = finalRecs.map {
+                                        it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_RECOMMENDATION)
+                                    },
+                                    badge = "RECOMENDADO"
                                 )
-                                emit(sections.toList())
-                            }
+                            )
+                            emit(sections.toList())
+                            recommendationAdded = true
                         }
                     }
-                } catch (_: Exception) {}
-            }
+                }
+            } catch (_: Exception) {}
+        }
 
-            // =====================================================================
-            // PASO 3: TOP 10 DE HOY EN ESPAÑA / REGIÓN
-            // =====================================================================
+        // Fallback inteligente: si el usuario no ha visto nada aún o no hay suficientes recomendaciones de "Porque viste",
+        // recomendar por su género favorito/más presente en la biblioteca
+        if (!recommendationAdded) {
+            try {
+                val topGenre = mediaRepository.getMostWatchedGenres().firstOrNull() ?: "Acción"
+                val genreItems = mediaRepository.getItemsByGenre(topGenre)
+                    .filter { it.id !in shownMediaIds && (!it.backdropImageTag.isNullOrEmpty() || !it.overview.isNullOrBlank()) }
+                    .take(15)
+
+                if (genreItems.size >= 3) {
+                    shownMediaIds.addAll(genreItems.map { it.id })
+                    sections.add(
+                        HomeSection(
+                            title = "Recomendados de $topGenre",
+                            items = genreItems.map {
+                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
+                            },
+                            badge = "RECOMENDADO"
+                        )
+                    )
+                    emit(sections.toList())
+                }
+            } catch (_: Exception) {}
+        }
+
+        // =====================================================================
+        // PASO 3: TOP 10 DE HOY EN ESPAÑA / REGIÓN
+        // =====================================================================
+        if (prefs.tmdbApiKey.isNotBlank()) {
             try {
                 val dailyTrending = mediaRepository.getTmdbTrendingDay(apiKey = prefs.tmdbApiKey)
                     .getOrDefault(emptyList())
@@ -196,6 +276,7 @@ class GetHomeFeedUseCase(
                         maxCandidates = 50
                     )
                     if (matchedDaily.isNotEmpty()) {
+                        shownMediaIds.addAll(matchedDaily.map { it.id })
                         val top10Section = HomeSection(
                             title = "Top 10 en España hoy",
                             items = matchedDaily.take(10).mapIndexed { idx, it ->
@@ -214,156 +295,64 @@ class GetHomeFeedUseCase(
             // =====================================================================
             // PASO 4: PLATAFORMAS OFICIALES DE STREAMING (CRUZADAS CON TU JELLYFIN)
             // =====================================================================
+            val selected = prefs.selectedPlatforms
+            val activeProviders = if (selected.isEmpty()) {
+                com.example.tujelly.data.model.SUPPORTED_PLATFORMS
+            } else {
+                com.example.tujelly.data.model.SUPPORTED_PLATFORMS.filter { it.id in selected }
+            }
 
-            // A. Populares en Netflix (Provider 8)
-            try {
-                val netflixResult = mediaRepository.getTmdbByProvider(
-                    apiKey = prefs.tmdbApiKey,
-                    providerId = "8",
-                    region = prefs.watchRegion
-                )
-                val matchedNetflix = filterToLibraryUseCase.filterTmdbItems(
-                    tmdbItems = netflixResult.getOrDefault(emptyList()),
-                    serverUrl = prefs.jellyfinServerUrl,
-                    userId = prefs.jellyfinUserId,
-                    token = prefs.jellyfinAccessToken,
-                    maxCandidates = 50
-                )
-                if (matchedNetflix.isNotEmpty()) {
-                    sections.add(
-                        HomeSection(
-                            title = "Populares en Netflix",
-                            items = matchedNetflix.take(20).map {
-                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                            },
-                            badge = "NETFLIX"
-                        )
+            for (platform in activeProviders) {
+                try {
+                    val result = mediaRepository.getTmdbByProvider(
+                        apiKey = prefs.tmdbApiKey,
+                        providerId = platform.providerId,
+                        region = prefs.watchRegion
                     )
-                    emit(sections.toList())
-                }
-            } catch (_: Exception) {}
-
-            // B. Éxitos de Disney+ (Provider 337)
-            try {
-                val disneyResult = mediaRepository.getTmdbByProvider(
-                    apiKey = prefs.tmdbApiKey,
-                    providerId = "337",
-                    region = prefs.watchRegion
-                )
-                val matchedDisney = filterToLibraryUseCase.filterTmdbItems(
-                    tmdbItems = disneyResult.getOrDefault(emptyList()),
-                    serverUrl = prefs.jellyfinServerUrl,
-                    userId = prefs.jellyfinUserId,
-                    token = prefs.jellyfinAccessToken,
-                    maxCandidates = 50
-                )
-                if (matchedDisney.isNotEmpty()) {
-                    sections.add(
-                        HomeSection(
-                            title = "Éxitos de Disney+",
-                            items = matchedDisney.take(20).map {
-                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                            },
-                            badge = "DISNEY+"
-                        )
+                    val matched = filterToLibraryUseCase.filterTmdbItems(
+                        tmdbItems = result.getOrDefault(emptyList()),
+                        serverUrl = prefs.jellyfinServerUrl,
+                        userId = prefs.jellyfinUserId,
+                        token = prefs.jellyfinAccessToken,
+                        maxCandidates = 50
                     )
-                    emit(sections.toList())
-                }
-            } catch (_: Exception) {}
-
-            // C. Destacados de Max (Provider 1899|384)
-            try {
-                val maxResult = mediaRepository.getTmdbByProvider(
-                    apiKey = prefs.tmdbApiKey,
-                    providerId = "1899|384",
-                    region = prefs.watchRegion
-                )
-                val matchedMax = filterToLibraryUseCase.filterTmdbItems(
-                    tmdbItems = maxResult.getOrDefault(emptyList()),
-                    serverUrl = prefs.jellyfinServerUrl,
-                    userId = prefs.jellyfinUserId,
-                    token = prefs.jellyfinAccessToken,
-                    maxCandidates = 50
-                )
-                if (matchedMax.isNotEmpty()) {
-                    sections.add(
-                        HomeSection(
-                            title = "Destacados de Max",
-                            items = matchedMax.take(20).map {
-                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                            },
-                            badge = "MAX"
+                    if (matched.isNotEmpty()) {
+                        shownMediaIds.addAll(matched.map { it.id })
+                        sections.add(
+                            HomeSection(
+                                title = "Populares en ${platform.name}",
+                                items = matched.take(20).map {
+                                    it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                                },
+                                badge = platform.name
+                            )
                         )
-                    )
-                    emit(sections.toList())
-                }
-            } catch (_: Exception) {}
-
-            // D. Éxitos de Amazon Prime Video (Provider 119)
-            try {
-                val primeResult = mediaRepository.getTmdbByProvider(
-                    apiKey = prefs.tmdbApiKey,
-                    providerId = "119",
-                    region = prefs.watchRegion
-                )
-                val matchedPrime = filterToLibraryUseCase.filterTmdbItems(
-                    tmdbItems = primeResult.getOrDefault(emptyList()),
-                    serverUrl = prefs.jellyfinServerUrl,
-                    userId = prefs.jellyfinUserId,
-                    token = prefs.jellyfinAccessToken,
-                    maxCandidates = 50
-                )
-                if (matchedPrime.isNotEmpty()) {
-                    sections.add(
-                        HomeSection(
-                            title = "Éxitos de Prime Video",
-                            items = matchedPrime.take(20).map {
-                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                            },
-                            badge = "PRIME"
-                        )
-                    )
-                    emit(sections.toList())
-                }
-            } catch (_: Exception) {}
-
-            // E. Aclamadas de Apple TV+ (Provider 350)
-            try {
-                val appleResult = mediaRepository.getTmdbByProvider(
-                    apiKey = prefs.tmdbApiKey,
-                    providerId = "350",
-                    region = prefs.watchRegion
-                )
-                val matchedApple = filterToLibraryUseCase.filterTmdbItems(
-                    tmdbItems = appleResult.getOrDefault(emptyList()),
-                    serverUrl = prefs.jellyfinServerUrl,
-                    userId = prefs.jellyfinUserId,
-                    token = prefs.jellyfinAccessToken,
-                    maxCandidates = 50
-                )
-                if (matchedApple.isNotEmpty()) {
-                    sections.add(
-                        HomeSection(
-                            title = "Aclamadas de Apple TV+",
-                            items = matchedApple.take(20).map {
-                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                            },
-                            badge = "APPLE TV+"
-                        )
-                    )
-                    emit(sections.toList())
-                }
-            } catch (_: Exception) {}
+                        emit(sections.toList())
+                    }
+                } catch (_: Exception) {}
+            }
         }
 
         // =========================================================================
-        // PASO 5: CINE RECOMENDADO
+        // PASO 5: PELÍCULAS RECOMENDADAS (Basado en géneros y variedad excluida de Grandes Producciones)
         // =========================================================================
-        if (topMoviesServer.isNotEmpty()) {
+        val recommendedMovies = mediaRepository.getRecommendedMovies(
+            excludeIds = shownMediaIds,
+            limit = 20
+        )
+
+        val effectiveRecommended = if (recommendedMovies.isNotEmpty()) {
+            recommendedMovies
+        } else {
+            topMoviesServer.filter { it.id !in shownMediaIds }
+        }
+
+        if (effectiveRecommended.isNotEmpty()) {
+            shownMediaIds.addAll(effectiveRecommended.map { it.id })
             sections.add(
                 HomeSection(
                     title = "Películas Recomendadas",
-                    items = topMoviesServer.map {
+                    items = effectiveRecommended.map {
                         it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
                     },
                     badge = "PELÍCULAS"
@@ -392,6 +381,7 @@ class GetHomeFeedUseCase(
                     maxCandidates = 20
                 )
                 if (matchedTraktRecs.isNotEmpty()) {
+                    shownMediaIds.addAll(matchedTraktRecs.map { it.id })
                     sections.add(
                         HomeSection(
                             title = "Recomendado por la comunidad Trakt",
@@ -420,6 +410,7 @@ class GetHomeFeedUseCase(
                     maxCandidates = 20
                 )
                 if (matchedWatchlist.isNotEmpty()) {
+                    shownMediaIds.addAll(matchedWatchlist.map { it.id })
                     sections.add(
                         HomeSection(
                             title = "Tu Watchlist de Trakt.tv",
@@ -446,6 +437,7 @@ class GetHomeFeedUseCase(
                 maxCandidates = 20
             )
             if (matchedTrending.isNotEmpty()) {
+                shownMediaIds.addAll(matchedTrending.map { it.id })
                 sections.add(
                     HomeSection(
                         title = "Tendencias en Trakt.tv",
@@ -463,6 +455,37 @@ class GetHomeFeedUseCase(
         if (sections.isEmpty()) {
             emit(emptyList())
         }
+    }
+
+    /**
+     * Filtra las películas del servidor contra TMDB para descartar títulos con nota
+     * alta pero pocos votos (ej. película de nicho con 10 votos familiares y nota 10).
+     * Pondera la nota junto con el volumen de votos para dar prioridad a verdaderas producciones.
+     */
+    private suspend fun filterHighQualityMovies(
+        movies: List<JellyfinMediaEntity>,
+        tmdbApiKey: String
+    ): List<JellyfinMediaEntity> {
+        val validMovies = movies.filter { !it.backdropImageTag.isNullOrEmpty() || !it.overview.isNullOrBlank() }
+        val candidates = validMovies.filter { it.tmdbId != null }
+
+        if (candidates.isEmpty()) {
+            return validMovies.filter { (it.communityRating ?: 0f) >= 7.0f }.take(20)
+        }
+
+        val checked = candidates.mapNotNull { movie ->
+            val tmdbId = movie.tmdbId?.toLongOrNull() ?: return@mapNotNull null
+            val stats = mediaRepository.getTmdbVoteStats(tmdbApiKey, tmdbId)
+                ?: return@mapNotNull null
+            Triple(movie, stats.voteCount, stats.voteAverage)
+        }
+
+        val passed = checked
+            .filter { (_, count, avg) -> count >= 150 && avg >= 6.8f }
+            .sortedByDescending { (_, count, avg) -> avg * 10f + kotlin.math.min(count, 5000) / 500f }
+            .map { it.first }
+
+        return if (passed.isNotEmpty()) passed else validMovies.filter { (it.communityRating ?: 0f) >= 7.0f }.take(20)
     }
 
     private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem {
