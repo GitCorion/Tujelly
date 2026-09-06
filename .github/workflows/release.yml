@@ -33,12 +33,11 @@ jobs:
       - name: Decode signing keystore
         run: |
           echo "${{ secrets.KEYSTORE_B64 }}" | base64 --decode > app/keystore.jks
-          echo "KEYSTORE_PATH=app/keystore.jks" >> "$GITHUB_ENV"
 
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon
         env:
-          KEYSTORE_PATH: app/keystore.jks
+          KEYSTORE_PATH: keystore.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
