@@ -1,9 +1,21 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     id("com.google.devtools.ksp")
 }
+
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) {
+        load(file.inputStream())
+    }
+}
+
+fun envOr(key: String, default: String): String =
+    System.getenv(key)?.takeIf { it.isNotBlank() } ?: keystoreProperties.getProperty(key) ?: default
 
 android {
     namespace = "com.example.tujelly"
@@ -19,10 +31,11 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            val storeFilePath = envOr("KEYSTORE_PATH", "debug.keystore")
+            storeFile = file(storeFilePath)
+            storePassword = envOr("KEYSTORE_PASSWORD", "android")
+            keyAlias = envOr("KEY_ALIAS", "androiddebugkey")
+            keyPassword = envOr("KEY_PASSWORD", "android")
             enableV1Signing = true
             enableV2Signing = true
         }
