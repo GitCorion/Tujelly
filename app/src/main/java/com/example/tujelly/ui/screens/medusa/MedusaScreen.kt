@@ -1,11 +1,10 @@
 package com.example.tujelly.ui.screens.medusa
 
 import android.util.Log
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -105,12 +104,9 @@ fun MedusaScreen(
         }
     }
 
-    // Altura dinámica animada de la constelación:
-    // En reposo (menos de 3 estrellas) toma 370dp para explorar cómodamente.
-    // Al iluminarse (3 o más estrellas) se compacta con suavidad a 200dp para que las recomendaciones
-    // aparezcan directamente en pantalla en la mitad inferior sin necesidad de scroll.
+    // Altura dinámica animada de la constelación
     val constellationHeight by animateDpAsState(
-        targetValue = if (uiState.isFormed) 200.dp else 370.dp,
+        targetValue = if (uiState.isFormed) 240.dp else 370.dp,
         animationSpec = tween(durationMillis = 500),
         label = "constellationHeight"
     )
@@ -121,7 +117,7 @@ fun MedusaScreen(
             .background(Color(0xFF060709)) // Negro estelar puro
     ) {
         // =========================================================================
-        // CABECERA IDÉNTICA Y HOMOGÉNEA CON HOME (Protegida contra wrapping)
+        // CABECERA IDÉNTICA Y HOMOGÉNEA CON HOME
         // =========================================================================
         Row(
             modifier = Modifier
@@ -130,7 +126,6 @@ fun MedusaScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Logo Tujelly en la izquierda
             Row(
                 modifier = Modifier
                     .weight(1f, fill = false)
@@ -149,13 +144,11 @@ fun MedusaScreen(
                 )
             }
 
-            // Menú superior homogéneo
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.wrapContentWidth()
             ) {
-                // Botón Inicio
                 Button(
                     onClick = onNavigateHome,
                     colors = ButtonDefaults.colors(
@@ -189,7 +182,6 @@ fun MedusaScreen(
                     }
                 }
 
-                // Botón Medusa (ACTIVO)
                 var isMedusaFocused by remember { mutableStateOf(false) }
                 Button(
                     onClick = { /* Ya en Medusa */ },
@@ -243,7 +235,6 @@ fun MedusaScreen(
                     }
                 }
 
-                // Botón Favoritos
                 Button(
                     onClick = onOpenFavorites,
                     colors = ButtonDefaults.colors(
@@ -277,7 +268,6 @@ fun MedusaScreen(
                     }
                 }
 
-                // Botón Buscar
                 Button(
                     onClick = onOpenSearch,
                     colors = ButtonDefaults.colors(
@@ -311,7 +301,6 @@ fun MedusaScreen(
                     }
                 }
 
-                // Botón Ajustes
                 Button(
                     onClick = onOpenSettings,
                     colors = ButtonDefaults.colors(
@@ -348,7 +337,7 @@ fun MedusaScreen(
         }
 
         // =========================================================================
-        // CUERPO: CONSTELACIÓN ESTELAR + RECOMENDACIONES EN PANTALLA
+        // CUERPO: CONSTELACIÓN ESTELAR DE IDEAS ("DE MÁS A MENOS")
         // =========================================================================
         LazyColumn(
             state = lazyListState,
@@ -360,15 +349,16 @@ fun MedusaScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(constellationHeight)
-                        .pointerInput(uiState.visibleStarIds) {
+                        .pointerInput(uiState.visibleStarIds, uiState.starPositions) {
                             detectTapGestures { offset ->
                                 val w = size.width
                                 val h = size.height
                                 val radiusPx = 55.dp.toPx()
-                                val tapped = MedusaViewModel.constellationStars.firstOrNull { star ->
+                                val tapped = uiState.allStars.firstOrNull { star ->
                                     if (!uiState.visibleStarIds.contains(star.id)) return@firstOrNull false
-                                    val sx = w * star.normX
-                                    val sy = h * star.normY
+                                    val pos = uiState.starPositions[star.id] ?: Pair(star.baseNormX, star.baseNormY)
+                                    val sx = w * pos.first
+                                    val sy = h * pos.second
                                     val dx = offset.x - sx
                                     val dy = offset.y - sy
                                     (dx * dx + dy * dy) <= (radiusPx * radiusPx)
@@ -383,25 +373,41 @@ fun MedusaScreen(
                     val w = maxWidth
                     val h = maxHeight
 
-                    // 1. Trazos celestes que enlazan dinámicamente las estrellas visibles
+                    // 1. Trazos celestes conectores y líneas guía congregadas
                     MedusaConstellationView(
                         modifier = Modifier.fillMaxSize(),
+                        allStars = uiState.allStars,
                         visibleStarIds = uiState.visibleStarIds,
                         selectedStarIds = uiState.selectedStarIds,
+                        starPositions = uiState.starPositions,
                         accentColor = medusaColor
                     )
 
-                    // 2. Estrellas visibles (surgen dinámicamente al pulsar sobre sugerencias)
-                    MedusaViewModel.constellationStars.forEach { star ->
+                    // 2. Renderizado de estrellas puras (flujo "de más a menos")
+                    uiState.allStars.forEach { star ->
                         val isVisible = uiState.visibleStarIds.contains(star.id)
                         val isSelected = uiState.selectedStarIds.contains(star.id)
-                        val posX = w * star.normX
-                        val posY = h * star.normY
+
+                        val targetPos = uiState.starPositions[star.id] ?: Pair(star.baseNormX, star.baseNormY)
+
+                        val animatedNormX by animateFloatAsState(
+                            targetValue = targetPos.first,
+                            animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                            label = "starX_${star.id}"
+                        )
+                        val animatedNormY by animateFloatAsState(
+                            targetValue = targetPos.second,
+                            animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                            label = "starY_${star.id}"
+                        )
 
                         if (isVisible) {
-                            val starWidth = 150.dp
+                            val posX = w * animatedNormX
+                            val posY = h * animatedNormY
+
+                            val starWidth = 145.dp
                             val starHeight = 38.dp
-                            val offsetX = if (star.textOnLeft) posX - 128.dp else posX - 22.dp
+                            val offsetX = if (star.textOnLeft) posX - 125.dp else posX - 20.dp
                             val offsetY = posY - 19.dp
 
                             ConstellationAstroStar(
@@ -423,7 +429,7 @@ fun MedusaScreen(
             }
 
             // =========================================================================
-            // SECCIÓN RECOMENDACIONES (DIRECTAMENTE VISIBLE EN LA MITAD INFERIOR)
+            // SECCIÓN RECOMENDACIONES (AL SELECCIONAR CUALQUIER IDEA)
             // =========================================================================
             if (uiState.isFormed) {
                 item {
@@ -432,7 +438,6 @@ fun MedusaScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 48.dp)
                     ) {
-                        // Fila de estado celestial
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -448,11 +453,11 @@ fun MedusaScreen(
                                         .background(medusaColor, CircleShape)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                val activeWords = MedusaViewModel.constellationStars
+                                val activeWords = uiState.allStars
                                     .filter { uiState.selectedStarIds.contains(it.id) }
                                     .joinToString(" • ") { it.label }
                                 Text(
-                                    text = "Constelación Formada: $activeWords",
+                                    text = "Constelación Congregada: $activeWords",
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontFamily = FontFamily.Serif,
@@ -465,7 +470,6 @@ fun MedusaScreen(
 
                             Spacer(modifier = Modifier.width(16.dp))
 
-                            // Botón sutil de reiniciar constelación
                             Button(
                                 onClick = { viewModel.resetConstellation() },
                                 colors = ButtonDefaults.colors(
@@ -483,7 +487,7 @@ fun MedusaScreen(
                                     )
                                     Spacer(modifier = Modifier.width(5.dp))
                                     Text(
-                                        text = "Reiniciar",
+                                        text = "Reiniciar Sky",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
@@ -510,7 +514,7 @@ fun MedusaScreen(
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        text = "Alineando constelación con tu catálogo...",
+                                        text = "Alineando ideas congregadas con tu catálogo...",
                                         color = Color(0xFF94A3B8),
                                         fontSize = 13.sp,
                                         fontFamily = FontFamily.Serif
@@ -534,7 +538,6 @@ fun MedusaScreen(
                                 )
                             }
                         } else {
-                            // Carrusel visible directamente en pantalla
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                                 contentPadding = PaddingValues(bottom = 8.dp)
@@ -552,15 +555,7 @@ fun MedusaScreen(
                     }
                 }
             } else {
-                // Menos de 3 estrellas: indicación progresiva de cuántas faltan
                 item {
-                    val message = when (uiState.selectedCount) {
-                        0 -> "✦ Toca una estrella para iniciar la constelación"
-                        1 -> "✦ 1 estrella iluminada • Elige 2 más para revelar recomendaciones"
-                        2 -> "✦ 2 estrellas iluminadas • Falta 1 para formar la medusa"
-                        else -> ""
-                    }
-
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -568,7 +563,7 @@ fun MedusaScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = message,
+                            text = "✦ Selecciona una o más ideas de la constelación para agrupar y descubrir títulos",
                             color = Color(0x60FFFFFF),
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Serif,
@@ -584,7 +579,7 @@ fun MedusaScreen(
 }
 
 /**
- * Estrella astronómica interactiva con palabra (estilo mapa estelar puro).
+ * Estrella astronómica interactiva pura (estilo firmamento real).
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -602,16 +597,16 @@ private fun ConstellationAstroStar(
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Color.Transparent,
-            focusedContainerColor = Color(0x15FFFFFF),
+            focusedContainerColor = Color(0x18FFFFFF),
             pressedContainerColor = Color(0x30FFFFFF)
         ),
         border = ClickableSurfaceDefaults.border(
             border = Border.None,
             focusedBorder = Border(BorderStroke(1.dp, Color(0x60FFFFFF)))
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
         modifier = modifier
-            .zIndex(2f)
+            .zIndex(if (isSelected || isFocused) 5f else 2f)
             .onFocusChanged { isFocused = it.isFocused }
             .pointerInput(star.id) {
                 detectTapGestures {
@@ -623,7 +618,7 @@ private fun ConstellationAstroStar(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (star.textOnLeft) Arrangement.End else Arrangement.Start
         ) {
@@ -633,7 +628,7 @@ private fun ConstellationAstroStar(
                     color = when {
                         isFocused -> Color.White
                         isSelected -> Color(0xFFF1F5F9)
-                        else -> Color(0x99FFFFFF)
+                        else -> Color(0xBBFFFFFF)
                     },
                     fontSize = if (isFocused) 14.sp else 13.sp,
                     fontFamily = FontFamily.Serif,
@@ -652,7 +647,7 @@ private fun ConstellationAstroStar(
                     color = when {
                         isFocused -> Color.White
                         isSelected -> Color(0xFFF1F5F9)
-                        else -> Color(0x99FFFFFF)
+                        else -> Color(0xBBFFFFFF)
                     },
                     fontSize = if (isFocused) 14.sp else 13.sp,
                     fontFamily = FontFamily.Serif,
@@ -679,7 +674,6 @@ private fun StarPoint(
         val center = Offset(size.width / 2f, size.height / 2f)
 
         if (isFocused) {
-            // Halo celestial amplio al estar en foco con el mando
             drawCircle(
                 color = accentColor.copy(alpha = 0.35f),
                 radius = 9.0f,
@@ -690,11 +684,9 @@ private fun StarPoint(
                 radius = 4.2f,
                 center = center
             )
-            // Micro-cruz estelar de destello
             drawLine(Color.White.copy(alpha = 0.85f), Offset(center.x - 6.5f, center.y), Offset(center.x + 6.5f, center.y), strokeWidth = 1f)
             drawLine(Color.White.copy(alpha = 0.85f), Offset(center.x, center.y - 6.5f), Offset(center.x, center.y + 6.5f), strokeWidth = 1f)
         } else if (isSelected) {
-            // Estrella activa encendida en la constelación
             drawCircle(
                 color = accentColor.copy(alpha = 0.45f),
                 radius = 7.5f,
@@ -706,11 +698,9 @@ private fun StarPoint(
                 radius = 3.8f,
                 center = center
             )
-            // Pequeño fulgor estelar
             drawLine(Color.White.copy(alpha = 0.7f), Offset(center.x - 5f, center.y), Offset(center.x + 5f, center.y), strokeWidth = 0.8f)
             drawLine(Color.White.copy(alpha = 0.7f), Offset(center.x, center.y - 5f), Offset(center.x, center.y + 5f), strokeWidth = 0.8f)
         } else {
-            // Estrella en reposo en el firmamento
             drawCircle(
                 color = Color.White.copy(alpha = 0.85f),
                 radius = 2.6f,
