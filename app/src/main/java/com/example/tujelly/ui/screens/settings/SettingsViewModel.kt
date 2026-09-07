@@ -88,6 +88,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     init {
         loadCurrentPreferences()
+        viewModelScope.launch {
+            com.example.tujelly.data.remote.github.AppUpdateManager.updateInfo.collect { info ->
+                if (info != null) {
+                    _uiState.value = _uiState.value.copy(
+                        updateInfo = info,
+                        statusMessage = if (info.hasUpdate) "¡Nueva versión ${info.latestVersion} disponible!" else "Tujelly está al día (${info.currentVersion})"
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            com.example.tujelly.data.remote.github.AppUpdateManager.downloadProgress.collect { progress ->
+                if (progress != null) {
+                    _uiState.value = _uiState.value.copy(downloadProgress = progress)
+                }
+            }
+        }
+        checkForAppUpdates()
     }
 
     private fun loadCurrentPreferences() {

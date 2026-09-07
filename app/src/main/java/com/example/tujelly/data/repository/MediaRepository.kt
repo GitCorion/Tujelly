@@ -320,7 +320,7 @@ class MediaRepository(
                     )
 
                     var deltaCount = 0
-                    val fields = "ProviderIds,PrimaryImageTag,CommunityRating,Genres,UserData,ItemCounts,RecursiveItemCount"
+                    val fields = "ProviderIds,PrimaryImageTag,CommunityRating,Genres,Tags,UserData,ItemCounts,RecursiveItemCount"
                     for (view in mediaViews.ifEmpty { listOf(null) }) {
                         val isSeries = view?.collectionType.equals("tvshows", ignoreCase = true) || view?.name.equals("Series", ignoreCase = true)
                         val deltaResponse = runCatching {
@@ -373,7 +373,7 @@ class MediaRepository(
                 // =========================================================================
                 // CAMINO 2: SINCRONIZACIÓN COMPLETA GLOBAL CON RESUMEN / CHECKPOINTS
                 // =========================================================================
-                val fields = "ProviderIds,PrimaryImageTag,CommunityRating,UserData,ItemCounts,RecursiveItemCount"
+                val fields = "ProviderIds,PrimaryImageTag,CommunityRating,Tags,UserData,ItemCounts,RecursiveItemCount"
                 val pageSize = 200
 
                 // Leer checkpoint previo si no es forzada desde cero
@@ -722,7 +722,7 @@ class MediaRepository(
                 authHeader = authHeader,
                 userId = userId,
                 includeItemTypes = "Movie",
-                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres",
+                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres,Tags",
                 recursive = true,
                 limit = limit,
                 sortBy = "CommunityRating",
@@ -748,7 +748,7 @@ class MediaRepository(
                 authHeader = authHeader,
                 userId = userId,
                 includeItemTypes = "Series",
-                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres",
+                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres,Tags",
                 recursive = true,
                 limit = limit,
                 sortBy = "CommunityRating",
@@ -1092,6 +1092,7 @@ class MediaRepository(
             communityRating = communityRating,
             productionYear = productionYear,
             genres = genres?.joinToString(", "),
+            tags = tags?.joinToString(", "),
             isPlayed = playedStatus,
             playbackPositionTicks = userData?.effectivePositionTicks ?: 0L,
             isFavorite = userData?.effectiveIsFavorite ?: false,

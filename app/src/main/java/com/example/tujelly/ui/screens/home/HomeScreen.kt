@@ -139,7 +139,6 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 8.dp)
         ) {
         // Universal Persistent TV TopBar
         com.example.tujelly.ui.components.TvTopBar(

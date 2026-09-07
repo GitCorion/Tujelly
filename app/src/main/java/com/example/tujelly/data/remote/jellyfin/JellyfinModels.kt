@@ -158,6 +158,7 @@ data class JellyfinItemDto(
     @SerialName("CommunityRating") val communityRating: Float? = null,
     @SerialName("ProductionYear") val productionYear: Int? = null,
     @SerialName("Genres") val genres: List<String>? = null,
+    @SerialName("Tags") val tags: List<String>? = null,
     @SerialName("UserData") val userData: JellyfinUserDataDto? = null,
     @SerialName("MediaSources") val mediaSources: List<JellyfinMediaSourceDto> = emptyList(),
     @SerialName("IndexNumber") val indexNumber: Int? = null,

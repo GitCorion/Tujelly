@@ -46,7 +46,6 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/Tujelly.apk
-          cp app/src/main/assets/medusa_brain.json dist/medusa_brain.json
 
       - name: Upload APK as Build Artifact
         uses: actions/upload-artifact@v4
@@ -54,7 +53,6 @@ jobs:
           name: Tujelly-APK
           path: |
             dist/Tujelly.apk
-            dist/medusa_brain.json
 
       - name: Create GitHub Release (on tag or manual)
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
@@ -62,7 +60,6 @@ jobs:
         with:
           files: |
             dist/Tujelly.apk
-            dist/medusa_brain.json
           name: Tujelly ${{ github.ref_name }}
           generate_release_notes: true
           draft: false

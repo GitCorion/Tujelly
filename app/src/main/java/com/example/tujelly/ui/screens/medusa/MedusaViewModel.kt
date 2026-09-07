@@ -1,7 +1,6 @@
 package com.example.tujelly.ui.screens.medusa
 
 import android.app.Application
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tujelly.data.local.ACCENT_CYAN
@@ -9,78 +8,35 @@ import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
 import com.example.tujelly.data.local.UserPreferencesRepository
 import com.example.tujelly.data.local.db.AppDatabase
 import com.example.tujelly.data.local.db.JellyfinMediaEntity
-import com.example.tujelly.data.medusa.MedusaBrain
-import com.example.tujelly.data.medusa.MedusaBrainRepository
 import com.example.tujelly.domain.model.MediaItem
-import com.example.tujelly.domain.model.MediaSource
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlin.math.sin
+import kotlinx.coroutines.withContext
 
-data class MedusaStar(
-    val id: String,
-    val label: String,
-    val baseNormX: Float,
-    val baseNormY: Float,
-    val textOnLeft: Boolean,
-    val relatedStarIds: List<String>,
-    val primaryGenres: List<String>,
-    val secondaryKeywords: List<String> = emptyList(),
-    val minYear: Int? = null,
-    val maxYear: Int? = null
+data class ConstellationUiState(
+    val nodes: List<SpatialNebulaNode> = emptyList(),
+    val filaments: List<SpatialFilament> = emptyList(),
+    val focusedNodeId: String? = null,
+    val activeChain: List<SpatialNebulaNode> = emptyList(),
+    val compatibleNodeIds: Set<String>? = null,
+    val incompatibleWarning: String? = null,
+    val matchingMovies: List<MediaItem> = emptyList(),
+    val targetCameraX: Float = 0.5f,
+    val targetCameraY: Float = 0.5f,
+    val targetZoom: Float = 1.0f,
+    val showMoviesOverlay: Boolean = false,
+    val selectedMovie: MediaItem? = null,
+    val totalCatalogCount: Int = 0,
+    val isLoading: Boolean = true
 ) {
-    val normX: Float get() = baseNormX
-    val normY: Float get() = baseNormY
-}
-
-enum class MedusaFormatFilter(val displayName: String) {
-    ALL("Todos"),
-    MOVIES("Películas"),
-    SERIES("Series")
-}
-
-data class MedusaUiState(
-    val allStars: List<MedusaStar> = emptyList(),
-    val selectedPath: List<String> = emptyList(),
-    val activeBranchIds: List<String> = emptyList(),
-    val starPositions: Map<String, Pair<Float, Float>> = emptyMap(),
-    val rawRecommendations: List<MediaItem> = emptyList(),
-    val selectedFormat: MedusaFormatFilter = MedusaFormatFilter.ALL,
-    val focusedItem: MediaItem? = null,
-    val isLoading: Boolean = false
-) {
-    val recommendations: List<MediaItem> get() {
-        return when (selectedFormat) {
-            MedusaFormatFilter.ALL -> rawRecommendations
-            MedusaFormatFilter.MOVIES -> rawRecommendations.filter { it.type.equals("Movie", ignoreCase = true) }
-            MedusaFormatFilter.SERIES -> rawRecommendations.filter { it.type.equals("Series", ignoreCase = true) }
-        }
-    }
-
-    val selectedStarIds: Set<String> get() = selectedPath.toSet()
-    val selectedCount: Int get() = selectedPath.size
-    val isFormed: Boolean get() = selectedPath.isNotEmpty()
-    val level: Int get() = selectedPath.size
-    val maxLevels: Int get() = 3
-
-    val starMap: Map<String, MedusaStar> by lazy {
-        allStars.associateBy { it.id }
-    }
-
-    /**
-     * Universo cósmico unificado:
-     * Todas las estrellas del firmamento permanecen vivas y navegables en el cosmos.
-     */
-    val visibleStarIds: Set<String> get() = allStars.map { it.id }.toSet()
+    val focusedNode: SpatialNebulaNode? get() = nodes.firstOrNull { it.id == focusedNodeId }
 }
 
 class MedusaViewModel(application: Application) : AndroidViewModel(application) {
@@ -89,10 +45,10 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
     private val database = AppDatabase.getDatabase(application)
     private val jellyfinDao = database.jellyfinDao()
 
-    private val brainRepository = MedusaBrainRepository(application)
-    private val neuralEngine = MedusaNeuralEngine()
-    private var brain: MedusaBrain? = null
-    private var itemRelevance: Map<String, List<NeuronRef>> = emptyMap()
+    private val spatialEngine = NebulaSpatialEngine()
+    private var rawCatalog: List<JellyfinMediaEntity> = emptyList()
+    private var serverUrl: String = ""
+    private var accessToken: String = ""
 
     val accentColor: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
         .map { it.accentColor }
@@ -106,323 +62,248 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
         .map { it.isMonochrome }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    private val _uiState = MutableStateFlow(MedusaUiState())
-    val uiState: StateFlow<MedusaUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(ConstellationUiState())
+    val uiState: StateFlow<ConstellationUiState> = _uiState.asStateFlow()
 
     init {
         loadConstellation()
-        observeCatalogChanges()
-    }
-
-    /**
-     * Recalcula la constelación cuando cambia el catálogo (sincronización) o
-     * los favoritos, de modo que la Medusa reacciona en vivo al historial.
-     */
-    private fun observeCatalogChanges() {
-        viewModelScope.launch {
-            combine(
-                database.jellyfinDao().getMediaCountFlow().distinctUntilChanged(),
-                database.jellyfinDao().getFavoritesFlow().distinctUntilChanged()
-            ) { _, _ -> Unit }
-                .drop(1)
-                .collect { loadConstellation() }
-        }
     }
 
     fun loadConstellation() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
-            // Cerebro semántico: caché -> asset embebido. El refresco de GitHub
-            // se lanza en background para no bloquear la carga de la UI.
-            val loadedBrain = brainRepository.loadBrain()
-            brain = loadedBrain
-
-            viewModelScope.launch {
-                brainRepository.refreshFromGitHub()
-                    .onSuccess { Log.d("MedusaViewModel", "Cerebro actualizado desde GitHub: v$it") }
-                    .onFailure { Log.d("MedusaViewModel", "Sin cerebro remoto (usando local): ${it.message}") }
-            }
+            val prefs = userPreferencesRepository.userPreferencesFlow.first()
+            serverUrl = prefs.jellyfinServerUrl
+            accessToken = prefs.jellyfinAccessToken
 
             val movies = runCatching { jellyfinDao.getMovies() }.getOrDefault(emptyList())
             val series = runCatching { jellyfinDao.getSeries() }.getOrDefault(emptyList())
-            val catalog = movies + series
+            rawCatalog = movies + series
 
-            val constellation = if (loadedBrain != null) {
-                itemRelevance = neuralEngine.buildItemRelevance(loadedBrain, catalog)
-                neuralEngine.buildStars(loadedBrain, catalog)
-            } else {
-                itemRelevance = emptyMap()
-                emptyList()
+            withContext(Dispatchers.Default) {
+                spatialEngine.buildUniverse(rawCatalog, serverUrl, accessToken)
             }
 
-            val initialPositions = calculateCongregatingPositions(constellation, emptyList(), emptyList())
-
-            _uiState.value = MedusaUiState(
-                allStars = constellation,
-                selectedPath = emptyList(),
-                activeBranchIds = emptyList(),
-                starPositions = initialPositions,
-                isLoading = false
+            val initialMatches = spatialEngine.getMatchingMoviesForChain(
+                chain = emptyList(),
+                catalog = rawCatalog,
+                serverUrl = serverUrl,
+                accessToken = accessToken
             )
 
-            Log.d("MedusaViewModel", "Constelación neuronal: ${constellation.size} neuronas sobre ${catalog.size} títulos")
+            spatialEngine.updatePortalNode(chain = emptyList(), movieCount = initialMatches.size)
+            val allNodes = spatialEngine.getAllNodes()
+            val allFilaments = spatialEngine.getAllFilaments()
+            val initialNode = allNodes.firstOrNull { it.id == "CLUSTER_0" } ?: allNodes.firstOrNull()
+
+            _uiState.value = _uiState.value.copy(
+                nodes = allNodes,
+                filaments = allFilaments,
+                focusedNodeId = initialNode?.id,
+                targetCameraX = initialNode?.worldX ?: 0.5f,
+                targetCameraY = initialNode?.worldY ?: 0.5f,
+                targetZoom = 1.0f,
+                matchingMovies = initialMatches,
+                totalCatalogCount = rawCatalog.size,
+                isLoading = false
+            )
         }
-    }
-
-    fun toggleStar(starId: String) {
-        val currentState = _uiState.value
-        val currentPath = currentState.selectedPath.toMutableList()
-
-        if (currentPath.contains(starId)) {
-            val index = currentPath.indexOf(starId)
-            if (index == currentPath.lastIndex) {
-                // Si pulsa el último nodo activo, lo retira
-                currentPath.removeAt(index)
-            } else {
-                // Si pulsa un nodo anterior del tentáculo, rebobina hasta ese punto
-                val subPath = currentPath.subList(0, index + 1).toList()
-                currentPath.clear()
-                currentPath.addAll(subPath)
-            }
-        } else {
-            // Tentáculo de hasta 3 niveles orgánicos: Origen -> Subgénero -> Matiz
-            if (currentPath.size >= 3) {
-                // Si ya alcanzó 3 niveles, sustituye el último matiz con la nueva elección
-                currentPath[currentPath.lastIndex] = starId
-            } else {
-                currentPath.add(starId)
-            }
-        }
-
-        val activeBranches = computeActiveBranches(currentState.allStars, currentPath)
-        val newPositions = calculateCongregatingPositions(currentState.allStars, currentPath, activeBranches)
-
-        _uiState.value = currentState.copy(
-            selectedPath = currentPath,
-            activeBranchIds = activeBranches,
-            starPositions = newPositions
-        )
-
-        Log.d("MedusaViewModel", "toggleStar: path=$currentPath (nivel ${currentPath.size}/3), branches=${activeBranches.size}")
-        updateRecommendations()
     }
 
     /**
-     * Retrocede un eslabón del tentáculo (vuelve al nivel anterior).
+     * Navegación D-Pad en el espacio semántico.
+     * Actualiza el foco y recentra la cámara en el nodo seleccionado.
+     * Retorna true si encontró un nodo vecino en esa dirección, o false si llegó al límite.
      */
-    fun popLastStar() {
-        val currentState = _uiState.value
-        if (currentState.selectedPath.isEmpty()) return
-        val newPath = currentState.selectedPath.dropLast(1)
-        val activeBranches = computeActiveBranches(currentState.allStars, newPath)
-        val newPositions = calculateCongregatingPositions(currentState.allStars, newPath, activeBranches)
+    fun onNavigate(direction: DPadDirection): Boolean {
+        val currentId = _uiState.value.focusedNodeId ?: return false
+        val currentZoom = _uiState.value.targetZoom
+        val chain = _uiState.value.activeChain
+        val compatIds = _uiState.value.compatibleNodeIds
+        val nextNode = spatialEngine.findNextNeighbor(currentId, direction, currentZoom, chain, compatIds) ?: return false
 
-        _uiState.value = currentState.copy(
-            selectedPath = newPath,
-            activeBranchIds = activeBranches,
-            starPositions = newPositions
+        _uiState.value = _uiState.value.copy(
+            focusedNodeId = nextNode.id,
+            targetCameraX = nextNode.worldX,
+            targetCameraY = nextNode.worldY
         )
-
-        Log.d("MedusaViewModel", "popLastStar: path=$newPath (nivel ${newPath.size}/3)")
-        updateRecommendations()
-    }
-
-    fun resetConstellation() {
-        val currentState = _uiState.value
-        val restPositions = calculateCongregatingPositions(currentState.allStars, emptyList(), emptyList())
-        _uiState.value = currentState.copy(
-            selectedPath = emptyList(),
-            activeBranchIds = emptyList(),
-            starPositions = restPositions,
-            rawRecommendations = emptyList(),
-            selectedFormat = MedusaFormatFilter.ALL,
-            focusedItem = null,
-            isLoading = false
-        )
-    }
-
-    fun setFormatFilter(filter: MedusaFormatFilter) {
-        val current = _uiState.value
-        if (current.selectedFormat == filter) return
-        val filtered = when (filter) {
-            MedusaFormatFilter.ALL -> current.rawRecommendations
-            MedusaFormatFilter.MOVIES -> current.rawRecommendations.filter { it.type.equals("Movie", ignoreCase = true) }
-            MedusaFormatFilter.SERIES -> current.rawRecommendations.filter { it.type.equals("Series", ignoreCase = true) }
-        }
-        _uiState.value = current.copy(
-            selectedFormat = filter,
-            focusedItem = filtered.firstOrNull()
-        )
-    }
-
-    fun setFocusedItem(item: MediaItem) {
-        _uiState.value = _uiState.value.copy(focusedItem = item)
+        return true
     }
 
     /**
-     * Calcula hasta 7 ramas sinápticas afines desde el último nodo seleccionado.
-     * Ofrece una constelación rica y variada de 6 a 8 tentáculos orgánicos vivos.
+     * Conecta / desconecta la etiqueta enfocada en la constelación.
+     * Si el nodo enfocado es el Portal de Películas, abre el visor de películas.
      */
-    private fun computeActiveBranches(allStars: List<MedusaStar>, selectedPath: List<String>): List<String> {
-        if (selectedPath.isEmpty()) return emptyList()
-        val starMap = allStars.associateBy { it.id }
-        val lastStarId = selectedPath.last()
-        val lastStar = starMap[lastStarId] ?: return emptyList()
+    fun toggleConnectFocused() {
+        val focused = _uiState.value.focusedNode ?: return
 
-        val selectedSet = selectedPath.toSet()
-        return lastStar.relatedStarIds
-            .filter { it !in selectedSet }
-            .distinct()
-            .take(7)
-    }
-
-    /**
-     * Calcula las posiciones de la criatura marina cósmica:
-     * - En reposo: constelación completa en su cúpula y cuerpo original.
-     * - Con tentáculo activo:
-     *   - Columna vertebral del tentáculo seleccionada desciende en el eje central.
-     *   - Sus 6 a 8 ramas afines brotan en un abanico marino orgánico con profundidad escalonada.
-     *   - El resto de estrellas cósmicas flotan vivas en el firmamento sin desaparecer.
-     */
-    private fun calculateCongregatingPositions(
-        allStars: List<MedusaStar>,
-        selectedPath: List<String>,
-        activeBranches: List<String>
-    ): Map<String, Pair<Float, Float>> {
-        val result = mutableMapOf<String, Pair<Float, Float>>()
-
-        if (selectedPath.isEmpty()) {
-            for (star in allStars) {
-                result[star.id] = Pair(star.baseNormX, star.baseNormY)
-            }
-            return result
-        }
-
-        val numSelected = selectedPath.size
-
-        // 1. Columna vertebral del tentáculo seleccionado (centro descendente)
-        if (numSelected == 1) {
-            result[selectedPath[0]] = Pair(0.50f, 0.14f)
-        } else if (numSelected == 2) {
-            result[selectedPath[0]] = Pair(0.50f, 0.09f)
-            result[selectedPath[1]] = Pair(0.50f, 0.22f)
-        } else {
-            // 3 niveles (o más)
-            val numAncestors = numSelected - 1
-            val startY = 0.07f
-            val endY = 0.17f
-            val stepY = if (numAncestors > 1) (endY - startY) / (numAncestors - 1) else 0f
-
-            for (i in 0 until numAncestors) {
-                val ancestorId = selectedPath[i]
-                val waveX = 0.50f + (if (i % 2 == 0) -0.010f else 0.010f)
-                result[ancestorId] = Pair(waveX, startY + i * stepY)
-            }
-            // Nodo activo de la punta
-            result[selectedPath.last()] = Pair(0.50f, 0.26f)
-        }
-
-        // 2. Ramas activas: abanico marino envolvente con alternancia de profundidad (dos capas)
-        val branchCount = activeBranches.size
-        if (branchCount > 0) {
-            val minX = 0.08f
-            val maxX = 0.92f
-            val stepX = if (branchCount > 1) (maxX - minX) / (branchCount - 1) else 0f
-
-            activeBranches.forEachIndexed { index, branchId ->
-                val targetX = if (branchCount == 1) 0.50f else (minX + index * stepX).coerceIn(0.06f, 0.94f)
-                val normalizedIndex = if (branchCount > 1) index.toFloat() / (branchCount - 1) else 0.5f
-
-                // Escalón de dos niveles (capa frontal / capa profunda) para evitar colisiones y dar volumen:
-                val isLowerLayer = (index % 2 == 1)
-                val layerBaseY = if (isLowerLayer) 0.62f else 0.48f
-                val catenarySag = sin(normalizedIndex * Math.PI.toFloat()) * 0.04f
-                val targetY = (layerBaseY + catenarySag).coerceIn(0.42f, 0.74f)
-
-                result[branchId] = Pair(targetX, targetY)
-            }
-        }
-
-        // 3. Estrellas no activas: flotan en sus coordenadas celestiales naturales en el cosmos de fondo
-        for (star in allStars) {
-            if (star.id !in result) {
-                result[star.id] = Pair(star.baseNormX, star.baseNormY)
-            }
-        }
-
-        return result
-    }
-
-    private fun updateRecommendations() {
-        val currentState = _uiState.value
-        if (!currentState.isFormed) {
-            _uiState.value = currentState.copy(rawRecommendations = emptyList(), focusedItem = null, isLoading = false)
+        // Si se pulsa OK en el Portal de Películas -> Abrir visor de películas
+        if (focused.id == PORTAL_NODE_ID || focused.isPortal) {
+            toggleMoviesOverlay()
             return
         }
 
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+        val currentChain = _uiState.value.activeChain.toMutableList()
 
-            val prefs = runCatching { userPreferencesRepository.userPreferencesFlow.first() }.getOrNull()
-            val serverUrl = prefs?.jellyfinServerUrl ?: ""
-            val token = prefs?.jellyfinAccessToken ?: ""
-
-            val movies = jellyfinDao.getMovies()
-            val series = jellyfinDao.getSeries()
-            val allCandidates = movies + series
-
-            val selectedNeuronIds = currentState.selectedStarIds
-            val ranked = brain?.let { b ->
-                neuralEngine.scoreItems(b, allCandidates, itemRelevance, selectedNeuronIds)
-            } ?: emptyList()
-
-            val finalEntities = if (ranked.isNotEmpty()) {
-                ranked
-            } else {
-                allCandidates.sortedByDescending { it.communityRating ?: 0f }.take(20)
-            }
-
-            val items = finalEntities.map { it.toMediaItem(serverUrl, token) }
-            Log.d("MedusaViewModel", "Loaded ${items.size} recommendations for ${selectedNeuronIds.size} neuronas")
+        if (currentChain.any { it.id == focused.id }) {
+            // Ya estaba conectada: desconectar esta y las posteriores
+            val index = currentChain.indexOfFirst { it.id == focused.id }
+            val newChain = currentChain.take(index)
+            val newZoom = calculateZoomForChain(newChain.size)
+            
+            val matches = spatialEngine.getMatchingMoviesForChain(newChain, rawCatalog, serverUrl, accessToken)
+            spatialEngine.updatePortalNode(newChain, matches.size)
+            val compatIds = if (newChain.isNotEmpty()) spatialEngine.getCompatibleNodeIds(newChain) else null
 
             _uiState.value = _uiState.value.copy(
-                rawRecommendations = items,
-                focusedItem = items.firstOrNull(),
-                isLoading = false
+                nodes = spatialEngine.getAllNodes(),
+                filaments = spatialEngine.getAllFilaments(),
+                activeChain = newChain,
+                compatibleNodeIds = compatIds,
+                incompatibleWarning = null,
+                targetZoom = newZoom,
+                matchingMovies = matches
+            )
+        } else {
+            // Validar si la nueva etiqueta es compatible con la constelación activa
+            if (!spatialEngine.canExtendChain(currentChain, focused)) {
+                return
+            }
+
+            // Conectar nueva etiqueta a la cadena
+            currentChain.add(focused)
+            val newZoom = calculateZoomForChain(currentChain.size)
+            
+            val matches = spatialEngine.getMatchingMoviesForChain(currentChain, rawCatalog, serverUrl, accessToken)
+            spatialEngine.updatePortalNode(currentChain, matches.size)
+            val compatIds = spatialEngine.getCompatibleNodeIds(currentChain)
+
+            _uiState.value = _uiState.value.copy(
+                nodes = spatialEngine.getAllNodes(),
+                filaments = spatialEngine.getAllFilaments(),
+                activeChain = currentChain,
+                compatibleNodeIds = compatIds,
+                incompatibleWarning = null,
+                targetZoom = newZoom,
+                targetCameraX = focused.worldX,
+                targetCameraY = focused.worldY,
+                matchingMovies = matches
             )
         }
     }
 
-    private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String): MediaItem {
-        val posterUrl = if (!primaryImageTag.isNullOrEmpty() && baseUrl.isNotBlank()) {
-            val cleanBase = baseUrl.trimEnd('/')
-            "$cleanBase/Items/$id/Images/Primary?quality=90&fillWidth=400&fillHeight=600"
-        } else null
+    fun onNodeClicked(nodeId: String) {
+        val node = spatialEngine.getNode(nodeId) ?: return
+        _uiState.value = _uiState.value.copy(
+            focusedNodeId = node.id,
+            targetCameraX = node.worldX,
+            targetCameraY = node.worldY
+        )
+        toggleConnectFocused()
+    }
 
-        val backdropUrl = if (!backdropImageTag.isNullOrEmpty() && baseUrl.isNotBlank()) {
-            val cleanBase = baseUrl.trimEnd('/')
-            "$cleanBase/Items/$id/Images/Backdrop/0?quality=90&maxWidth=1920"
-        } else posterUrl
+    fun onPlayPressed() {
+        if (_uiState.value.matchingMovies.isNotEmpty()) {
+            toggleMoviesOverlay()
+        }
+    }
 
-        return MediaItem(
-            id = id,
-            title = title,
-            overview = overview,
-            type = type,
-            posterUrl = posterUrl,
-            backdropUrl = backdropUrl,
-            rating = communityRating,
-            year = productionYear,
-            source = MediaSource.JELLYFIN,
-            playbackPositionTicks = playbackPositionTicks,
-            isPlayed = isPlayed,
-            isFavorite = isFavorite,
-            totalEpisodes = totalItemCount,
-            playedEpisodes = if (unplayedItemCount != null && totalItemCount != null) {
-                (totalItemCount - unplayedItemCount).coerceAtLeast(0)
-            } else null
+    fun toggleMoviesOverlay() {
+        if (_uiState.value.matchingMovies.isEmpty()) return
+        val current = _uiState.value.showMoviesOverlay
+        _uiState.value = _uiState.value.copy(
+            showMoviesOverlay = !current,
+            selectedMovie = if (!current) _uiState.value.matchingMovies.firstOrNull() else null
         )
     }
 
+    fun selectMovie(movie: MediaItem) {
+        _uiState.value = _uiState.value.copy(selectedMovie = movie)
+    }
+
+    fun dismissMovieSelection() {
+        _uiState.value = _uiState.value.copy(selectedMovie = null)
+    }
+
+    /**
+     * Manejo inteligente de la tecla Atrás:
+     * 1. Si está viendo el visor de películas -> lo cierra y vuelve a la constelación.
+     * 2. Si hay etiquetas conectadas -> desconecta la última etiqueta y se aleja un nivel.
+     * 3. Si no hay etiquetas conectadas -> devuelve false para que la pantalla vuelva al inicio.
+     */
+    fun onBackPress(): Boolean {
+        if (_uiState.value.selectedMovie != null) {
+            _uiState.value = _uiState.value.copy(selectedMovie = null)
+            return true
+        }
+
+        if (_uiState.value.showMoviesOverlay) {
+            val portal = spatialEngine.getNode(PORTAL_NODE_ID)
+            _uiState.value = _uiState.value.copy(
+                showMoviesOverlay = false,
+                focusedNodeId = PORTAL_NODE_ID,
+                targetCameraX = portal?.worldX ?: _uiState.value.targetCameraX,
+                targetCameraY = portal?.worldY ?: _uiState.value.targetCameraY
+            )
+            return true
+        }
+
+        val chain = _uiState.value.activeChain
+        if (chain.isNotEmpty()) {
+            val newChain = chain.dropLast(1)
+            val prevNode = newChain.lastOrNull() ?: _uiState.value.focusedNode
+            val newZoom = calculateZoomForChain(newChain.size)
+            val matches = spatialEngine.getMatchingMoviesForChain(newChain, rawCatalog, serverUrl, accessToken)
+            spatialEngine.updatePortalNode(newChain, matches.size)
+            val compatIds = if (newChain.isNotEmpty()) spatialEngine.getCompatibleNodeIds(newChain) else null
+
+            _uiState.value = _uiState.value.copy(
+                nodes = spatialEngine.getAllNodes(),
+                filaments = spatialEngine.getAllFilaments(),
+                activeChain = newChain,
+                compatibleNodeIds = compatIds,
+                incompatibleWarning = null,
+                focusedNodeId = prevNode?.id ?: _uiState.value.focusedNodeId,
+                targetCameraX = prevNode?.worldX ?: 0.5f,
+                targetCameraY = prevNode?.worldY ?: 0.5f,
+                targetZoom = newZoom,
+                matchingMovies = matches
+            )
+            return true
+        }
+
+        return false
+    }
+
+    fun resetConstellation() {
+        val matches = spatialEngine.getMatchingMoviesForChain(emptyList(), rawCatalog, serverUrl, accessToken)
+        spatialEngine.updatePortalNode(emptyList(), matches.size)
+        val initialNode = spatialEngine.getAllNodes().firstOrNull { it.id == "CLUSTER_0" } ?: spatialEngine.getAllNodes().firstOrNull()
+
+        _uiState.value = _uiState.value.copy(
+            nodes = spatialEngine.getAllNodes(),
+            filaments = spatialEngine.getAllFilaments(),
+            activeChain = emptyList(),
+            compatibleNodeIds = null,
+            incompatibleWarning = null,
+            focusedNodeId = initialNode?.id,
+            targetCameraX = initialNode?.worldX ?: 0.5f,
+            targetCameraY = initialNode?.worldY ?: 0.5f,
+            targetZoom = 1.0f,
+            matchingMovies = matches,
+            showMoviesOverlay = false,
+            selectedMovie = null
+        )
+    }
+
+    private fun calculateZoomForChain(chainSize: Int): Float {
+        return when (chainSize) {
+            0 -> 1.0f
+            1 -> 1.45f
+            2 -> 1.80f
+            3 -> 2.10f
+            else -> 2.35f
+        }
+    }
 }

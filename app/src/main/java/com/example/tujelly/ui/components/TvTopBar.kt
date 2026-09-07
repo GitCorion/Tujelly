@@ -24,15 +24,22 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,17 +86,22 @@ fun TvTopBar(
     modifier: Modifier = Modifier,
     syncProgress: SyncProgress? = null,
     localMediaCount: Int = 0,
-    titleBadge: @Composable (() -> Unit)? = null
+    titleBadge: @Composable (() -> Unit)? = null,
+    medusaFocusRequester: androidx.compose.ui.focus.FocusRequester? = null,
+    onDownFromMedusa: (() -> Unit)? = null
 ) {
-    val focusColor = TvAccent.getColor(accentColorKey)
-    val focusContent = TvAccent.getFocusedContentColor(accentColorKey)
+    val focusColor = if (isMonochrome) Color.White else TvAccent.getColor(accentColorKey)
+    val focusContent = if (isMonochrome) Color(0xFF0F172A) else TvAccent.getFocusedContentColor(accentColorKey)
     val showTopIcons = buttonStyleKey != BUTTON_STYLE_TEXT_ONLY
     val showTopText = buttonStyleKey != BUTTON_STYLE_ICONS_ONLY
+    val autoUpdateInfo by com.example.tujelly.data.remote.github.AppUpdateManager.updateInfo.collectAsState()
+    val hasAvailableUpdate = autoUpdateInfo?.hasUpdate == true
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 48.dp, vertical = 12.dp),
+            .height(68.dp)
+            .padding(horizontal = 48.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -219,7 +231,7 @@ fun TvTopBar(
                 onClick = onNavigateHome,
                 colors = ButtonDefaults.colors(
                     containerColor = if (isHomeActive) Color(0x24FFFFFF) else Color(0x0AFFFFFF),
-                    contentColor = if (isHomeActive) Color.White else Color(0xFF64748B),
+                    contentColor = if (isHomeActive) Color.White else (if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF64748B)),
                     focusedContainerColor = focusColor,
                     focusedContentColor = focusContent
                 ),
@@ -265,10 +277,20 @@ fun TvTopBar(
             var isMedusaFocused by remember { mutableStateOf(false) }
             Button(
                 onClick = onOpenMedusa,
-                modifier = Modifier.onFocusChanged { isMedusaFocused = it.isFocused },
+                modifier = Modifier
+                    .then(if (medusaFocusRequester != null) Modifier.focusRequester(medusaFocusRequester) else Modifier)
+                    .onFocusChanged { isMedusaFocused = it.isFocused }
+                    .onKeyEvent { keyEvent ->
+                        if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionDown) {
+                            if (onDownFromMedusa != null) {
+                                onDownFromMedusa()
+                                true
+                            } else false
+                        } else false
+                    },
                 colors = ButtonDefaults.colors(
                     containerColor = if (isMedusaActive) Color(0x24FFFFFF) else Color(0x0AFFFFFF),
-                    contentColor = if (isMedusaActive) Color.White else Color(0xFF64748B),
+                    contentColor = if (isMedusaActive) Color.White else (if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF64748B)),
                     focusedContainerColor = focusColor,
                     focusedContentColor = focusContent
                 ),
@@ -290,21 +312,29 @@ fun TvTopBar(
                     horizontalArrangement = Arrangement.Center
                 ) {
                     if (showTopIcons) {
-                        val medusaSymbol = if (isMonochrome) {
-                            if (isMedusaFocused) R.drawable.ic_jelly_symbol_mono_dark else R.drawable.ic_jelly_symbol_mono
+                        if (isMonochrome) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_jelly_symbol_mono),
+                                contentDescription = "Medusa",
+                                tint = if (isMedusaFocused) focusContent else if (isMedusaActive) Color.White else Color(0xFFCBD5E1),
+                                modifier = Modifier.size(20.dp)
+                            )
                         } else {
-                            R.drawable.ic_jelly_symbol
+                            if (isMedusaFocused) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_jelly_symbol_mono_dark),
+                                    contentDescription = "Medusa",
+                                    colorFilter = ColorFilter.tint(focusContent),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_jelly_symbol),
+                                    contentDescription = "Medusa",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
-                        Image(
-                            painter = painterResource(id = medusaSymbol),
-                            contentDescription = "Medusa",
-                            modifier = Modifier.size(16.dp),
-                            colorFilter = if (isMonochrome) {
-                                if (isMedusaFocused) ColorFilter.tint(focusContent)
-                                else if (isMedusaActive) ColorFilter.tint(Color.White)
-                                else ColorFilter.tint(Color(0xFF64748B))
-                            } else null
-                        )
                     }
                     if (showTopText) {
                         if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
@@ -325,7 +355,7 @@ fun TvTopBar(
                 onClick = onOpenFavorites,
                 colors = ButtonDefaults.colors(
                     containerColor = if (isFavoritesActive) Color(0x24FFFFFF) else Color(0x0AFFFFFF),
-                    contentColor = if (isFavoritesActive) Color.White else Color(0xFF64748B),
+                    contentColor = if (isFavoritesActive) Color.White else (if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF64748B)),
                     focusedContainerColor = focusColor,
                     focusedContentColor = focusContent
                 ),
@@ -372,7 +402,7 @@ fun TvTopBar(
                 onClick = onOpenSearch,
                 colors = ButtonDefaults.colors(
                     containerColor = if (isSearchActive) Color(0x24FFFFFF) else Color(0x0AFFFFFF),
-                    contentColor = if (isSearchActive) Color.White else Color(0xFF64748B),
+                    contentColor = if (isSearchActive) Color.White else (if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF64748B)),
                     focusedContainerColor = focusColor,
                     focusedContentColor = focusContent
                 ),
@@ -419,7 +449,7 @@ fun TvTopBar(
                 onClick = onOpenSettings,
                 colors = ButtonDefaults.colors(
                     containerColor = if (isSettingsActive) Color(0x24FFFFFF) else Color(0x0AFFFFFF),
-                    contentColor = if (isSettingsActive) Color.White else Color(0xFF64748B),
+                    contentColor = if (isSettingsActive) Color.White else (if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF64748B)),
                     focusedContainerColor = focusColor,
                     focusedContentColor = focusContent
                 ),
@@ -455,6 +485,21 @@ fun TvTopBar(
                             fontSize = 13.sp,
                             maxLines = 1,
                             softWrap = false
+                        )
+                        if (hasAvailableUpdate) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(Color(0xFF10B981), androidx.compose.foundation.shape.CircleShape)
+                            )
+                        }
+                    } else if (hasAvailableUpdate) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(Color(0xFF10B981), androidx.compose.foundation.shape.CircleShape)
                         )
                     }
                 }
