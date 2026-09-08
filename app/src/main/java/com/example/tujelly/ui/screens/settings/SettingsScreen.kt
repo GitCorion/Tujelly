@@ -89,6 +89,9 @@ import com.example.tujelly.ui.theme.TvAccent
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_AND_TEXT
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
 import com.example.tujelly.data.local.BUTTON_STYLE_TEXT_ONLY
+import com.example.tujelly.data.local.PERFORMANCE_MODE_AUTO
+import com.example.tujelly.data.local.PERFORMANCE_MODE_HIGH
+import com.example.tujelly.data.local.PERFORMANCE_MODE_LOW
 import com.example.tujelly.ui.theme.TvPill
 import kotlinx.coroutines.delay
 
@@ -270,6 +273,11 @@ fun SidebarCategoryButton(
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onNavigateHome: () -> Unit = {},
+    onOpenMedusa: () -> Unit = {},
+    onOpenFavorites: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: SettingsViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -282,15 +290,28 @@ fun SettingsScreen(
         }
     }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF07080E))
     ) {
+        // Universal Persistent TV TopBar
+        com.example.tujelly.ui.components.TvTopBar(
+            selectedTab = com.example.tujelly.ui.components.TvNavTab.SETTINGS,
+            onNavigateHome = onNavigateHome,
+            onOpenMedusa = onOpenMedusa,
+            onOpenFavorites = onOpenFavorites,
+            onOpenSearch = onOpenSearch,
+            onOpenSettings = { /* Ya en Ajustes */ },
+            accentColorKey = uiState.accentColor,
+            buttonStyleKey = uiState.buttonStyle,
+            isMonochrome = uiState.isMonochrome
+        )
+
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp)
+                .padding(horizontal = 24.dp, vertical = 12.dp)
         ) {
             // =========================================================================
             // SIDEBAR NAVEGACIÓN IZQUIERDA (250dp)
@@ -303,25 +324,15 @@ fun SettingsScreen(
                     .border(1.dp, Color(0xFF1C1E30), RoundedCornerShape(14.dp))
                     .padding(16.dp)
             ) {
-                // Branding Header
-                val sidebarLogo = if (uiState.isMonochrome) {
-                    com.example.tujelly.R.drawable.ic_tujelly_header_mono
-                } else {
-                    com.example.tujelly.R.drawable.ic_tujelly_header
-                }
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = sidebarLogo),
-                    contentDescription = "TuJelly",
-                    modifier = Modifier.height(34.dp)
-                )
-                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Ajustes de Sistema",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF64748B)
+                    text = "AJUSTES DE SISTEMA",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF64748B),
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 val jfSubtitle = if (uiState.isJellyfinConnected) {
                     val total = uiState.syncedMoviesCount + uiState.syncedSeriesCount
@@ -1031,6 +1042,47 @@ fun SettingsScreen(
                                 description = "Muestra el icono y el texto de cada acción con espaciado equilibrado.",
                                 isSelected = uiState.buttonStyle == BUTTON_STYLE_ICONS_AND_TEXT,
                                 onClick = { viewModel.updateButtonStyle(BUTTON_STYLE_ICONS_AND_TEXT) }
+                            )
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            Text(
+                                text = "Rendimiento y Efectos Visuales",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Ajusta la densidad de partículas y animaciones complejas en la vista Medusa según la capacidad de tu dispositivo.",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            ButtonStyleSelectionCard(
+                                title = "Automático (Recomendado)",
+                                description = "Detecta la memoria RAM y núcleos del dispositivo. Reduce animaciones automáticamente en dispositivos de gama de entrada.",
+                                isSelected = uiState.performanceMode == PERFORMANCE_MODE_AUTO,
+                                onClick = { viewModel.updatePerformanceMode(PERFORMANCE_MODE_AUTO) }
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            ButtonStyleSelectionCard(
+                                title = "Máxima Calidad (100% Partículas)",
+                                description = "Renderiza todas las partículas estelares y física completa. Recomendado para Smart TVs potentes o Nvidia Shield.",
+                                isSelected = uiState.performanceMode == PERFORMANCE_MODE_HIGH,
+                                onClick = { viewModel.updatePerformanceMode(PERFORMANCE_MODE_HIGH) }
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            ButtonStyleSelectionCard(
+                                title = "Ahorro de Recursos (30% Partículas)",
+                                description = "Especialmente optimizado para Fire TV Stick u otros dongles de bajo costo para garantizar 60 FPS fluídos.",
+                                isSelected = uiState.performanceMode == PERFORMANCE_MODE_LOW,
+                                onClick = { viewModel.updatePerformanceMode(PERFORMANCE_MODE_LOW) }
                             )
 
                             Spacer(modifier = Modifier.height(20.dp))

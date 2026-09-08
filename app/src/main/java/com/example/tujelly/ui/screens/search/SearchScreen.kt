@@ -56,11 +56,17 @@ fun SearchScreen(
     onBack: () -> Unit,
     onPlayMedia: (String) -> Unit,
     onDetailMedia: (String) -> Unit,
+    onNavigateHome: () -> Unit = {},
+    onOpenMedusa: () -> Unit = {},
+    onOpenFavorites: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: SearchViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val accentColorKey by viewModel.accentColor.collectAsState()
     val buttonStyleKey by viewModel.buttonStyle.collectAsState()
+    val isMonochrome by viewModel.isMonochrome.collectAsState()
     val focusColor = TvAccent.getColor(accentColorKey)
     val focusContent = TvAccent.getFocusedContentColor(accentColorKey)
     val showIcons = buttonStyleKey != BUTTON_STYLE_TEXT_ONLY
@@ -78,11 +84,24 @@ fun SearchScreen(
             .fillMaxSize()
             .background(Color(0xFF0A0B0E))
     ) {
-        // Header with Search Box (Fixed at top)
+        // Universal Persistent TV TopBar
+        com.example.tujelly.ui.components.TvTopBar(
+            selectedTab = com.example.tujelly.ui.components.TvNavTab.SEARCH,
+            onNavigateHome = onNavigateHome,
+            onOpenMedusa = onOpenMedusa,
+            onOpenFavorites = onOpenFavorites,
+            onOpenSearch = { /* Ya en Buscar */ },
+            onOpenSettings = onOpenSettings,
+            accentColorKey = accentColorKey,
+            buttonStyleKey = buttonStyleKey,
+            isMonochrome = isMonochrome
+        )
+
+        // Search Input Box
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 48.dp, vertical = 14.dp),
+                .padding(horizontal = 48.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             TvPill(

@@ -45,6 +45,7 @@ data class SettingsUiState(
     val accentColor: String = com.example.tujelly.data.local.ACCENT_CYAN,
     val indicatorTheme: String = com.example.tujelly.data.local.INDICATOR_THEME_COLOR,
     val platformLogoStyle: String = com.example.tujelly.data.local.PLATFORM_LOGO_COLOR,
+    val performanceMode: String = com.example.tujelly.data.local.PERFORMANCE_MODE_AUTO,
     val isLoading: Boolean = false,
     val statusMessage: String? = null,
     val isSuccess: Boolean = false,
@@ -159,6 +160,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 accentColor = prefs.accentColor,
                 indicatorTheme = prefs.indicatorTheme,
                 platformLogoStyle = prefs.platformLogoStyle,
+                performanceMode = prefs.performanceMode,
                 selectedPlatforms = prefs.selectedPlatforms,
                 isJellyfinConnected = isJfConnected,
                 isTraktConnected = prefs.traktAccessToken.isNotBlank()
@@ -171,6 +173,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun selectCategory(categoryIndex: Int) {
         _uiState.value = _uiState.value.copy(activeCategory = categoryIndex)
+    }
+
+    fun updatePerformanceMode(mode: String) {
+        viewModelScope.launch {
+            userPreferencesRepository.updatePerformanceMode(mode)
+            _uiState.value = _uiState.value.copy(performanceMode = mode)
+        }
     }
 
     fun updateButtonStyle(style: String) {

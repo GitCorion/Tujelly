@@ -74,6 +74,7 @@ fun ConstellationCanvas(
     compatibleNodeIds: Set<String>? = null,
     focusRequester: FocusRequester = remember { FocusRequester() },
     isMonochrome: Boolean = false,
+    particleScale: Float = 1.0f,
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -438,7 +439,8 @@ fun ConstellationCanvas(
                     textMeasurer = textMeasurer,
                     isMonochrome = isMonochrome,
                     suppressLabel = isNearFocused || isNearPortal,
-                    isCompatible = isCompatible
+                    isCompatible = isCompatible,
+                    particleScale = particleScale
                 )
             }
 
@@ -454,7 +456,8 @@ fun ConstellationCanvas(
                     textMeasurer = textMeasurer,
                     isMonochrome = isMonochrome,
                     suppressLabel = false,
-                    isCompatible = true
+                    isCompatible = true,
+                    particleScale = particleScale
                 )
             }
 
@@ -498,7 +501,8 @@ fun ConstellationCanvas(
                         textMeasurer = textMeasurer,
                         isMonochrome = isMonochrome,
                         suppressLabel = false,
-                        isCompatible = isCompatible
+                        isCompatible = isCompatible,
+                        particleScale = particleScale
                     )
                 }
             }
@@ -519,7 +523,8 @@ private fun DrawScope.drawTagNode(
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
     isMonochrome: Boolean = false,
     suppressLabel: Boolean = false,
-    isCompatible: Boolean = true
+    isCompatible: Boolean = true,
+    particleScale: Float = 1.0f
 ) {
     val isConnected = chainOrder != null
     val isClusterCenter = node.id.startsWith("CLUSTER_")
@@ -536,6 +541,9 @@ private fun DrawScope.drawTagNode(
     }
 
     if (!isVisibleLOD) {
+        // En modo ahorro / gama baja (particleScale < 0.5f), omitir el renderizado del polvo cósmico lejano para reducir fill-rate
+        if (particleScale < 0.5f) return
+
         // En lejanía: partícula estelar tenue ("polvo cósmico que abrume")
         val distantAlpha = if (isCompatible) 0.30f else 0.08f
         drawCircle(

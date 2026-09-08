@@ -45,6 +45,10 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         .map { it.buttonStyle }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BUTTON_STYLE_ICONS_ONLY)
 
+    val isMonochrome: StateFlow<Boolean> = userPreferencesRepository.userPreferencesFlow
+        .map { it.isMonochrome }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 

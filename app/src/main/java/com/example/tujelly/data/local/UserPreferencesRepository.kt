@@ -34,6 +34,10 @@ const val PLATFORM_LOGO_MONOCHROME = "MONOCHROME"
 const val APP_THEME_ORIGINAL = "ORIGINAL"
 const val APP_THEME_MONOCHROME = "MONOCHROME"
 
+const val PERFORMANCE_MODE_AUTO = "AUTO"
+const val PERFORMANCE_MODE_HIGH = "HIGH"
+const val PERFORMANCE_MODE_LOW = "LOW"
+
 data class UserPreferences(
     val jellyfinServerUrl: String = "",
     val jellyfinUserId: String = "",
@@ -49,12 +53,21 @@ data class UserPreferences(
     val accentColor: String = ACCENT_CYAN,
     val indicatorTheme: String = INDICATOR_THEME_COLOR,
     val platformLogoStyle: String = PLATFORM_LOGO_COLOR,
+    val performanceMode: String = PERFORMANCE_MODE_AUTO,
     val jellyfinLastSync: String = "",
     val selectedPlatforms: Set<String> = emptySet(),
     val hasCompletedOnboarding: Boolean = false
 ) {
     val isMonochrome: Boolean
         get() = indicatorTheme == INDICATOR_THEME_MONOCHROME || accentColor == ACCENT_WHITE
+
+    fun getEffectiveParticleScale(context: Context): Float {
+        return when (performanceMode) {
+            PERFORMANCE_MODE_HIGH -> 1.0f
+            PERFORMANCE_MODE_LOW -> 0.25f
+            else -> com.example.tujelly.util.DeviceUtils.getRecommendedParticleScale(context)
+        }
+    }
 }
 
 class UserPreferencesRepository(val context: Context) {
@@ -74,6 +87,7 @@ class UserPreferencesRepository(val context: Context) {
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
         val INDICATOR_THEME = stringPreferencesKey("indicator_theme")
         val PLATFORM_LOGO_STYLE = stringPreferencesKey("platform_logo_style")
+        val PERFORMANCE_MODE = stringPreferencesKey("performance_mode")
         val JELLYFIN_LAST_SYNC = stringPreferencesKey("jellyfin_last_sync")
         val JELLYFIN_SYNC_CHECKPOINT_VIEW_INDEX = intPreferencesKey("jellyfin_sync_checkpoint_view_index")
         val JELLYFIN_SYNC_CHECKPOINT_OFFSET = intPreferencesKey("jellyfin_sync_checkpoint_offset")
@@ -105,6 +119,7 @@ class UserPreferencesRepository(val context: Context) {
             accentColor = prefs[Keys.ACCENT_COLOR] ?: ACCENT_CYAN,
             indicatorTheme = prefs[Keys.INDICATOR_THEME] ?: INDICATOR_THEME_COLOR,
             platformLogoStyle = prefs[Keys.PLATFORM_LOGO_STYLE] ?: PLATFORM_LOGO_COLOR,
+            performanceMode = prefs[Keys.PERFORMANCE_MODE] ?: PERFORMANCE_MODE_AUTO,
             jellyfinLastSync = prefs[Keys.JELLYFIN_LAST_SYNC] ?: "",
             selectedPlatforms = (prefs[Keys.SELECTED_PLATFORMS] ?: "")
                 .split(",")
@@ -187,6 +202,12 @@ class UserPreferencesRepository(val context: Context) {
     suspend fun updatePlatformLogoStyle(style: String) {
         context.dataStore.edit { prefs ->
             prefs[Keys.PLATFORM_LOGO_STYLE] = style
+        }
+    }
+
+    suspend fun updatePerformanceMode(mode: String) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.PERFORMANCE_MODE] = mode
         }
     }
 

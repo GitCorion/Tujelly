@@ -48,7 +48,7 @@ interface JellyfinApiService {
         @Header("X-Emby-Authorization") authHeader: String,
         @Query("UserId") userId: String,
         @Query("ParentId") parentId: String? = null,
-        @Query("IncludeItemTypes") includeItemTypes: String? = "Movie,Series",
+        @Query("IncludeItemTypes") includeItemTypes: String? = "Movie,Series,BoxSet",
         @Query("Fields") fields: String? = "ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,ItemCounts,RecursiveItemCount",
         @Query("Recursive") recursive: Boolean = true,
         @Query("Limit") limit: Int? = 500,
@@ -60,11 +60,21 @@ interface JellyfinApiService {
     ): JellyfinItemsResponse
 
     @GET("Items")
+    suspend fun getCollectionItems(
+        @Header("X-Emby-Authorization") authHeader: String,
+        @Query("UserId") userId: String,
+        @Query("ParentId") parentId: String,
+        @Query("Fields") fields: String = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres,ProductionYear",
+        @Query("SortBy") sortBy: String = "SortName,ProductionYear",
+        @Query("SortOrder") sortOrder: String = "Ascending"
+    ): JellyfinItemsResponse
+
+    @GET("Items")
     suspend fun searchLibraryItems(
         @Header("X-Emby-Authorization") authHeader: String,
         @Query("UserId") userId: String,
         @Query("SearchTerm") searchTerm: String,
-        @Query("IncludeItemTypes") includeItemTypes: String = "Movie,Series",
+        @Query("IncludeItemTypes") includeItemTypes: String = "Movie,Series,BoxSet",
         @Query("Recursive") recursive: Boolean = true,
         @Query("Limit") limit: Int = 5,
         @Query("Fields") fields: String = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres"

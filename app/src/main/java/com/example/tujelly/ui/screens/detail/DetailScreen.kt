@@ -289,10 +289,14 @@ fun DetailScreen(
                             }
 
                             TvPill(
-                                text = if (isTv) "SERIE" else "PELÍCULA",
-                                containerColor = Color(0x18FFFFFF),
-                                textColor = Color(0xFFE2E8F0),
-                                borderColor = Color(0x22FFFFFF)
+                                text = when {
+                                    state.isCollection -> "COLECCIÓN"
+                                    isTv -> "SERIE"
+                                    else -> "PELÍCULA"
+                                },
+                                containerColor = if (state.isCollection) Color(0x3338BDF8) else Color(0x18FFFFFF),
+                                textColor = if (state.isCollection && !isMonochrome) Color(0xFF7DD3FC) else Color(0xFFE2E8F0),
+                                borderColor = if (state.isCollection) Color(0x6638BDF8) else Color(0x22FFFFFF)
                             )
 
                             // Series Status Badge (Terminada, Continúa, Suspendida / Sin final)
@@ -378,9 +382,14 @@ fun DetailScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            val playTargetId = if (isTvSeries && state.nextUpEpisode != null) state.nextUpEpisode.id else entity.id
+                            val playTargetId = when {
+                                state.isCollection && state.collectionItems.isNotEmpty() -> state.collectionItems.first().id
+                                isTvSeries && state.nextUpEpisode != null -> state.nextUpEpisode.id
+                                else -> entity.id
+                            }
                             val isResume = state.nextUpEpisode != null && (state.nextUpEpisode.isPlayed || state.nextUpEpisode.playbackPositionTicks > 0)
                             val playLabel = when {
+                                state.isCollection -> if (state.collectionItems.isNotEmpty()) "Reproducir Colección" else "Reproducir"
                                 isTvSeries && state.nextUpEpisode != null && isResume -> "Continuar ${state.nextUpEpisode.displayCode}"
                                 isTvSeries && state.nextUpEpisode != null -> "Reproducir ${state.nextUpEpisode.displayCode}"
                                 else -> "Reproducir"
@@ -658,6 +667,41 @@ fun DetailScreen(
                                             accentColor = state.accentColor
                                         )
                                     }
+                                }
+                            }
+                        }
+
+                        // Collection Titles Section for Collections / BoxSets
+                        if (state.collectionItems.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(28.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TvPill(
+                                    text = "COLECCIÓN",
+                                    containerColor = Color(0x3338BDF8),
+                                    textColor = Color(0xFF7DD3FC),
+                                    borderColor = Color(0x6638BDF8)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "TÍTULOS DE ESTA COLECCIÓN (${state.collectionItems.size})",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(state.collectionItems, key = { it.id }) { item ->
+                                    MediaCard(
+                                        item = item,
+                                        onClick = {
+                                            viewModel.loadDetail(item.id)
+                                        }
+                                    )
                                 }
                             }
                         }

@@ -100,12 +100,12 @@ fun TvTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(68.dp)
+            .height(76.dp)
             .padding(horizontal = 48.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Sección izquierda: Logo + Badge de contexto o estado de sincronización
+        // Sección izquierda: Logo prominente + estado de sincronización (sin badge de número de títulos)
         Row(
             modifier = Modifier
                 .weight(1f, fill = false)
@@ -120,7 +120,7 @@ fun TvTopBar(
             Image(
                 painter = painterResource(id = headerLogo),
                 contentDescription = "TuJelly",
-                modifier = Modifier.height(40.dp)
+                modifier = Modifier.height(52.dp)
             )
 
             if (titleBadge != null) {
@@ -166,32 +166,6 @@ fun TvTopBar(
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        softWrap = false
-                    )
-                }
-            } else if (localMediaCount > 0) {
-                Spacer(modifier = Modifier.width(14.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .background(Color(0x18FFFFFF), RoundedCornerShape(16.dp))
-                        .border(0.75.dp, Color(0x22FFFFFF), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Movie,
-                        contentDescription = null,
-                        tint = Color(0xFF94A3B8),
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    val formattedCount = String.format("%,d", localMediaCount).replace(',', '.')
-                    Text(
-                        text = "$formattedCount títulos",
-                        color = Color(0xFFCBD5E1),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
                         softWrap = false
                     )
                 }

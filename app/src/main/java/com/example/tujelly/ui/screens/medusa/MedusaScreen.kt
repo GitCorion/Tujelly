@@ -84,6 +84,11 @@ fun MedusaScreen(
     val buttonStyleKey by viewModel.buttonStyle.collectAsState()
     val isMonochrome by viewModel.isMonochrome.collectAsState()
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val userPrefsRepo = remember { com.example.tujelly.data.local.UserPreferencesRepository(context) }
+    val userPrefs by userPrefsRepo.userPreferencesFlow.collectAsState(initial = null)
+    val particleScale = remember(userPrefs) { userPrefs?.getEffectiveParticleScale(context) ?: 1.0f }
+
     val topBarMedusaFocusRequester = remember { FocusRequester() }
     val canvasFocusRequester = remember { FocusRequester() }
     val moviesDrawerFocusRequester = remember { FocusRequester() }
@@ -342,7 +347,8 @@ fun MedusaScreen(
                     },
                     compatibleNodeIds = uiState.compatibleNodeIds,
                     focusRequester = canvasFocusRequester,
-                    isMonochrome = isMonochrome
+                    isMonochrome = isMonochrome,
+                    particleScale = particleScale
                 )
 
                 // Barra inferior de atajos contextual según el nodo enfocado

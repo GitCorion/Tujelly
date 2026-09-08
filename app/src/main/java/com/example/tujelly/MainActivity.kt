@@ -248,6 +248,20 @@ fun TujellyApp(startOnboarding: Boolean = false) {
                 },
                 onDetailMedia = { itemId ->
                     navController.navigate("detail/$itemId")
+                },
+                onNavigateHome = {
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                },
+                onOpenMedusa = {
+                    navController.navigate("medusa")
+                },
+                onOpenFavorites = {
+                    navController.navigate("favorites")
+                },
+                onOpenSettings = {
+                    navController.navigate("settings")
                 }
             )
         }
@@ -357,6 +371,20 @@ fun TujellyApp(startOnboarding: Boolean = false) {
             SettingsScreen(
                 onBack = {
                     navController.popBackStack()
+                },
+                onNavigateHome = {
+                    navController.navigate("home") {
+                        popUpTo("home") { inclusive = true }
+                    }
+                },
+                onOpenMedusa = {
+                    navController.navigate("medusa")
+                },
+                onOpenFavorites = {
+                    navController.navigate("favorites")
+                },
+                onOpenSearch = {
+                    navController.navigate("search")
                 }
             )
         }

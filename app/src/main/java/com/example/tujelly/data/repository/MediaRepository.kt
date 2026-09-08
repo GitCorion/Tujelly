@@ -25,7 +25,6 @@ import com.example.tujelly.data.worker.JellyfinSyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -997,6 +996,29 @@ class MediaRepository(
                     seasonNumber = seasonNum
                 )
             }.sortedBy { it.seasonNumber }
+        }.getOrDefault(emptyList())
+    }
+
+    suspend fun getCollectionItems(
+        serverUrl: String,
+        userId: String,
+        token: String,
+        collectionId: String
+    ): List<JellyfinMediaEntity> {
+        if (serverUrl.isBlank() || userId.isBlank() || token.isBlank() || collectionId.isBlank()) return emptyList()
+        return runCatching {
+            val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
+            val authHeader = buildJellyfinAuthHeader(token = token)
+            val response = api.getCollectionItems(
+                authHeader = authHeader,
+                userId = userId,
+                parentId = collectionId
+            )
+            val entities = response.items.map { it.toEntity() }
+            if (entities.isNotEmpty()) {
+                jellyfinDao.insertOrUpdateAll(entities)
+            }
+            entities
         }.getOrDefault(emptyList())
     }
 

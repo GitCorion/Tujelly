@@ -42,7 +42,9 @@ sealed interface DetailUiState {
         val isLoadingEpisodes: Boolean = false,
         val similarItems: List<MediaItem> = emptyList(),
         val genreItems: List<MediaItem> = emptyList(),
-        val genreName: String? = null
+        val genreName: String? = null,
+        val collectionItems: List<MediaItem> = emptyList(),
+        val isCollection: Boolean = false
     ) : DetailUiState
     data class Error(val message: String) : DetailUiState
 }
@@ -206,6 +208,29 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                         }
                     } catch (_: Exception) {}
 
+                    val isCollection = finalEntity.type.equals("BoxSet", ignoreCase = true) ||
+                            finalEntity.type.equals("CollectionFolder", ignoreCase = true) ||
+                            finalEntity.type.equals("Playlist", ignoreCase = true) ||
+                            finalEntity.title.contains("Colección", ignoreCase = true) ||
+                            finalEntity.title.contains("Collection", ignoreCase = true)
+
+                    var collectionItems: List<MediaItem> = emptyList()
+                    if (isCollection) {
+                        var colEntities = mediaRepository.getCollectionItems(baseUrl, prefs.jellyfinUserId, token, finalEntity.id)
+                        if (colEntities.isEmpty()) {
+                            val cleanName = finalEntity.title
+                                .replace(" - Colección", "", ignoreCase = true)
+                                .replace(" Colección", "", ignoreCase = true)
+                                .replace(" Collection", "", ignoreCase = true)
+                                .trim()
+                            if (cleanName.isNotBlank()) {
+                                colEntities = database.jellyfinDao().searchLocalMedia(cleanName, limit = 20)
+                                    .filter { it.id != finalEntity.id && !it.type.equals("BoxSet", ignoreCase = true) }
+                            }
+                        }
+                        collectionItems = colEntities.map { it.toMediaItem(baseUrl, token, MediaSource.JELLYFIN) }
+                    }
+
                     _uiState.value = DetailUiState.Success(
                         entity = finalEntity,
                         posterUrl = posterUrl,
@@ -223,7 +248,9 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                         nextUpEpisode = nextUpEpisode,
                         similarItems = similarItems,
                         genreItems = genreItems,
-                        genreName = primaryGenreName
+                        genreName = primaryGenreName,
+                        collectionItems = collectionItems,
+                        isCollection = isCollection
                     )
                 } else {
                     _uiState.value = DetailUiState.Error("Elemento no encontrado en tu biblioteca")

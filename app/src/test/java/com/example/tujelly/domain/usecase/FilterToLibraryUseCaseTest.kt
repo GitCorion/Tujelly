@@ -94,6 +94,14 @@ class FakeJellyfinDao : JellyfinDao {
 
     override fun getMediaCountFlow(): Flow<Int> = flowOf(localDb.size)
 
+    override fun getMoviesCountFlow(): Flow<Int> = flowOf(localDb.count { it.type == "Movie" })
+
+    override fun getSeriesCountFlow(): Flow<Int> = flowOf(localDb.count { it.type == "Series" })
+
+    override fun getEpisodesCountFlow(): Flow<Int> = flowOf(localDb.count { it.type == "Episode" })
+
+    override fun getTotalSeriesEpisodesFlow(): Flow<Int> = flowOf(localDb.filter { it.type == "Series" }.sumOf { it.totalItemCount ?: 0 })
+
     override suspend fun getFavorites(): List<JellyfinMediaEntity> = localDb.filter { it.isFavorite }
 
     override fun getFavoritesFlow(): Flow<List<JellyfinMediaEntity>> = flowOf(localDb.filter { it.isFavorite })
