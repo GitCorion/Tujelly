@@ -69,7 +69,13 @@ data class SettingsUiState(
     val isCheckingUpdate: Boolean = false,
     val updateInfo: com.example.tujelly.data.remote.github.UpdateInfo? = null,
     val downloadProgress: Float? = null,
-    val selectedPlatforms: Set<String> = emptySet()
+    val selectedPlatforms: Set<String> = emptySet(),
+    // Sincronización y Catálogo
+    val syncedMoviesCount: Int = 0,
+    val syncedSeriesCount: Int = 0,
+    val syncedEpisodesCount: Int = 0,
+    val isSyncingCatalog: Boolean = false,
+    val lastSyncTimestamp: String? = null
 ) {
     val isMonochrome: Boolean
         get() = indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME || accentColor == com.example.tujelly.data.local.ACCENT_WHITE
@@ -79,6 +85,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val userPreferencesRepository = UserPreferencesRepository(application)
     private val appUpdateManager = com.example.tujelly.data.remote.github.AppUpdateManager(application)
+    private val database = com.example.tujelly.data.local.db.AppDatabase.getDatabase(application)
+    private val mediaRepository = com.example.tujelly.data.repository.MediaRepository(database.jellyfinDao(), userPreferencesRepository)
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -103,6 +111,31 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 if (progress != null) {
                     _uiState.value = _uiState.value.copy(downloadProgress = progress)
                 }
+            }
+        }
+        viewModelScope.launch {
+            mediaRepository.getMoviesCountFlow().collect { count ->
+                _uiState.value = _uiState.value.copy(syncedMoviesCount = count)
+            }
+        }
+        viewModelScope.launch {
+            mediaRepository.getSeriesCountFlow().collect { count ->
+                _uiState.value = _uiState.value.copy(syncedSeriesCount = count)
+            }
+        }
+        viewModelScope.launch {
+            mediaRepository.getEpisodesCountFlow().collect { count ->
+                _uiState.value = _uiState.value.copy(syncedEpisodesCount = count)
+            }
+        }
+        viewModelScope.launch {
+            com.example.tujelly.data.repository.MediaRepository.syncProgress.collect { progress ->
+                _uiState.value = _uiState.value.copy(isSyncingCatalog = progress.isSyncing)
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.userPreferencesFlow.collect { prefs ->
+                _uiState.value = _uiState.value.copy(lastSyncTimestamp = prefs.jellyfinLastSync)
             }
         }
         checkForAppUpdates()
@@ -665,9 +698,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 _uiState.value = _uiState.value.copy(statusMessage = "Conecta primero con Jellyfin")
                 return@launch
             }
-            val database = com.example.tujelly.data.local.db.AppDatabase.getDatabase(getApplication())
-            val repository = com.example.tujelly.data.repository.MediaRepository(database.jellyfinDao(), userPreferencesRepository)
-            repository.startBackgroundSync(
+            mediaRepository.startBackgroundSync(
                 serverUrl = prefs.jellyfinServerUrl,
                 userId = prefs.jellyfinUserId,
                 token = prefs.jellyfinAccessToken,

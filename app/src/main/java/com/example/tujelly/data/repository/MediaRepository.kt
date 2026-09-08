@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -64,7 +65,7 @@ class MediaRepository(
                     .get()
                 val activeWork = workInfos.firstOrNull { !it.state.isFinished }
                 if (activeWork != null && !_syncProgress.value.isSyncing) {
-                    val grand = maxOf(34966, localCount)
+                    val grand = maxOf(1000, localCount)
                     _syncProgress.value = SyncProgress(
                         isSyncing = true,
                         current = localCount,
@@ -307,11 +308,11 @@ class MediaRepository(
                 }
 
                 // =========================================================================
+                // =========================================================================
                 // CAMINO 1: SINCRONIZACIÓN INCREMENTAL (DELTA SYNC)
                 // =========================================================================
-                // Solo si el catálogo local ya tiene un volumen significativo (> 15.000 títulos)
-                // y una fecha de sincronización previa completa
-                if (!forceFullSync && currentLocal > 15000 && !effectiveLastSync.isNullOrBlank()) {
+                // Si el catálogo local ya tiene elementos y una fecha de sincronización previa completa
+                if (!forceFullSync && currentLocal > 0 && !effectiveLastSync.isNullOrBlank()) {
                     _syncProgress.value = SyncProgress(
                         isSyncing = true,
                         current = currentLocal,
@@ -320,40 +321,51 @@ class MediaRepository(
                     )
 
                     var deltaCount = 0
-                    val fields = "ProviderIds,PrimaryImageTag,CommunityRating,Genres,Tags,UserData,ItemCounts,RecursiveItemCount"
                     for (view in mediaViews.ifEmpty { listOf(null) }) {
                         val isSeries = view?.collectionType.equals("tvshows", ignoreCase = true) || view?.name.equals("Series", ignoreCase = true)
-                        val deltaResponse = runCatching {
-                            api.getLibraryItems(
-                                authHeader = authHeader,
-                                userId = userId,
-                                parentId = view?.id,
-                                includeItemTypes = if (isSeries) "Series" else "Movie",
-                                fields = fields,
-                                recursive = !isSeries,
-                                limit = 200,
-                                minDateLastSaved = effectiveLastSync
-                            )
-                        }.getOrNull()
-
-                        val deltaItems = deltaResponse?.items ?: emptyList()
-                        if (deltaItems.isNotEmpty()) {
-                            val cachedOverviews = jellyfinDao.getCachedOverviews().associateBy { it.id }
-                            val entities = deltaItems.map { dto ->
-                                val entity = dto.toEntity()
-                                val cached = cachedOverviews[entity.id]
-                                if (cached != null && entity.overview.isNullOrBlank()) {
-                                    entity.copy(
-                                        overview = cached.overview,
-                                        backdropImageTag = entity.backdropImageTag ?: cached.backdropImageTag
-                                    )
-                                } else {
-                                    entity
-                                }
-                            }
-                            jellyfinDao.insertOrUpdateAll(entities)
-                            deltaCount += entities.size
+                        val viewFields = if (isSeries) {
+                            "ProviderIds,PrimaryImageTag,CommunityRating,Genres,Tags,UserData,RecursiveItemCount"
+                        } else {
+                            "ProviderIds,PrimaryImageTag,CommunityRating,Genres,Tags,UserData"
                         }
+                        var deltaOffset = 0
+                        do {
+                            val deltaResponse = runCatching {
+                                api.getLibraryItems(
+                                    authHeader = authHeader,
+                                    userId = userId,
+                                    parentId = view?.id,
+                                    includeItemTypes = if (isSeries) "Series" else "Movie",
+                                    fields = viewFields,
+                                    recursive = !isSeries,
+                                    limit = 200,
+                                    startIndex = deltaOffset,
+                                    minDateLastSaved = effectiveLastSync
+                                )
+                            }.getOrNull()
+
+                            val deltaItems = deltaResponse?.items ?: emptyList()
+                            if (deltaItems.isNotEmpty()) {
+                                val cachedOverviews = jellyfinDao.getCachedOverviews().associateBy { it.id }
+                                val entities = deltaItems.map { dto ->
+                                    val entity = dto.toEntity()
+                                    val cached = cachedOverviews[entity.id]
+                                    if (cached != null && entity.overview.isNullOrBlank()) {
+                                        entity.copy(
+                                            overview = cached.overview,
+                                            backdropImageTag = entity.backdropImageTag ?: cached.backdropImageTag
+                                        )
+                                    } else {
+                                        entity
+                                    }
+                                }
+                                jellyfinDao.insertOrUpdateAll(entities)
+                                deltaCount += entities.size
+                                deltaOffset += deltaItems.size
+                            }
+                            if (deltaItems.size < 200) break
+                            delay(100L)
+                        } while (true)
                     }
 
                     val nowTimestamp = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()
@@ -373,7 +385,6 @@ class MediaRepository(
                 // =========================================================================
                 // CAMINO 2: SINCRONIZACIÓN COMPLETA GLOBAL CON RESUMEN / CHECKPOINTS
                 // =========================================================================
-                val fields = "ProviderIds,PrimaryImageTag,CommunityRating,Tags,UserData,ItemCounts,RecursiveItemCount"
                 val pageSize = 200
 
                 // Leer checkpoint previo si no es forzada desde cero
@@ -383,8 +394,7 @@ class MediaRepository(
                 val savedTotalSynced = checkpoint?.third ?: 0
 
                 var totalSynced = if (savedTotalSynced > 0) savedTotalSynced else 0
-                // Estimación inicial del catálogo: 35.000 títulos
-                var grandTotal = maxOf(34966, totalSynced)
+                var grandTotal = maxOf(currentLocal, totalSynced)
 
                 _syncProgress.value = SyncProgress(
                     isSyncing = true,
@@ -406,6 +416,11 @@ class MediaRepository(
                     val isSeries = view?.collectionType.equals("tvshows", ignoreCase = true) || view?.name.equals("Series", ignoreCase = true)
                     val itemType = if (isSeries) "Series" else if (view != null) "Movie" else "Movie,Series"
                     val isRecursive = !isSeries // Series son hijas directas del CollectionFolder, Movies pueden estar en subcarpetas
+                    val viewFields = if (isSeries) {
+                        "ProviderIds,PrimaryImageTag,CommunityRating,Tags,UserData,RecursiveItemCount"
+                    } else {
+                        "ProviderIds,PrimaryImageTag,CommunityRating,Tags,UserData"
+                    }
 
                     var startIndex = if (viewIndex == savedViewIndex) savedOffset else 0
                     var viewTotal = 0
@@ -422,13 +437,13 @@ class MediaRepository(
                                     userId = userId,
                                     parentId = viewId,
                                     includeItemTypes = itemType,
-                                    fields = fields,
+                                    fields = viewFields,
                                     recursive = isRecursive,
                                     limit = pageSize,
                                     startIndex = startIndex,
                                     sortBy = "SortName",
                                     sortOrder = "Ascending",
-                                    enableTotalRecordCount = (startIndex == 0)
+                                    enableTotalRecordCount = (viewTotal == 0)
                                 )
                             } catch (e: Exception) {
                                 lastError = e
@@ -446,12 +461,10 @@ class MediaRepository(
                         }
 
                         val items = response.items
-                        if (startIndex == 0 && response.totalRecordCount > 0) {
+                        if (viewTotal == 0 && response.totalRecordCount > 0) {
                             viewTotal = response.totalRecordCount
                             cumulativeViewTotal += viewTotal
-                            if (cumulativeViewTotal > 0) {
-                                grandTotal = maxOf(grandTotal, cumulativeViewTotal)
-                            }
+                            grandTotal = maxOf(grandTotal, cumulativeViewTotal)
                         }
 
                         if (items.isEmpty()) break
@@ -480,8 +493,8 @@ class MediaRepository(
                         if (viewTotal > 0 && startIndex >= viewTotal) break
                         if (items.size < pageSize) break
 
-                        // Pausa breve para mantener el servidor fluido
-                        delay(60L)
+                        // Pausa de 200ms para mantener el servidor Jellyfin fluido sin congelarse
+                        delay(200L)
                     } while (viewTotal == 0 || startIndex < viewTotal)
                 }
 
@@ -773,6 +786,14 @@ class MediaRepository(
     suspend fun searchLocalMedia(query: String, limit: Int = 40): List<JellyfinMediaEntity> = jellyfinDao.searchLocalMedia(query.trim(), limit)
     suspend fun getLocalCount(): Int = jellyfinDao.getCount()
     fun getMediaCountFlow(): Flow<Int> = jellyfinDao.getMediaCountFlow()
+    fun getMoviesCountFlow(): Flow<Int> = jellyfinDao.getMoviesCountFlow()
+    fun getSeriesCountFlow(): Flow<Int> = jellyfinDao.getSeriesCountFlow()
+    fun getEpisodesCountFlow(): Flow<Int> = combine(
+        jellyfinDao.getEpisodesCountFlow(),
+        jellyfinDao.getTotalSeriesEpisodesFlow()
+    ) { direct, seriesTotal ->
+        maxOf(direct, seriesTotal)
+    }
     suspend fun getFavoritesLocal(): List<JellyfinMediaEntity> = jellyfinDao.getFavorites()
     fun getFavoritesFlow(): Flow<List<JellyfinMediaEntity>> = jellyfinDao.getFavoritesFlow()
 
@@ -995,6 +1016,10 @@ class MediaRepository(
                 userId = userId,
                 seasonId = seasonId
             )
+            val entities = response.items.map { it.toEntity() }
+            if (entities.isNotEmpty()) {
+                jellyfinDao.insertOrUpdateAll(entities)
+            }
             response.items.map { item ->
                 val epNum = item.indexNumber ?: 1
                 val seasonNum = item.parentIndexNumber ?: 1

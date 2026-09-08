@@ -128,38 +128,17 @@ fun TvTopBar(
                 titleBadge()
             } else if (syncProgress != null && syncProgress.isSyncing) {
                 Spacer(modifier = Modifier.width(14.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .background(if (isMonochrome) Color(0x22FFFFFF) else Color(0x2238BDF8), RoundedCornerShape(16.dp))
                         .border(0.75.dp, if (isMonochrome) Color(0x55FFFFFF) else Color(0x5538BDF8), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     CircularProgressIndicator(
                         color = if (isMonochrome) Color.White else Color(0xFF38BDF8),
                         strokeWidth = 2.dp,
-                        modifier = Modifier.size(11.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    val currentNum = syncProgress.current.coerceAtLeast(localMediaCount)
-                    val progressText = if (syncProgress.total > 0) {
-                        val displayCur = currentNum.coerceAtMost(syncProgress.total)
-                        val formattedCur = String.format("%,d", displayCur).replace(',', '.')
-                        val formattedTot = String.format("%,d", syncProgress.total).replace(',', '.')
-                        "$formattedCur / $formattedTot"
-                    } else if (localMediaCount > 0) {
-                        "${String.format("%,d", localMediaCount).replace(',', '.')} cargados..."
-                    } else {
-                        "Conectando..."
-                    }
-                    Text(
-                        text = "Sincronizando: $progressText",
-                        color = Color(0xFFE2E8F0),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        softWrap = false
+                        modifier = Modifier.size(13.dp)
                     )
                 }
             } else if (syncProgress != null && syncProgress.message.isNotBlank() &&

@@ -66,6 +66,10 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Tv
+import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
@@ -87,6 +91,55 @@ import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
 import com.example.tujelly.data.local.BUTTON_STYLE_TEXT_ONLY
 import com.example.tujelly.ui.theme.TvPill
 import kotlinx.coroutines.delay
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun CatalogStatCard(
+    title: String,
+    count: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val formattedCount = String.format("%,d", count).replace(',', '.')
+    Row(
+        modifier = modifier
+            .background(Color(0xFF111322), RoundedCornerShape(12.dp))
+            .border(1.dp, Color(0xFF1E2338), RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(accentColor.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = accentColor,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Text(
+                text = title,
+                color = Color(0xFF94A3B8),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = formattedCount,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -270,9 +323,15 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                val jfSubtitle = if (uiState.isJellyfinConnected) {
+                    val total = uiState.syncedMoviesCount + uiState.syncedSeriesCount
+                    if (total > 0) "${String.format("%,d", total).replace(',', '.')} títulos" else "Conectado"
+                } else {
+                    "Sin conectar"
+                }
                 SidebarCategoryButton(
                     title = "SERVIDOR JELLYFIN",
-                    subtitle = if (uiState.isJellyfinConnected) "Conectado" else "Sin conectar",
+                    subtitle = jfSubtitle,
                     isSelected = uiState.activeCategory == 0,
                     onClick = { viewModel.selectCategory(0) }
                 )
@@ -550,7 +609,136 @@ fun SettingsScreen(
                                 ),
                                 enabled = !uiState.isLoading
                             ) {
-                                Text("Guardar y Sincronizar Catálogo", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Guardar y Conectar", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+
+                            // -----------------------------------------------------------------
+                            // SECCIÓN DE ESTADÍSTICAS DEL CATÁLOGO SINCRONIZADO
+                            // -----------------------------------------------------------------
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            Text(
+                                text = "Catálogo Sincronizado",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // 3 Tarjetas de métricas: Películas, Series y Capítulos
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // Películas
+                                CatalogStatCard(
+                                    title = "Películas",
+                                    count = uiState.syncedMoviesCount,
+                                    icon = Icons.Rounded.Movie,
+                                    accentColor = Color(0xFF38BDF8),
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                // Series
+                                CatalogStatCard(
+                                    title = "Series",
+                                    count = uiState.syncedSeriesCount,
+                                    icon = Icons.Rounded.Tv,
+                                    accentColor = Color(0xFFA855F7),
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                // Capítulos
+                                CatalogStatCard(
+                                    title = "Capítulos",
+                                    count = uiState.syncedEpisodesCount,
+                                    icon = Icons.Rounded.VideoLibrary,
+                                    accentColor = Color(0xFF34D399),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Fila de estado de sincronización y botón manual
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF0F111E), RoundedCornerShape(12.dp))
+                                    .border(1.dp, Color(0xFF1E2338), RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (uiState.isSyncingCatalog) {
+                                            CircularProgressIndicator(
+                                                color = Color(0xFF38BDF8),
+                                                strokeWidth = 2.dp,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Sincronizando biblioteca en segundo plano...",
+                                                color = Color(0xFF38BDF8),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        } else {
+                                            val totalItems = uiState.syncedMoviesCount + uiState.syncedSeriesCount
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (totalItems > 0) Color(0xFF34D399) else Color(0xFF64748B))
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = if (totalItems > 0) "Catálogo sincronizado" else "Sin sincronizar",
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                    val lastSync = uiState.lastSyncTimestamp
+                                    if (!lastSync.isNullOrBlank()) {
+                                        Spacer(modifier = Modifier.height(3.dp))
+                                        val formattedTs = lastSync.replace("T", " ").substringBefore(".")
+                                        Text(
+                                            text = "Última sincronización: $formattedTs",
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = { viewModel.forceSyncCatalog() },
+                                    colors = ButtonDefaults.colors(
+                                        containerColor = Color(0xFF1E2338),
+                                        contentColor = Color.White,
+                                        focusedContainerColor = Color(0xFF4F46E5),
+                                        focusedContentColor = Color.White
+                                    ),
+                                    enabled = !uiState.isSyncingCatalog && uiState.isJellyfinConnected
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Sync,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (uiState.isSyncingCatalog) "Sincronizando..." else "Sincronizar Ahora",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
                             }
                         }
 

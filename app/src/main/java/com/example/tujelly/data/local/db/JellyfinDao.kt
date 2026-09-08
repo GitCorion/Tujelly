@@ -78,6 +78,18 @@ interface JellyfinDao {
     @Query("SELECT COUNT(*) FROM jellyfin_media WHERE type IN ('Movie', 'Series')")
     fun getMediaCountFlow(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM jellyfin_media WHERE type = 'Movie'")
+    fun getMoviesCountFlow(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM jellyfin_media WHERE type = 'Series'")
+    fun getSeriesCountFlow(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM jellyfin_media WHERE type = 'Episode'")
+    fun getEpisodesCountFlow(): Flow<Int>
+
+    @Query("SELECT COALESCE(SUM(totalItemCount), 0) FROM jellyfin_media WHERE type = 'Series'")
+    fun getTotalSeriesEpisodesFlow(): Flow<Int>
+
     @Query("SELECT * FROM jellyfin_media WHERE isFavorite = 1 ORDER BY title ASC")
     suspend fun getFavorites(): List<JellyfinMediaEntity>
 
