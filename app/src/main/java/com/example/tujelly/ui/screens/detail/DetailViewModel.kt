@@ -32,6 +32,7 @@ sealed interface DetailUiState {
         val trailerUrl: String? = null,
         val baseUrl: String? = null,
         val isFavorite: Boolean = false,
+        val isPlayed: Boolean = false,
         val buttonStyle: String = "ICONS_ONLY",
         val accentColor: String = com.example.tujelly.data.local.ACCENT_CYAN,
         val seriesStatus: SeriesStatus? = null,
@@ -104,8 +105,22 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                     val token = prefs.jellyfinAccessToken
                     val authParam = if (token.isNotBlank()) "&api_key=$token" else ""
                     val posterUrl = finalEntity.primaryImageTag?.let { tag -> "$baseUrl/Items/${finalEntity.id}/Images/Primary?tag=$tag$authParam" }
-                    val backdropUrl = finalEntity.backdropImageTag?.let { tag -> "$baseUrl/Items/${finalEntity.id}/Images/Backdrop/0?tag=$tag$authParam" }
+                    var backdropUrl = finalEntity.backdropImageTag?.let { tag -> "$baseUrl/Items/${finalEntity.id}/Images/Backdrop/0?tag=$tag$authParam" }
                     val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/${finalEntity.id}/Images/Logo$authParam" else null
+
+                    // If viewing an episode, resolve seriesName and parent backdrop if needed
+                    val currentSeriesId = finalEntity.seriesId
+                    if (finalEntity.type.equals("Episode", ignoreCase = true) && !currentSeriesId.isNullOrBlank()) {
+                        val parentSeries = database.jellyfinDao().getItemById(currentSeriesId)
+                        if (parentSeries != null) {
+                            if (finalEntity.seriesName.isNullOrBlank()) {
+                                finalEntity = finalEntity.copy(seriesName = parentSeries.title)
+                            }
+                            if (backdropUrl == null && !parentSeries.backdropImageTag.isNullOrBlank()) {
+                                backdropUrl = "$baseUrl/Items/${parentSeries.id}/Images/Backdrop/0?tag=${parentSeries.backdropImageTag}$authParam"
+                            }
+                        }
+                    }
 
                     val trailerUrl = if (tmdbLong != null && prefs.tmdbApiKey.isNotBlank()) {
                         mediaRepository.getTmdbTrailerUrl(prefs.tmdbApiKey, tmdbLong, isTv = isTv)
@@ -141,9 +156,15 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                             seriesId = finalEntity.id
                         )
 
-                        // 4. Default to nextUp's season or the first season
-                        selectedSeasonId = seasons.firstOrNull { it.seasonNumber == (nextUpEpisode?.seasonNumber ?: 1) }?.id
-                            ?: seasons.firstOrNull()?.id
+                        // 4. Default to nextUp's season or the first regular season (seasonNumber >= 1)
+                        selectedSeasonId = if (nextUpEpisode != null) {
+                            seasons.firstOrNull { it.seasonNumber == nextUpEpisode.seasonNumber }?.id
+                        } else null
+
+                        if (selectedSeasonId == null) {
+                            selectedSeasonId = seasons.firstOrNull { it.seasonNumber >= 1 }?.id
+                                ?: seasons.firstOrNull()?.id
+                        }
 
                         // 5. Fetch episodes for selected season
                         episodes = mediaRepository.getEpisodes(
@@ -156,6 +177,25 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
 
                         if (nextUpEpisode == null && episodes.isNotEmpty()) {
                             nextUpEpisode = episodes.firstOrNull()
+                        }
+                    } else if (isTv && finalEntity.type.equals("Episode", ignoreCase = true) && !finalEntity.seriesId.isNullOrBlank()) {
+                        val sId = finalEntity.seriesId!!
+                        seasons = mediaRepository.getSeasons(
+                            serverUrl = baseUrl,
+                            userId = prefs.jellyfinUserId,
+                            token = token,
+                            seriesId = sId
+                        )
+                        val epSeasonNum = finalEntity.seasonNumber ?: 1
+                        selectedSeasonId = seasons.firstOrNull { it.seasonNumber == epSeasonNum }?.id ?: seasons.firstOrNull()?.id
+                        if (selectedSeasonId != null) {
+                            episodes = mediaRepository.getEpisodes(
+                                serverUrl = baseUrl,
+                                userId = prefs.jellyfinUserId,
+                                token = token,
+                                seriesId = sId,
+                                seasonId = selectedSeasonId
+                            )
                         }
                     }
 
@@ -239,6 +279,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                         trailerUrl = trailerUrl,
                         baseUrl = baseUrl,
                         isFavorite = finalEntity.isFavorite,
+                        isPlayed = finalEntity.isPlayed || (finalEntity.unplayedItemCount == 0 && (finalEntity.totalItemCount ?: 0) > 0),
                         buttonStyle = prefs.buttonStyle,
                         accentColor = prefs.accentColor,
                         seriesStatus = seriesStatus,
@@ -304,6 +345,39 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 // Revert on error
                 _uiState.value = state.copy(isFavorite = !newFavStatus)
+            }
+        }
+    }
+
+    fun togglePlayed() {
+        val state = _uiState.value as? DetailUiState.Success ?: return
+        val newPlayedStatus = !state.isPlayed
+        val updatedEntity = state.entity.copy(
+            isPlayed = newPlayedStatus,
+            playbackPositionTicks = 0L,
+            unplayedItemCount = if (newPlayedStatus) 0 else state.entity.totalItemCount
+        )
+        _uiState.value = state.copy(
+            isPlayed = newPlayedStatus,
+            entity = updatedEntity
+        )
+
+        viewModelScope.launch {
+            try {
+                val prefs = userPreferencesRepository.userPreferencesFlow.first()
+                mediaRepository.togglePlayed(
+                    serverUrl = prefs.jellyfinServerUrl,
+                    userId = prefs.jellyfinUserId,
+                    token = prefs.jellyfinAccessToken,
+                    itemId = state.entity.id,
+                    makePlayed = newPlayedStatus
+                )
+            } catch (e: Exception) {
+                // Revert on error
+                _uiState.value = state.copy(
+                    isPlayed = !newPlayedStatus,
+                    entity = state.entity
+                )
             }
         }
     }

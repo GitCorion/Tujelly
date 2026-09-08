@@ -195,5 +195,19 @@ interface JellyfinApiService {
         @Query("SortBy") sortBy: String = "SortName",
         @Query("SortOrder") sortOrder: String = "Ascending"
     ): JellyfinItemsResponse
+
+    @POST("Users/{userId}/PlayedItems/{itemId}")
+    suspend fun markPlayed(
+        @Header("X-Emby-Authorization") authHeader: String,
+        @Path("userId") userId: String,
+        @Path("itemId") itemId: String
+    ): JellyfinUserDataDto
+
+    @DELETE("Users/{userId}/PlayedItems/{itemId}")
+    suspend fun unmarkPlayed(
+        @Header("X-Emby-Authorization") authHeader: String,
+        @Path("userId") userId: String,
+        @Path("itemId") itemId: String
+    ): JellyfinUserDataDto
 }
 

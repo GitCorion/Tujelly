@@ -6,6 +6,7 @@ import com.example.tujelly.data.remote.tmdb.TmdbItemDto
 import com.example.tujelly.data.remote.trakt.TraktIdsDto
 import com.example.tujelly.data.remote.trakt.TraktMediaDto
 import com.example.tujelly.data.repository.MediaRepository
+import com.example.tujelly.data.repository.deduplicateMediaEntities
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -109,6 +110,11 @@ class FakeJellyfinDao : JellyfinDao {
     override suspend fun updateFavoriteStatus(itemId: String, isFavorite: Boolean) {
         val item = getItemById(itemId) ?: return
         insertOrUpdate(item.copy(isFavorite = isFavorite))
+    }
+
+    override suspend fun updatePlayedStatus(itemId: String, isPlayed: Boolean) {
+        val item = getItemById(itemId) ?: return
+        insertOrUpdate(item.copy(isPlayed = isPlayed, playbackPositionTicks = 0L))
     }
 
     override suspend fun getCachedOverviews(): List<com.example.tujelly.data.local.db.CachedOverviewDto> {
@@ -219,5 +225,47 @@ class FilterToLibraryUseCaseTest {
         assertEquals(false, item.isPlayed) // Must NOT be marked as fully played
         assertEquals(10, item.totalItemCount)
         assertEquals(9, item.unplayedItemCount)
+    }
+
+    @Test
+    fun `deduplicateMediaEntities merges duplicate versions of same movie without merging sequels`() {
+        val movie1080p = JellyfinMediaEntity(
+            id = "m1-1080p",
+            title = "Dune (1080p)",
+            type = "Movie",
+            tmdbId = "438631",
+            productionYear = 2021,
+            isPlayed = false
+        )
+        val movie4k = JellyfinMediaEntity(
+            id = "m1-4k",
+            title = "Dune",
+            type = "Movie",
+            tmdbId = "438631",
+            productionYear = 2021,
+            isPlayed = true,
+            playbackPositionTicks = 5000000000L
+        )
+        val sequel = JellyfinMediaEntity(
+            id = "m2-dune2",
+            title = "Dune: Parte Dos",
+            type = "Movie",
+            tmdbId = "693134",
+            productionYear = 2024,
+            isPlayed = false
+        )
+
+        val inputList = listOf(movie1080p, movie4k, sequel)
+        val deduplicated = inputList.deduplicateMediaEntities()
+
+        assertEquals(2, deduplicated.size)
+
+        val dune1 = deduplicated.first { it.tmdbId == "438631" }
+        assertEquals("Dune", dune1.title)
+        assertEquals(true, dune1.isPlayed)
+        assertEquals(5000000000L, dune1.playbackPositionTicks)
+
+        val dune2 = deduplicated.first { it.tmdbId == "693134" }
+        assertEquals("Dune: Parte Dos", dune2.title)
     }
 }

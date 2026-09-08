@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SubtitlesOff
@@ -150,6 +151,19 @@ fun PlayerScreen(
     var seekIndicatorText by remember { mutableStateOf<String?>(null) }
     var activeModalTab by remember { mutableStateOf(PlayerModalTab.NONE) }
 
+    // Resume dialog state: null = not yet decided, true = show dialog, false = decision made
+    var showResumeDialog by remember { mutableStateOf(false) }
+    var resumeDecisionMade by remember { mutableStateOf(false) }
+    var chosenStartPositionMs by remember { mutableLongStateOf(0L) }
+
+    // Show resume dialog immediately when streamInfo is loaded if user has saved progress (>=10s)
+    LaunchedEffect(streamInfo) {
+        val info = streamInfo
+        if (info != null && info.startPositionMs >= 10_000L && !resumeDecisionMade) {
+            showResumeDialog = true
+        }
+    }
+
     var isPlaying by remember { mutableStateOf(true) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
@@ -219,7 +233,9 @@ fun PlayerScreen(
     }
 
     BackHandler {
-        if (activeModalTab != PlayerModalTab.NONE) {
+        if (showResumeDialog) {
+            onBack()
+        } else if (activeModalTab != PlayerModalTab.NONE) {
             activeModalTab = PlayerModalTab.NONE
         } else {
             onBack()
@@ -231,6 +247,7 @@ fun PlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
             .onKeyEvent { keyEvent ->
+                if (showResumeDialog) return@onKeyEvent false
                 showOverlayControls = true
 
                 when (keyEvent.key) {
@@ -247,7 +264,7 @@ fun PlayerScreen(
                 }
                 false
             }
-            .clickable {
+            .clickable(enabled = !showResumeDialog) {
                 showOverlayControls = !showOverlayControls
             }
     ) {
@@ -310,8 +327,6 @@ fun PlayerScreen(
 
                         setMediaItem(mediaItem)
 
-                        var hasPerformedInitialSeek = false
-
                         addListener(object : Player.Listener {
                             override fun onIsPlayingChanged(playing: Boolean) {
                                 isPlaying = playing
@@ -324,14 +339,6 @@ fun PlayerScreen(
                                 isBuffering = (playbackState == Player.STATE_BUFFERING)
                                 if (playbackState == Player.STATE_READY) {
                                     playerErrorMessage = null
-                                    if (!hasPerformedInitialSeek && info.startPositionMs > 0) {
-                                        hasPerformedInitialSeek = true
-                                        if (isCurrentMediaItemSeekable) {
-                                            seekTo(info.startPositionMs)
-                                        } else {
-                                            android.util.Log.w("PlayerScreen", "Stream is progressive/non-seekable. Starting from byte 0.")
-                                        }
-                                    }
                                 }
                             }
 
@@ -383,8 +390,15 @@ fun PlayerScreen(
                             }
                         })
 
-                        prepare()
-                        playWhenReady = true
+                        // Only prepare ExoPlayer immediately if no resume decision is required
+                        if (resumeDecisionMade || info.startPositionMs < 10_000L) {
+                            val startAt = if (chosenStartPositionMs > 0) chosenStartPositionMs else info.startPositionMs
+                            if (startAt > 0) {
+                                seekTo(startAt)
+                            }
+                            prepare()
+                            playWhenReady = true
+                        }
                     }
             }
 
@@ -457,8 +471,33 @@ fun PlayerScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
+            // Resume Playback Dialog Overlay (Netflix-style)
+            if (showResumeDialog && info.startPositionMs >= 10_000L) {
+                ResumePlaybackDialog(
+                    savedPositionMs = info.startPositionMs,
+                    onResume = {
+                        showResumeDialog = false
+                        resumeDecisionMade = true
+                        chosenStartPositionMs = info.startPositionMs
+                        exoPlayer.seekTo(info.startPositionMs)
+                        exoPlayer.prepare()
+                        exoPlayer.playWhenReady = true
+                        exoPlayer.play()
+                    },
+                    onStartOver = {
+                        showResumeDialog = false
+                        resumeDecisionMade = true
+                        chosenStartPositionMs = 0L
+                        exoPlayer.seekTo(0L)
+                        exoPlayer.prepare()
+                        exoPlayer.playWhenReady = true
+                        exoPlayer.play()
+                    }
+                )
+            }
+
             // Buffering / Loading Indicator Overlay
-            if (isBuffering && playerErrorMessage == null) {
+            if (isBuffering && playerErrorMessage == null && !showResumeDialog) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -583,7 +622,7 @@ fun PlayerScreen(
 
             // Apple TV+ / High-End Cinema HUD Controls Overlay
             AnimatedVisibility(
-                visible = showOverlayControls,
+                visible = showOverlayControls && !showResumeDialog,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier.fillMaxSize()
@@ -1379,4 +1418,97 @@ private fun Context.findActivity(): Activity? {
         currentContext = currentContext.baseContext
     }
     return null
+}
+
+@ExperimentalTvMaterial3Api
+@Composable
+private fun ResumePlaybackDialog(
+    savedPositionMs: Long,
+    onResume: () -> Unit,
+    onStartOver: () -> Unit
+) {
+    val resumeFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(150L)
+        try {
+            resumeFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xEE121424))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
+                .padding(horizontal = 20.dp, vertical = 16.dp)
+        ) {
+            // Resume button (focused by default) with position included
+            Button(
+                onClick = onResume,
+                modifier = Modifier.focusRequester(resumeFocusRequester),
+                colors = ButtonDefaults.colors(
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF0F172A),
+                    focusedContainerColor = Color(0xFFE0E7FF),
+                    focusedContentColor = Color(0xFF0F172A)
+                ),
+                shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp))
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Reanudar (${formatTime(savedPositionMs)})",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+
+            // Start from beginning button
+            Button(
+                onClick = onStartOver,
+                colors = ButtonDefaults.colors(
+                    containerColor = Color(0x22FFFFFF),
+                    contentColor = Color.White,
+                    focusedContainerColor = Color.White,
+                    focusedContentColor = Color(0xFF0F172A)
+                ),
+                shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp))
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Replay,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Desde el principio",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+    }
 }

@@ -390,6 +390,9 @@ fun TujellyApp(
                 onPlay = { id ->
                     navController.navigate("player/$id")
                 },
+                onNavigateToDetail = { id ->
+                    navController.navigate("detail/$id")
+                },
                 onBack = {
                     navController.popBackStack()
                 }

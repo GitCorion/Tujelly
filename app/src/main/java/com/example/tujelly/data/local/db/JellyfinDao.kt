@@ -99,6 +99,9 @@ interface JellyfinDao {
     @Query("UPDATE jellyfin_media SET isFavorite = :isFavorite WHERE id = :itemId")
     suspend fun updateFavoriteStatus(itemId: String, isFavorite: Boolean)
 
+    @Query("UPDATE jellyfin_media SET isPlayed = :isPlayed, playbackPositionTicks = 0, unplayedItemCount = CASE WHEN :isPlayed = 1 THEN 0 ELSE totalItemCount END WHERE id = :itemId")
+    suspend fun updatePlayedStatus(itemId: String, isPlayed: Boolean)
+
     @Query("DELETE FROM jellyfin_media")
     suspend fun clearAll()
 

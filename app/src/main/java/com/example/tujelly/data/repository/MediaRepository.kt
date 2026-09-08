@@ -539,7 +539,7 @@ class MediaRepository(
             if (entities.isNotEmpty()) {
                 jellyfinDao.insertOrUpdateAll(entities)
             }
-            entities
+            entities.deduplicateMediaEntities()
         }
     }
 
@@ -552,7 +552,7 @@ class MediaRepository(
             if (entities.isNotEmpty()) {
                 jellyfinDao.insertOrUpdateAll(entities)
             }
-            entities
+            entities.deduplicateMediaEntities()
         }
     }
 
@@ -565,7 +565,7 @@ class MediaRepository(
             if (entities.isNotEmpty()) {
                 jellyfinDao.insertOrUpdateAll(entities)
             }
-            entities
+            entities.deduplicateMediaEntities()
         }
     }
 
@@ -777,12 +777,12 @@ class MediaRepository(
     fun getAllLocalLibrary(): Flow<List<JellyfinMediaEntity>> = jellyfinDao.getAllItems()
 
 
-    suspend fun getLocalMovies(): List<JellyfinMediaEntity> = jellyfinDao.getMovies()
-    suspend fun getLocalSeries(): List<JellyfinMediaEntity> = jellyfinDao.getSeries()
-    suspend fun getTopMoviesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopMoviesLocal(limit)
-    suspend fun getTopSeriesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopSeriesLocal(limit)
-    suspend fun getTopRatedLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopRatedLocal(limit)
-    suspend fun searchLocalMedia(query: String, limit: Int = 40): List<JellyfinMediaEntity> = jellyfinDao.searchLocalMedia(query.trim(), limit)
+    suspend fun getLocalMovies(): List<JellyfinMediaEntity> = jellyfinDao.getMovies().deduplicateMediaEntities()
+    suspend fun getLocalSeries(): List<JellyfinMediaEntity> = jellyfinDao.getSeries().deduplicateMediaEntities()
+    suspend fun getTopMoviesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopMoviesLocal(limit).deduplicateMediaEntities()
+    suspend fun getTopSeriesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopSeriesLocal(limit).deduplicateMediaEntities()
+    suspend fun getTopRatedLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopRatedLocal(limit).deduplicateMediaEntities()
+    suspend fun searchLocalMedia(query: String, limit: Int = 40): List<JellyfinMediaEntity> = jellyfinDao.searchLocalMedia(query.trim(), limit).deduplicateMediaEntities()
     suspend fun getLocalCount(): Int = jellyfinDao.getCount()
     fun getMediaCountFlow(): Flow<Int> = jellyfinDao.getMediaCountFlow()
     fun getMoviesCountFlow(): Flow<Int> = jellyfinDao.getMoviesCountFlow()
@@ -793,12 +793,12 @@ class MediaRepository(
     ) { direct, seriesTotal ->
         maxOf(direct, seriesTotal)
     }
-    suspend fun getFavoritesLocal(): List<JellyfinMediaEntity> = jellyfinDao.getFavorites()
+    suspend fun getFavoritesLocal(): List<JellyfinMediaEntity> = jellyfinDao.getFavorites().deduplicateMediaEntities()
     fun getFavoritesFlow(): Flow<List<JellyfinMediaEntity>> = jellyfinDao.getFavoritesFlow()
 
     suspend fun getFavorites(serverUrl: String, userId: String, token: String): Result<List<JellyfinMediaEntity>> {
         return runCatching {
-            val local = jellyfinDao.getFavorites()
+            val local = jellyfinDao.getFavorites().deduplicateMediaEntities()
             if (serverUrl.isBlank() || token.isBlank()) return@runCatching local
             try {
                 val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
@@ -807,10 +807,8 @@ class MediaRepository(
                 val entities = response.items.map { it.toEntity().copy(isFavorite = true) }
                 if (entities.isNotEmpty()) {
                     jellyfinDao.insertOrUpdateAll(entities)
-                    entities
-                } else {
-                    local
-                }
+                    entities.deduplicateMediaEntities()
+                } else local
             } catch (e: Exception) {
                 local
             }
@@ -830,6 +828,22 @@ class MediaRepository(
                 }
             }
             makeFavorite
+        }
+    }
+
+    suspend fun togglePlayed(serverUrl: String, userId: String, token: String, itemId: String, makePlayed: Boolean): Result<Boolean> {
+        return runCatching {
+            jellyfinDao.updatePlayedStatus(itemId, makePlayed)
+            if (serverUrl.isNotBlank() && token.isNotBlank() && userId.isNotBlank()) {
+                val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
+                val authHeader = buildJellyfinAuthHeader(token = token)
+                if (makePlayed) {
+                    api.markPlayed(authHeader, userId, itemId)
+                } else {
+                    api.unmarkPlayed(authHeader, userId, itemId)
+                }
+            }
+            makePlayed
         }
     }
 
@@ -989,13 +1003,14 @@ class MediaRepository(
             val authHeader = buildJellyfinAuthHeader(token = token)
             val response = api.getSeasonsForSeries(authHeader = authHeader, seriesId = seriesId, userId = userId)
             response.items.mapNotNull { item ->
-                val seasonNum = item.indexNumber ?: 1
+                val seasonNum = item.indexNumber ?: 0
+                val defaultName = if (seasonNum == 0) "Especiales" else "Temporada $seasonNum"
                 SeasonItem(
                     id = item.id,
-                    name = item.name ?: "Temporada $seasonNum",
+                    name = item.name ?: defaultName,
                     seasonNumber = seasonNum
                 )
-            }.sortedBy { it.seasonNumber }
+            }.sortedWith(compareBy({ if (it.seasonNumber == 0) 9999 else it.seasonNumber }))
         }.getOrDefault(emptyList())
     }
 
@@ -1042,7 +1057,7 @@ class MediaRepository(
             if (entities.isNotEmpty()) {
                 jellyfinDao.insertOrUpdateAll(entities)
             }
-            response.items.map { item ->
+            val rawEpisodes = response.items.map { item ->
                 val epNum = item.indexNumber ?: 1
                 val seasonNum = item.parentIndexNumber ?: 1
                 val durationMin = item.runTimeTicks?.let { (it / 10_000_000L / 60L).toInt() }
@@ -1063,7 +1078,40 @@ class MediaRepository(
                     isPlayed = item.userData?.isPlayed ?: false,
                     playbackPositionTicks = item.userData?.playbackPositionTicks ?: 0L
                 )
-            }.sortedWith(compareBy({ it.seasonNumber }, { it.episodeNumber }))
+            }
+
+            // Deduplicate episodes with the same (seasonNumber, episodeNumber)
+            rawEpisodes.groupBy { Pair(it.seasonNumber, it.episodeNumber) }
+                .map { (_, duplicates) ->
+                    if (duplicates.size == 1) {
+                        duplicates.first()
+                    } else {
+                        val bestPlayed = duplicates.any { it.isPlayed }
+                        val maxTicks = duplicates.maxOf { it.playbackPositionTicks }
+
+                        // Prefer item with clean title (doesn't contain filename formatting like S01E01 or trailing hyphen)
+                        val cleanTitleItem = duplicates.firstOrNull { ep ->
+                            val name = ep.name.trim()
+                            !name.contains("S0", ignoreCase = true) &&
+                            !name.contains("S1", ignoreCase = true) &&
+                            !name.contains("S2", ignoreCase = true) &&
+                            !name.endsWith("-")
+                        } ?: duplicates.first()
+
+                        val primaryItem = duplicates.firstOrNull { it.isPlayed || it.playbackPositionTicks > 0 }
+                            ?: cleanTitleItem
+
+                        cleanTitleItem.copy(
+                            id = primaryItem.id,
+                            isPlayed = bestPlayed,
+                            playbackPositionTicks = maxTicks,
+                            overview = cleanTitleItem.overview ?: duplicates.firstNotNullOfOrNull { it.overview },
+                            imageUrl = cleanTitleItem.imageUrl ?: duplicates.firstNotNullOfOrNull { it.imageUrl },
+                            durationMinutes = cleanTitleItem.durationMinutes ?: duplicates.firstNotNullOfOrNull { it.durationMinutes }
+                        )
+                    }
+                }
+                .sortedWith(compareBy({ it.seasonNumber }, { it.episodeNumber }))
         }.getOrDefault(emptyList())
     }
 
@@ -1152,4 +1200,77 @@ class MediaRepository(
             unplayedItemCount = unplayedCount
         )
     }
+}
+
+fun List<JellyfinMediaEntity>.deduplicateMediaEntities(): List<JellyfinMediaEntity> {
+    if (size <= 1) return this
+
+    val result = mutableListOf<JellyfinMediaEntity>()
+    val processedIndices = mutableSetOf<Int>()
+
+    for (i in indices) {
+        if (i in processedIndices) continue
+        val itemA = this[i]
+
+        val duplicates = mutableListOf(itemA)
+        for (j in (i + 1) until size) {
+            if (j in processedIndices) continue
+            val itemB = this[j]
+
+            val isDuplicate = when {
+                !itemA.type.equals(itemB.type, ignoreCase = true) -> false
+
+                // 1. Same non-blank TMDB ID
+                !itemA.tmdbId.isNullOrBlank() && itemA.tmdbId == itemB.tmdbId -> true
+
+                // 2. Same non-blank IMDB ID
+                !itemA.imdbId.isNullOrBlank() && itemA.imdbId == itemB.imdbId -> true
+
+                // 3. Same Title and same non-null production year for Movies when TMDB/IMDB ID missing
+                itemA.type.equals("Movie", ignoreCase = true) &&
+                        itemA.productionYear != null &&
+                        itemA.productionYear == itemB.productionYear &&
+                        itemA.title.trim().equals(itemB.title.trim(), ignoreCase = true) -> true
+
+                else -> false
+            }
+
+            if (isDuplicate) {
+                duplicates.add(itemB)
+                processedIndices.add(j)
+            }
+        }
+
+        if (duplicates.size == 1) {
+            result.add(itemA)
+        } else {
+            val bestPlayed = duplicates.any { it.isPlayed }
+            val maxTicks = duplicates.maxOf { it.playbackPositionTicks }
+
+            val cleanTitleItem = duplicates.firstOrNull { item ->
+                val name = item.title.trim()
+                !name.contains("1080p", ignoreCase = true) &&
+                !name.contains("4k", ignoreCase = true) &&
+                !name.contains("hdr", ignoreCase = true) &&
+                !name.contains("remux", ignoreCase = true)
+            } ?: duplicates.first()
+
+            val primaryItem = duplicates.firstOrNull { it.isPlayed || it.playbackPositionTicks > 0 }
+                ?: cleanTitleItem
+
+            result.add(
+                cleanTitleItem.copy(
+                    id = primaryItem.id,
+                    isPlayed = bestPlayed,
+                    playbackPositionTicks = maxTicks,
+                    overview = cleanTitleItem.overview ?: duplicates.firstNotNullOfOrNull { it.overview },
+                    primaryImageTag = cleanTitleItem.primaryImageTag ?: duplicates.firstNotNullOfOrNull { it.primaryImageTag },
+                    backdropImageTag = cleanTitleItem.backdropImageTag ?: duplicates.firstNotNullOfOrNull { it.backdropImageTag }
+                )
+            )
+        }
+        processedIndices.add(i)
+    }
+
+    return result
 }

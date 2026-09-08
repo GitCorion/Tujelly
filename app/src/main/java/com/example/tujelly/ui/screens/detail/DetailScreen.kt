@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Movie
@@ -80,10 +82,10 @@ import com.example.tujelly.ui.theme.TvRatingBadge
 fun DetailScreen(
     itemId: String,
     onPlay: (String) -> Unit,
+    onNavigateToDetail: (String) -> Unit = {},
     onBack: () -> Unit,
     viewModel: DetailViewModel = viewModel()
 ) {
-    val context = LocalContext.current
     var isShowingTrailer by remember { mutableStateOf(false) }
     var isLaunchingPlayer by remember { mutableStateOf(false) }
 
@@ -239,6 +241,22 @@ fun DetailScreen(
                     ) {
                         // isMonochrome is already computed in outer scope (line 98)
 
+                        val isEpisode = entity.type.equals("Episode", ignoreCase = true)
+                        val sNum = entity.seasonNumber ?: 1
+                        val eNum = entity.episodeNumber ?: 1
+                        val sName = entity.seriesName ?: ""
+
+                        if (isEpisode && sName.isNotBlank()) {
+                            Text(
+                                text = sName.uppercase(),
+                                color = if (isMonochrome) Color.White else focusColor,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                        }
+
                         // ClearLogo transparent vector with high-contrast typography fallback
                         var isLogoLoaded by remember(entity.id) { mutableStateOf(false) }
 
@@ -268,6 +286,16 @@ fun DetailScreen(
                             )
                         }
 
+                        if (isEpisode) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Temporada $sNum • Episodio $eNum",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(14.dp))
 
                         // Metadata Badges Row
@@ -291,7 +319,8 @@ fun DetailScreen(
                             TvPill(
                                 text = when {
                                     state.isCollection -> "COLECCIÓN"
-                                    isTv -> "SERIE"
+                                    isEpisode -> "EPISODIO • T$sNum:E$eNum"
+                                    isTvSeries -> "SERIE"
                                     else -> "PELÍCULA"
                                 },
                                 containerColor = if (state.isCollection) Color(0x3338BDF8) else Color(0x18FFFFFF),
@@ -426,6 +455,39 @@ fun DetailScreen(
                                 }
                             }
 
+                            // 2. Go to Series Button (when viewing an episode)
+                            if (isEpisode && !entity.seriesId.isNullOrBlank()) {
+                                Button(
+                                    onClick = {
+                                        onNavigateToDetail(entity.seriesId)
+                                    },
+                                    colors = ButtonDefaults.colors(
+                                        containerColor = Color(0x14FFFFFF),
+                                        contentColor = Color.White,
+                                        focusedContainerColor = focusColor,
+                                        focusedContentColor = focusContent
+                                    )
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (showIcons) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Tv,
+                                                contentDescription = if (sName.isNotBlank()) "Ir a $sName" else "Ir a la serie",
+                                                modifier = Modifier.size(17.dp)
+                                            )
+                                        }
+                                        if (showText) {
+                                            if (showIcons) Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = if (sName.isNotBlank()) "Ir a $sName" else "Ir a la serie",
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             // 2. Favorite Toggle Button
                             Button(
                                 onClick = { viewModel.toggleFavorite() },
@@ -483,46 +545,11 @@ fun DetailScreen(
                                 }
                             }
 
-                            // 4. Official App Button
+                            // 4. Mark as Watched / Watched Button
                             Button(
-                                onClick = {
-                                    val packages = listOf(
-                                        "org.jellyfin.androidtv",
-                                        "org.jellyfin.mobile",
-                                        "org.jellyfin.androidtv.debug",
-                                        "org.jellyfin.mobile.debug",
-                                        "com.mb.android"
-                                    )
-                                    val pm = context.packageManager
-                                    var launched = false
-
-                                    for (pkg in packages) {
-                                        val appIntent = pm.getLaunchIntentForPackage(pkg)
-                                        if (appIntent != null) {
-                                            appIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            context.startActivity(appIntent)
-                                            launched = true
-                                            break
-                                        }
-                                    }
-
-                                    if (!launched && !state.baseUrl.isNullOrBlank()) {
-                                        val itemWebUrl = Uri.parse("${state.baseUrl}/web/index.html#!/details?id=${entity.id}")
-                                        val webIntent = Intent(Intent.ACTION_VIEW, itemWebUrl).apply {
-                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        }
-                                        runCatching {
-                                            context.startActivity(webIntent)
-                                            launched = true
-                                        }
-                                    }
-
-                                    if (!launched) {
-                                        Toast.makeText(context, "App oficial de Jellyfin no encontrada", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
+                                onClick = { viewModel.togglePlayed() },
                                 colors = ButtonDefaults.colors(
-                                    containerColor = Color(0x14FFFFFF),
+                                    containerColor = if (state.isPlayed) Color(0x28FFFFFF) else Color(0x14FFFFFF),
                                     contentColor = Color.White,
                                     focusedContainerColor = focusColor,
                                     focusedContentColor = focusContent
@@ -531,14 +558,19 @@ fun DetailScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     if (showIcons) {
                                         Icon(
-                                            imageVector = Icons.Rounded.Tv,
-                                            contentDescription = "App Jellyfin",
+                                            imageVector = if (state.isPlayed) Icons.Rounded.CheckCircle else Icons.Rounded.Check,
+                                            contentDescription = if (state.isPlayed) "Visto" else "Marcar como visto",
+                                            tint = if (state.isPlayed && !isMonochrome) Color(0xFF10B981) else Color.White,
                                             modifier = Modifier.size(17.dp)
                                         )
                                     }
                                     if (showText) {
                                         if (showIcons) Spacer(modifier = Modifier.width(6.dp))
-                                        Text("App Jellyfin", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                        Text(
+                                            text = if (state.isPlayed) "Visto" else "Marcar como visto",
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 13.sp
+                                        )
                                     }
                                 }
                             }
