@@ -47,6 +47,11 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.NonInteractiveSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.example.tujelly.ui.screens.medusa.MedusaScreen
 import com.example.tujelly.ui.screens.brand.BrandScreen
@@ -127,6 +132,7 @@ fun TujellyApp(startOnboarding: Boolean = false) {
 
     var showUpdateBanner by remember { mutableStateOf(false) }
     var updateDismissed by remember { mutableStateOf(false) }
+    val updateButtonFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         appUpdateManager.checkAutomatically()
@@ -135,6 +141,13 @@ fun TujellyApp(startOnboarding: Boolean = false) {
     LaunchedEffect(updateInfo) {
         if (updateInfo?.hasUpdate == true && !updateDismissed) {
             showUpdateBanner = true
+        }
+    }
+
+    LaunchedEffect(showUpdateBanner) {
+        if (showUpdateBanner) {
+            delay(200)
+            updateButtonFocusRequester.requestFocus()
         }
     }
 
@@ -391,147 +404,160 @@ fun TujellyApp(startOnboarding: Boolean = false) {
     }
 
     if (showUpdateBanner && updateInfo?.hasUpdate == true && !isPlayerActive && !updateDismissed) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xCC000000))
-                .padding(48.dp),
-            contentAlignment = Alignment.Center
+        Dialog(
+            onDismissRequest = {
+                showUpdateBanner = false
+                updateDismissed = true
+            },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false
+            )
         ) {
             Box(
                 modifier = Modifier
-                    .width(560.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xF50D111A))
-                    .border(
-                        1.dp,
-                        Brush.verticalGradient(
-                            listOf(Color(0x8000E5FF), Color(0x30C084FC))
-                        ),
-                        RoundedCornerShape(20.dp)
-                    )
-                    .padding(28.dp)
+                    .fillMaxSize()
+                    .background(Color(0xCC000000))
+                    .padding(48.dp),
+                contentAlignment = Alignment.Center
             ) {
-                val coroutineScope = rememberCoroutineScope()
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .background(Color(0xFF10B981), androidx.compose.foundation.shape.CircleShape)
-                        )
-                        Text(
-                            text = "ACTUALIZACIÓN DISPONIBLE",
-                            color = Color(0xFF00E5FF),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.2.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "Nueva versión ${updateInfo?.latestVersion}",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    val notes = updateInfo?.releaseNotes
-                    if (!notes.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 140.dp)
-                                .background(Color(0x22FFFFFF), RoundedCornerShape(10.dp))
-                                .padding(12.dp)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            Text(
-                                text = notes,
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp
-                            )
-                        }
-                    }
-
-                    if (isDownloading) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        val progress = downloadProgress ?: 0f
-                        androidx.compose.material3.LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = Color(0xFF00E5FF),
-                            trackColor = Color(0x30FFFFFF)
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Descargando actualización: ${(progress * 100).toInt()}%",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        androidx.tv.material3.Button(
-                            onClick = {
-                                val apkUrl = updateInfo?.apkUrl
-                                if (apkUrl != null) {
-                                    coroutineScope.launch {
-                                        appUpdateManager.downloadAndInstall(apkUrl)
-                                    }
-                                }
-                            },
-                            enabled = !isDownloading,
-                            colors = androidx.tv.material3.ButtonDefaults.colors(
-                                containerColor = Color(0xFF00E5FF),
-                                contentColor = Color(0xFF05070B),
-                                focusedContainerColor = Color.White,
-                                focusedContentColor = Color.Black
+                Box(
+                    modifier = Modifier
+                        .width(560.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xF50D111A))
+                        .border(
+                            1.dp,
+                            Brush.verticalGradient(
+                                listOf(Color(0x8000E5FF), Color(0x30C084FC))
                             ),
-                            shape = androidx.tv.material3.ButtonDefaults.shape(RoundedCornerShape(12.dp))
+                            RoundedCornerShape(20.dp)
+                        )
+                        .padding(28.dp)
+                ) {
+                    val coroutineScope = rememberCoroutineScope()
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(Color(0xFF10B981), androidx.compose.foundation.shape.CircleShape)
+                            )
                             Text(
-                                text = if (isDownloading) "Descargando..." else "Actualizar ahora",
+                                text = "ACTUALIZACIÓN DISPONIBLE",
+                                color = Color(0xFF00E5FF),
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                letterSpacing = 1.2.sp
                             )
                         }
 
-                        androidx.tv.material3.Button(
-                            onClick = {
-                                showUpdateBanner = false
-                                updateDismissed = true
-                            },
-                            enabled = !isDownloading,
-                            colors = androidx.tv.material3.ButtonDefaults.colors(
-                                containerColor = Color(0x18FFFFFF),
-                                contentColor = Color(0xFFCBD5E1),
-                                focusedContainerColor = Color(0x40FFFFFF),
-                                focusedContentColor = Color.White
-                            ),
-                            shape = androidx.tv.material3.ButtonDefaults.shape(RoundedCornerShape(12.dp))
-                        ) {
-                            Text(
-                                text = "Más tarde",
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 13.sp
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Nueva versión ${updateInfo?.latestVersion}",
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        val notes = updateInfo?.releaseNotes
+                        if (!notes.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 140.dp)
+                                    .background(Color(0x22FFFFFF), RoundedCornerShape(10.dp))
+                                    .padding(12.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                Text(
+                                    text = notes,
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+
+                        if (isDownloading) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            val progress = downloadProgress ?: 0f
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                color = Color(0xFF00E5FF),
+                                trackColor = Color(0x30FFFFFF)
                             )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Descargando actualización: ${(progress * 100).toInt()}%",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.tv.material3.Button(
+                                onClick = {
+                                    val apkUrl = updateInfo?.apkUrl
+                                    if (apkUrl != null) {
+                                        coroutineScope.launch {
+                                            appUpdateManager.downloadAndInstall(apkUrl)
+                                        }
+                                    }
+                                },
+                                enabled = !isDownloading,
+                                modifier = Modifier.focusRequester(updateButtonFocusRequester),
+                                colors = androidx.tv.material3.ButtonDefaults.colors(
+                                    containerColor = Color(0xFF00E5FF),
+                                    contentColor = Color(0xFF05070B),
+                                    focusedContainerColor = Color.White,
+                                    focusedContentColor = Color.Black
+                                ),
+                                shape = androidx.tv.material3.ButtonDefaults.shape(RoundedCornerShape(12.dp))
+                            ) {
+                                Text(
+                                    text = if (isDownloading) "Descargando..." else "Actualizar ahora",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+
+                            androidx.tv.material3.Button(
+                                onClick = {
+                                    showUpdateBanner = false
+                                    updateDismissed = true
+                                },
+                                enabled = !isDownloading,
+                                colors = androidx.tv.material3.ButtonDefaults.colors(
+                                    containerColor = Color(0x18FFFFFF),
+                                    contentColor = Color(0xFFCBD5E1),
+                                    focusedContainerColor = Color(0x40FFFFFF),
+                                    focusedContentColor = Color.White
+                                ),
+                                shape = androidx.tv.material3.ButtonDefaults.shape(RoundedCornerShape(12.dp))
+                            ) {
+                                Text(
+                                    text = "Más tarde",
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 13.sp
+                                )
+                            }
                         }
                     }
                 }
