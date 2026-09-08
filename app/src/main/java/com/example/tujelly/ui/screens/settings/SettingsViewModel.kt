@@ -22,14 +22,49 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
-enum class SettingField(val title: String, val description: String, val isPassword: Boolean = false) {
-    SERVER_URL("URL del Servidor Jellyfin", "Introduce la URL o IP de tu servidor (ej. https://tu-servidor-jellyfin.com)"),
-    USERNAME("Usuario Jellyfin", "Nombre de tu cuenta en Jellyfin"),
-    PASSWORD("Contraseña Jellyfin", "Contraseña de tu cuenta en Jellyfin", isPassword = true),
-    TRAKT_CLIENT_ID("Trakt Client ID", "ID de aplicación creada en trakt.tv/oauth/applications"),
-    TRAKT_CLIENT_SECRET("Trakt Client Secret", "Clave secreta opcional de tu aplicación Trakt", isPassword = true),
-    TRAKT_MANUAL_TOKEN("Trakt Access Token Directo", "Pega directamente tu token personal de Trakt si ya lo tienes"),
-    WATCH_REGION("Región de Catálogo", "Código de país de 2 letras (ej. ES para España, MX, US)")
+enum class SettingField(
+    val title: String,
+    val description: String,
+    val placeholder: String,
+    val isPassword: Boolean = false
+) {
+    SERVER_URL(
+        "URL del Servidor Jellyfin",
+        "Introduce la URL o IP de tu servidor Jellyfin",
+        "http://192.168.1.100:8096 o https://jellyfin.ejemplo.com"
+    ),
+    USERNAME(
+        "Usuario Jellyfin",
+        "Nombre de tu cuenta en Jellyfin",
+        "Escribe tu usuario"
+    ),
+    PASSWORD(
+        "Contraseña Jellyfin",
+        "Contraseña de tu cuenta en Jellyfin",
+        "Escribe tu contraseña",
+        isPassword = true
+    ),
+    TRAKT_CLIENT_ID(
+        "Trakt Client ID",
+        "ID de aplicación creada en trakt.tv/oauth/applications",
+        "Client ID de Trakt"
+    ),
+    TRAKT_CLIENT_SECRET(
+        "Trakt Client Secret",
+        "Clave secreta opcional de tu aplicación Trakt",
+        "Client Secret de Trakt",
+        isPassword = true
+    ),
+    TRAKT_MANUAL_TOKEN(
+        "Trakt Access Token Directo",
+        "Pega directamente tu token personal de Trakt si ya lo tienes",
+        "Access Token de Trakt"
+    ),
+    WATCH_REGION(
+        "Región de Catálogo",
+        "Código de país de 2 letras (ej. ES para España, MX, US)",
+        "ES"
+    )
 }
 
 data class SettingsUiState(

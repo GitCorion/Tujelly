@@ -138,11 +138,11 @@ fun SearchScreen(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White,
-                    focusedContainerColor = Color(0x18FFFFFF),
-                    unfocusedContainerColor = Color(0x10FFFFFF),
-                    focusedBorderColor = Color.White,
-                    unfocusedBorderColor = Color(0x22FFFFFF),
-                    cursorColor = Color.White
+                    focusedContainerColor = Color(0xFF1B1E2E),
+                    unfocusedContainerColor = Color(0xFF141624),
+                    focusedBorderColor = Color(0xFF38BDF8),
+                    unfocusedBorderColor = Color(0x44FFFFFF),
+                    cursorColor = Color(0xFF38BDF8)
                 )
             )
         }

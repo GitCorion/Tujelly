@@ -1341,6 +1341,13 @@ fun SettingsScreen(
                             value = uiState.activeDialogValue,
                             onValueChange = { viewModel.onDialogValueChange(it) },
                             singleLine = true,
+                            placeholder = {
+                                Text(
+                                    text = field.placeholder,
+                                    color = Color(0xFF64748B),
+                                    fontSize = 14.sp
+                                )
+                            },
                             visualTransformation = if (field.isPassword && !isPasswordVisible) PasswordVisualTransformation() else VisualTransformation.None,
                             keyboardOptions = KeyboardOptions(
                                 imeAction = ImeAction.Done,
@@ -1367,15 +1374,15 @@ fun SettingsScreen(
                                         }
                                     } else false
                                 },
-                            textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                            textStyle = TextStyle(color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color(0x18FFFFFF),
-                                unfocusedContainerColor = Color(0x10FFFFFF),
-                                focusedBorderColor = Color.White,
-                                unfocusedBorderColor = Color(0x22FFFFFF),
-                                cursorColor = Color.White
+                                focusedContainerColor = Color(0xFF1B1E2E),
+                                unfocusedContainerColor = Color(0xFF141624),
+                                focusedBorderColor = Color(0xFF38BDF8),
+                                unfocusedBorderColor = Color(0x44FFFFFF),
+                                cursorColor = Color(0xFF38BDF8)
                             )
                         )
 
