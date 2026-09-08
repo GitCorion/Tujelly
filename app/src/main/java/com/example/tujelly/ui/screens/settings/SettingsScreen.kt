@@ -49,6 +49,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -63,6 +64,7 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -1299,12 +1301,13 @@ fun SettingsScreen(
         if (uiState.activeDialogField != null) {
             val field = uiState.activeDialogField!!
             val focusRequester = remember { FocusRequester() }
-            val focusManager = LocalFocusManager.current
+            val keyboardController = LocalSoftwareKeyboardController.current
             var isPasswordVisible by remember(field) { mutableStateOf(false) }
 
             LaunchedEffect(field) {
                 delay(150)
                 focusRequester.requestFocus()
+                keyboardController?.show()
             }
 
             Box(
@@ -1348,6 +1351,20 @@ fun SettingsScreen(
                                     fontSize = 14.sp
                                 )
                             },
+                            trailingIcon = {
+                                if (uiState.activeDialogValue.isNotEmpty()) {
+                                    androidx.compose.material3.IconButton(
+                                        onClick = { viewModel.onDialogValueChange("") }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Clear,
+                                            contentDescription = "Borrar texto",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            },
                             visualTransformation = if (field.isPassword && !isPasswordVisible) PasswordVisualTransformation() else VisualTransformation.None,
                             keyboardOptions = KeyboardOptions(
                                 imeAction = ImeAction.Done,
@@ -1358,22 +1375,7 @@ fun SettingsScreen(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .focusRequester(focusRequester)
-                                .onPreviewKeyEvent { keyEvent ->
-                                    if (keyEvent.type == KeyEventType.KeyDown) {
-                                        when (keyEvent.key) {
-                                            Key.DirectionDown -> {
-                                                focusManager.moveFocus(FocusDirection.Down)
-                                                true
-                                            }
-                                            Key.DirectionUp -> {
-                                                focusManager.moveFocus(FocusDirection.Up)
-                                                true
-                                            }
-                                            else -> false
-                                        }
-                                    } else false
-                                },
+                                .focusRequester(focusRequester),
                             textStyle = TextStyle(color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
