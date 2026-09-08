@@ -66,9 +66,12 @@ import com.example.tujelly.ui.screens.settings.SettingsScreen
 import com.example.tujelly.ui.theme.TujellyTheme
 
 class MainActivity : ComponentActivity() {
+    private var pendingPlayItemId by mutableStateOf<String?>(null)
+
     @OptIn(ExperimentalTvMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingPlayItemId = intent?.getStringExtra("playItemId")
         val imageLoader = coil.ImageLoader.Builder(this)
             .okHttpClient { com.example.tujelly.data.remote.NetworkClientFactory.okHttpClient }
             .crossfade(true)
@@ -110,19 +113,45 @@ class MainActivity : ComponentActivity() {
                         com.example.tujelly.ui.theme.LocalPlatformLogoStyle provides platformLogoStyle,
                         com.example.tujelly.ui.theme.LocalAccentColor provides accentColor
                     ) {
-                        TujellyApp(startOnboarding = !prefs.hasCompletedOnboarding)
+                        TujellyApp(
+                            startOnboarding = !prefs.hasCompletedOnboarding,
+                            pendingPlayItemId = pendingPlayItemId,
+                            onPlayItemConsumed = { pendingPlayItemId = null }
+                        )
                     }
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("playItemId")?.let {
+            pendingPlayItemId = it
         }
     }
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun TujellyApp(startOnboarding: Boolean = false) {
+fun TujellyApp(
+    startOnboarding: Boolean = false,
+    pendingPlayItemId: String? = null,
+    onPlayItemConsumed: () -> Unit = {}
+) {
     val navController = rememberNavController()
     val startDestination = if (startOnboarding) "onboarding" else "home"
+
+    LaunchedEffect(pendingPlayItemId) {
+        val id = pendingPlayItemId
+        if (!id.isNullOrBlank()) {
+            delay(300L)
+            android.util.Log.i("MainActivity", "Navigating to player/$id via pendingPlayItemId")
+            navController.navigate("player/$id")
+            onPlayItemConsumed()
+        }
+    }
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val appUpdateManager = remember { com.example.tujelly.data.remote.github.AppUpdateManager(context.applicationContext) }

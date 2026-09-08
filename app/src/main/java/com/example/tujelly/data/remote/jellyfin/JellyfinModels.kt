@@ -133,9 +133,76 @@ data class JellyfinMediaSourceDto(
     @SerialName("Container") val container: String? = null, // "strm", "mkv", "mp4"
     @SerialName("DirectStreamUrl") val directStreamUrl: String? = null,
     @SerialName("TranscodingUrl") val transcodingUrl: String? = null,
+    @SerialName("Name") val name: String? = null,
+    @SerialName("SupportsDirectPlay") val supportsDirectPlay: Boolean = false,
     @SerialName("SupportsDirectStream") val supportsDirectStream: Boolean = false,
     @SerialName("SupportsTranscoding") val supportsTranscoding: Boolean = false,
     @SerialName("MediaStreams") val mediaStreams: List<JellyfinMediaStreamDto> = emptyList()
+)
+
+@Serializable
+data class JellyfinDirectPlayProfile(
+    @SerialName("Container") val container: String? = null,
+    @SerialName("Type") val type: String = "Video",
+    @SerialName("VideoCodec") val videoCodec: String? = null,
+    @SerialName("AudioCodec") val audioCodec: String? = null
+)
+
+@Serializable
+data class JellyfinSubtitleProfile(
+    @SerialName("Format") val format: String,
+    @SerialName("Method") val method: String = "External"
+)
+
+@Serializable
+data class JellyfinProfileCondition(
+    @SerialName("Condition") val condition: String = "LessThanEqual",
+    @SerialName("Property") val property: String,
+    @SerialName("Value") val value: String,
+    @SerialName("IsRequired") val isRequired: Boolean = false
+)
+
+@Serializable
+data class JellyfinCodecProfile(
+    @SerialName("Type") val type: String = "Video",
+    @SerialName("Codec") val codec: String? = null,
+    @SerialName("Conditions") val conditions: List<JellyfinProfileCondition> = emptyList()
+)
+
+@Serializable
+data class JellyfinTranscodingProfile(
+    @SerialName("Container") val container: String = "ts",
+    @SerialName("Type") val type: String = "Video",
+    @SerialName("VideoCodec") val videoCodec: String = "h264",
+    @SerialName("AudioCodec") val audioCodec: String = "aac",
+    @SerialName("Protocol") val protocol: String = "hls"
+)
+
+@Serializable
+data class JellyfinDeviceProfile(
+    @SerialName("Name") val name: String = "AndroidTV-ExoPlayer",
+    @SerialName("MaxStreamingBitrate") val maxStreamingBitrate: Long = 120_000_000L,
+    @SerialName("MaxStaticBitrate") val maxStaticBitrate: Long = 120_000_000L,
+    @SerialName("MusicStreamingTranscodingBitrate") val musicStreamingTranscodingBitrate: Long = 128_000L,
+    @SerialName("DirectPlayProfiles") val directPlayProfiles: List<JellyfinDirectPlayProfile> = emptyList(),
+    @SerialName("TranscodingProfiles") val transcodingProfiles: List<JellyfinTranscodingProfile> = emptyList(),
+    @SerialName("SubtitleProfiles") val subtitleProfiles: List<JellyfinSubtitleProfile> = emptyList(),
+    @SerialName("CodecProfiles") val codecProfiles: List<JellyfinCodecProfile> = emptyList()
+)
+
+@Serializable
+data class JellyfinPlaybackInfoRequest(
+    @SerialName("UserId") val userId: String? = null,
+    @SerialName("MaxStreamingBitrate") val maxStreamingBitrate: Long = 120_000_000L,
+    @SerialName("StartTimeTicks") val startTimeTicks: Long = 0L,
+    @SerialName("EnableDirectPlay") val enableDirectPlay: Boolean = true,
+    @SerialName("EnableDirectStream") val enableDirectStream: Boolean = true,
+    @SerialName("EnableTranscoding") val enableTranscoding: Boolean = true,
+    @SerialName("AllowVideoStreamCopy") val allowVideoStreamCopy: Boolean = true,
+    @SerialName("AllowAudioStreamCopy") val allowAudioStreamCopy: Boolean = true,
+    @SerialName("AutoOpenLiveStream") val autoOpenLiveStream: Boolean = false,
+    @SerialName("EnableSubtitleExtraction") val enableSubtitleExtraction: Boolean = false,
+    @SerialName("DeviceProfile") val deviceProfile: JellyfinDeviceProfile? = null
 )
 
 @Serializable

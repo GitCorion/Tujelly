@@ -138,6 +138,7 @@ fun PlayerScreen(
     val context = LocalContext.current
 
     LaunchedEffect(itemId) {
+        android.util.Log.i("PlayerScreen", "PlayerScreen LaunchedEffect for itemId=$itemId")
         viewModel.loadStreamUrl(itemId)
     }
 
@@ -176,11 +177,24 @@ fun PlayerScreen(
     var currentResizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
 
     var isBuffering by remember { mutableStateOf(true) }
+    var playerErrorMessage by remember { mutableStateOf<String?>(null) }
+    var retryTrigger by remember { mutableIntStateOf(0) }
     val playPauseFocusRequester = remember { FocusRequester() }
+    val retryFocusRequester = remember { FocusRequester() }
+
+    // Auto-focus retry button if an error occurs
+    LaunchedEffect(playerErrorMessage) {
+        if (playerErrorMessage != null) {
+            delay(150L)
+            try {
+                retryFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
 
     // Auto-focus the play/pause button when controls overlay is visible so remote D-pad works immediately!
     LaunchedEffect(showOverlayControls, streamInfo) {
-        if (showOverlayControls && streamInfo != null) {
+        if (showOverlayControls && streamInfo != null && playerErrorMessage == null) {
             delay(150L)
             try {
                 playPauseFocusRequester.requestFocus()
@@ -241,23 +255,40 @@ fun PlayerScreen(
             val info = streamInfo!!
             val candidates = info.candidateUrls.ifEmpty { listOf(info.primaryStreamUrl) }
 
-            val exoPlayer = remember(info) {
+            val exoPlayer = remember(info, retryTrigger) {
                 var candidateIdx = 0
+
+                val defaultHeaders = buildMap {
+                    if (info.token.isNotBlank()) {
+                        put("X-Emby-Token", info.token)
+                        put("X-MediaBrowser-Token", info.token)
+                    }
+                    if (info.authHeader.isNotBlank()) {
+                        put("X-Emby-Authorization", info.authHeader)
+                    }
+                }
 
                 val httpDataSourceFactory = DefaultHttpDataSource.Factory()
                     .setAllowCrossProtocolRedirects(true)
-                    .setConnectTimeoutMs(15_000)
-                    .setReadTimeoutMs(30_000)
+                    .setConnectTimeoutMs(30_000)
+                    .setReadTimeoutMs(90_000)
                     .setUserAgent("Mozilla/5.0 (Linux; Android 14; Google TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .setDefaultRequestProperties(defaultHeaders)
 
                 val mediaSourceFactory = DefaultMediaSourceFactory(httpDataSourceFactory)
 
                 val loadControl = DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(15_000, 60_000, 2_500, 5_000)
+                    .setBufferDurationsMs(
+                        /* minBufferMs = */ 5_000,
+                        /* maxBufferMs = */ 30_000,
+                        /* bufferForPlaybackMs = */ 1_000,
+                        /* bufferForPlaybackAfterRebufferMs = */ 2_000
+                    )
                     .build()
 
                 val renderersFactory = DefaultRenderersFactory(context)
                     .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+                    .setEnableDecoderFallback(true)
 
                 ExoPlayer.Builder(context)
                     .setRenderersFactory(renderersFactory)
@@ -265,20 +296,7 @@ fun PlayerScreen(
                     .setLoadControl(loadControl)
                     .setWakeMode(C.WAKE_MODE_NETWORK)
                     .build().apply {
-
-                        val subtitleConfigs = info.subtitles.map { sub ->
-                            val mimeType = when {
-                                sub.codec.contains("vtt", ignoreCase = true) -> MimeTypes.TEXT_VTT
-                                sub.codec.contains("ass", ignoreCase = true) || sub.codec.contains("ssa", ignoreCase = true) -> MimeTypes.TEXT_SSA
-                                else -> MimeTypes.APPLICATION_SUBRIP
-                            }
-                            MediaItem.SubtitleConfiguration.Builder(Uri.parse(sub.url))
-                                .setMimeType(mimeType)
-                                .setLanguage(sub.language)
-                                .setLabel(sub.title)
-                                .setSelectionFlags(if (sub.isDefault) C.SELECTION_FLAG_DEFAULT else 0)
-                                .build()
-                        }
+                        addAnalyticsListener(androidx.media3.exoplayer.util.EventLogger())
 
                         val mediaItem = MediaItem.Builder()
                             .setUri(candidates.first())
@@ -288,22 +306,33 @@ fun PlayerScreen(
                                     .setDisplayTitle(info.title)
                                     .build()
                             )
-                            .setSubtitleConfigurations(subtitleConfigs)
                             .build()
 
                         setMediaItem(mediaItem)
 
-                        if (info.startPositionMs > 0) {
-                            seekTo(info.startPositionMs)
-                        }
+                        var hasPerformedInitialSeek = false
 
                         addListener(object : Player.Listener {
                             override fun onIsPlayingChanged(playing: Boolean) {
                                 isPlaying = playing
+                                if (playing) {
+                                    viewModel.reportStart(currentPosition.coerceAtLeast(0L))
+                                }
                             }
 
                             override fun onPlaybackStateChanged(playbackState: Int) {
                                 isBuffering = (playbackState == Player.STATE_BUFFERING)
+                                if (playbackState == Player.STATE_READY) {
+                                    playerErrorMessage = null
+                                    if (!hasPerformedInitialSeek && info.startPositionMs > 0) {
+                                        hasPerformedInitialSeek = true
+                                        if (isCurrentMediaItemSeekable) {
+                                            seekTo(info.startPositionMs)
+                                        } else {
+                                            android.util.Log.w("PlayerScreen", "Stream is progressive/non-seekable. Starting from byte 0.")
+                                        }
+                                    }
+                                }
                             }
 
                             override fun onTracksChanged(tracks: Tracks) {
@@ -313,10 +342,14 @@ fun PlayerScreen(
                             }
 
                             override fun onPlayerError(error: PlaybackException) {
-                                if (candidateIdx < candidates.size - 1) {
-                                    candidateIdx++
+                                android.util.Log.e("PlayerScreen", "ExoPlayer error on candidate $candidateIdx (${candidates.getOrNull(candidateIdx)}): ${error.errorCodeName}", error)
+
+                                candidateIdx++
+                                if (candidateIdx < candidates.size) {
                                     val nextUrl = candidates[candidateIdx]
-                                    val pos = currentPosition
+                                    android.util.Log.i("PlayerScreen", "Attempting fallback candidate $candidateIdx: $nextUrl")
+                                    val pos = currentPosition.coerceAtLeast(0L)
+
                                     val fallbackItem = MediaItem.Builder()
                                         .setUri(nextUrl)
                                         .setMediaMetadata(
@@ -325,12 +358,27 @@ fun PlayerScreen(
                                                 .setDisplayTitle(info.title)
                                                 .build()
                                         )
-                                        .setSubtitleConfigurations(subtitleConfigs)
                                         .build()
                                     setMediaItem(fallbackItem)
-                                    if (pos > 0) seekTo(pos)
+                                    if (pos > 0 && isCurrentMediaItemSeekable) seekTo(pos)
                                     prepare()
                                     playWhenReady = true
+                                } else {
+                                    android.util.Log.e("PlayerScreen", "All ${candidates.size} playback candidates failed!")
+                                    val httpCode = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode ?: 0
+                                    val humanMsg = when {
+                                        httpCode in 500..599 -> "El proxy Real-Debrid devolvió HTTP $httpCode al resolver los mirrors. Pulsa Reintentar."
+                                        httpCode == 401 -> "Error de autenticación con el servidor (HTTP 401). Pulsa Reintentar."
+                                        error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "Error del servidor o proxy al obtener el vídeo (HTTP)"
+                                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Tiempo de espera agotado al conectar con Real-Debrid o el proxy"
+                                        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+                                        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED -> "Formato no compatible o enlace de streaming no disponible"
+                                        error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> "El dispositivo no soporta este formato de vídeo o audio (HEVC/HDR)"
+                                        else -> error.message ?: error.errorCodeName
+                                    }
+                                    playerErrorMessage = humanMsg
+                                    isBuffering = false
                                 }
                             }
                         })
@@ -340,28 +388,54 @@ fun PlayerScreen(
                     }
             }
 
-            // Sync position & Report progress
+            // 75-second timeout for initial slow proxy resolution (resolving RD / rescue can take 10-40s)
+            LaunchedEffect(info, retryTrigger) {
+                delay(75_000L)
+                if (exoPlayer.playbackState == Player.STATE_BUFFERING && currentPosition == 0L) {
+                    playerErrorMessage = "La resolución en Real-Debrid tardó demasiado tiempo. Pulsa Reintentar."
+                    isBuffering = false
+                }
+            }
+
+            // Sync position & Report progress (Only during active playback in STATE_READY, never while buffering/stalled)
             LaunchedEffect(exoPlayer) {
-                viewModel.reportStart(info.startPositionMs)
+                var lastReportedMs = 0L
+                var lastWasPlaying = false
+
                 while (isActive) {
                     val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
                     val dur = exoPlayer.duration.coerceAtLeast(0L)
                     val buf = exoPlayer.bufferedPosition.coerceAtLeast(0L)
+                    val playing = exoPlayer.isPlaying
+                    val state = exoPlayer.playbackState
+
                     currentPosition = pos
                     duration = dur
                     bufferedPosition = buf
 
-                    delay(250L)
-                    if (pos > 0) {
-                        viewModel.reportProgress(pos, !exoPlayer.isPlaying)
+                    val isActivelyPlaying = exoPlayer.playerError == null && state == Player.STATE_READY && playing
+                    if (isActivelyPlaying && pos > 0) {
+                        val now = System.currentTimeMillis()
+                        val stateChanged = playing != lastWasPlaying
+                        val intervalPassed = (now - lastReportedMs) >= 5000L
+
+                        if (stateChanged || intervalPassed) {
+                            viewModel.reportProgress(pos, isPaused = false)
+                            lastReportedMs = now
+                            lastWasPlaying = playing
+                        }
                     }
+
+                    delay(500L)
                 }
             }
 
             DisposableEffect(exoPlayer) {
                 onDispose {
                     val finalPos = exoPlayer.currentPosition
-                    viewModel.reportStopped(finalPos)
+                    if (finalPos > 0 && exoPlayer.playerError == null) {
+                        viewModel.reportStopped(finalPos)
+                    }
                     exoPlayer.release()
                 }
             }
@@ -384,7 +458,7 @@ fun PlayerScreen(
             )
 
             // Buffering / Loading Indicator Overlay
-            if (isBuffering) {
+            if (isBuffering && playerErrorMessage == null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -411,6 +485,75 @@ fun PlayerScreen(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
                         )
+                    }
+                }
+            }
+
+            // Playback Error Overlay
+            if (playerErrorMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.85f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .padding(horizontal = 32.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color(0xEE1A1828))
+                            .border(1.dp, Color(0x66FF5252), RoundedCornerShape(20.dp))
+                            .padding(horizontal = 36.dp, vertical = 28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Error",
+                            tint = Color(0xFFFF5252),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Error de reproducción",
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = playerErrorMessage ?: "No se pudo reproducir este archivo",
+                            color = Color(0xFFDDDDDD),
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    playerErrorMessage = null
+                                    retryTrigger++
+                                },
+                                modifier = Modifier.focusRequester(retryFocusRequester),
+                                colors = ButtonDefaults.colors(
+                                    containerColor = Color(0xFF3F51B5),
+                                    focusedContainerColor = Color(0xFF5C6BC0)
+                                )
+                            ) {
+                                Text("Reintentar", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            }
+                            Button(
+                                onClick = onBack,
+                                colors = ButtonDefaults.colors(
+                                    containerColor = Color(0xFF2C2D3C),
+                                    focusedContainerColor = Color(0xFF424458)
+                                )
+                            ) {
+                                Text("Volver", color = Color.White)
+                            }
+                        }
                     }
                 }
             }

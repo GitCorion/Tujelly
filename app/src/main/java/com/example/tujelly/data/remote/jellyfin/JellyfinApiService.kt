@@ -148,7 +148,8 @@ interface JellyfinApiService {
     suspend fun getPlaybackInfo(
         @Header("X-Emby-Authorization") authHeader: String,
         @Path("itemId") itemId: String,
-        @Query("UserId") userId: String
+        @Query("UserId") userId: String,
+        @Body request: JellyfinPlaybackInfoRequest? = null
     ): JellyfinPlaybackInfoResponse
 
     @POST("Sessions/Playing")
