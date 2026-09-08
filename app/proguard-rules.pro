@@ -10,13 +10,15 @@
 -keepclassmembers class * {
     @kotlinx.serialization.Serializable <fields>;
 }
+-keep class kotlinx.serialization.** { *; }
 -keep class com.example.tujelly.data.remote.** { *; }
 
-# Room Database Entities and DAOs
--keep class * extends androidx.room.RoomDatabase
+# Room Database Entities, DAOs and Generated Impl Classes
+-keep class * extends androidx.room.RoomDatabase { *; }
 -keep @androidx.room.Entity class * { *; }
 -keep @androidx.room.Dao interface * { *; }
 -keep class com.example.tujelly.data.local.db.** { *; }
+-keep class **_Impl { *; }
 
 # Media3 / ExoPlayer
 -dontwarn androidx.media3.**
