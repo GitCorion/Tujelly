@@ -10,6 +10,8 @@ import com.example.tujelly.domain.model.HomeSection
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 data class BrandInfo(
     val id: String,
@@ -27,7 +30,9 @@ data class BrandInfo(
     val iconMonoRes: Int,
     val accentColor: androidx.compose.ui.graphics.Color,
     val gradientStart: androidx.compose.ui.graphics.Color
-)sealed interface BrandUiState {
+)
+
+sealed interface BrandUiState {
     object Loading : BrandUiState
     data class Success(
         val brand: BrandInfo,
@@ -38,6 +43,10 @@ data class BrandInfo(
 }
 
 class BrandViewModel(application: Application) : AndroidViewModel(application) {
+
+    companion object {
+        private val brandCache = ConcurrentHashMap<String, BrandUiState.Success>()
+    }
 
     private val userPreferencesRepository = UserPreferencesRepository(application)
     private val database = com.example.tujelly.data.local.db.AppDatabase.getDatabase(application)
@@ -60,12 +69,19 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<BrandUiState> = _uiState.asStateFlow()
 
     fun loadBrandFeed(brandId: String) {
-        viewModelScope.launch {
+        val cached = brandCache[brandId]
+        if (cached != null) {
+            _uiState.value = cached
+        } else {
             _uiState.value = BrandUiState.Loading
+        }
 
+        viewModelScope.launch {
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             if (prefs.jellyfinServerUrl.isBlank() || prefs.jellyfinAccessToken.isBlank()) {
-                _uiState.value = BrandUiState.Error("Servidor Jellyfin no configurado.")
+                if (_uiState.value !is BrandUiState.Success) {
+                    _uiState.value = BrandUiState.Error("Servidor Jellyfin no configurado.")
+                }
                 return@launch
             }
 
@@ -85,83 +101,94 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
             val sections = mutableListOf<HomeSection>()
             val api = NetworkClientFactory.createService("https://api.themoviedb.org/3/", TmdbApiService::class.java)
 
-            // 1. En Tendencia en [Plataforma]
             try {
-                val trendingMovies = runCatching { api.discoverMoviesByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, page = 1) }.getOrNull()?.results ?: emptyList()
-                val trendingTv = runCatching { api.discoverTvByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, page = 1) }.getOrNull()?.results ?: emptyList()
-
-                val matchedTrending = filterToLibraryUseCase.filterTmdbItems(
-                    tmdbItems = (trendingMovies + trendingTv).take(30),
-                    serverUrl = prefs.jellyfinServerUrl,
-                    userId = prefs.jellyfinUserId,
-                    token = prefs.jellyfinAccessToken,
-                    maxCandidates = 30
-                )
-                if (matchedTrending.isNotEmpty()) {
-                    sections.add(
-                        HomeSection(
-                            title = "En Tendencia en ${brand.name}",
-                            items = matchedTrending.take(15).map {
-                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                            },
-                            badge = brand.name
+                coroutineScope {
+                    val trendingDef = async {
+                        val trendingMovies = runCatching { api.discoverMoviesByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, page = 1) }.getOrNull()?.results ?: emptyList()
+                        val trendingTv = runCatching { api.discoverTvByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, page = 1) }.getOrNull()?.results ?: emptyList()
+                        filterToLibraryUseCase.filterTmdbItems(
+                            tmdbItems = (trendingMovies + trendingTv).take(30),
+                            serverUrl = prefs.jellyfinServerUrl,
+                            userId = prefs.jellyfinUserId,
+                            token = prefs.jellyfinAccessToken,
+                            maxCandidates = 30
                         )
-                    )
+                    }
+
+                    val seriesDef = async {
+                        val tvItems = runCatching { api.discoverTvByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, page = 2) }.getOrNull()?.results ?: emptyList()
+                        filterToLibraryUseCase.filterTmdbItems(
+                            tmdbItems = tvItems.take(30),
+                            serverUrl = prefs.jellyfinServerUrl,
+                            userId = prefs.jellyfinUserId,
+                            token = prefs.jellyfinAccessToken,
+                            maxCandidates = 30
+                        )
+                    }
+
+                    val topMoviesDef = async {
+                        val topMovies = runCatching { api.discoverMoviesByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, sortBy = "vote_average.desc", voteCountGte = 200, page = 1) }.getOrNull()?.results ?: emptyList()
+                        filterToLibraryUseCase.filterTmdbItems(
+                            tmdbItems = topMovies.take(30),
+                            serverUrl = prefs.jellyfinServerUrl,
+                            userId = prefs.jellyfinUserId,
+                            token = prefs.jellyfinAccessToken,
+                            maxCandidates = 30
+                        )
+                    }
+
+                    val matchedTrending = trendingDef.await()
+                    val matchedTv = seriesDef.await()
+                    val matchedTop = topMoviesDef.await()
+
+                    if (matchedTrending.isNotEmpty()) {
+                        sections.add(
+                            HomeSection(
+                                title = "En Tendencia en ${brand.name}",
+                                items = matchedTrending.take(15).map {
+                                    it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                                },
+                                badge = brand.name
+                            )
+                        )
+                    }
+
+                    if (matchedTv.isNotEmpty()) {
+                        sections.add(
+                            HomeSection(
+                                title = "Series Destacadas en ${brand.name}",
+                                items = matchedTv.take(15).map {
+                                    it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                                },
+                                badge = "SERIES"
+                            )
+                        )
+                    }
+
+                    if (matchedTop.isNotEmpty()) {
+                        sections.add(
+                            HomeSection(
+                                title = "Cine Aclamado en ${brand.name}",
+                                items = matchedTop.take(15).map {
+                                    it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                                },
+                                badge = "TOP CRÍTICA"
+                            )
+                        )
+                    }
                 }
             } catch (_: Exception) {}
 
-            // 2. Series Destacadas en [Plataforma]
-            try {
-                val tvItems = runCatching { api.discoverTvByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, page = 2) }.getOrNull()?.results ?: emptyList()
-                val matchedTv = filterToLibraryUseCase.filterTmdbItems(
-                    tmdbItems = tvItems.take(30),
-                    serverUrl = prefs.jellyfinServerUrl,
-                    userId = prefs.jellyfinUserId,
-                    token = prefs.jellyfinAccessToken,
-                    maxCandidates = 30
+            if (sections.isNotEmpty() || _uiState.value !is BrandUiState.Success) {
+                val firstItem = sections.firstOrNull()?.items?.firstOrNull()
+                val successState = BrandUiState.Success(
+                    brand = brand,
+                    sections = sections,
+                    focusedItem = firstItem
                 )
-                if (matchedTv.isNotEmpty()) {
-                    sections.add(
-                        HomeSection(
-                            title = "Series Destacadas en ${brand.name}",
-                            items = matchedTv.take(15).map {
-                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                            },
-                            badge = "SERIES"
-                        )
-                    )
-                }
-            } catch (_: Exception) {}
-
-            // 3. Cine Aclamado por la Crítica en [Plataforma]
-            try {
-                val topMovies = runCatching { api.discoverMoviesByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, sortBy = "vote_average.desc", voteCountGte = 200, page = 1) }.getOrNull()?.results ?: emptyList()
-                val matchedTop = filterToLibraryUseCase.filterTmdbItems(
-                    tmdbItems = topMovies.take(30),
-                    serverUrl = prefs.jellyfinServerUrl,
-                    userId = prefs.jellyfinUserId,
-                    token = prefs.jellyfinAccessToken,
-                    maxCandidates = 30
-                )
-                if (matchedTop.isNotEmpty()) {
-                    sections.add(
-                        HomeSection(
-                            title = "Cine Aclamado en ${brand.name}",
-                            items = matchedTop.take(15).map {
-                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                            },
-                            badge = "TOP CRÍTICA"
-                        )
-                    )
-                }
-            } catch (_: Exception) {}
-
-            val firstItem = sections.firstOrNull()?.items?.firstOrNull()
-            _uiState.value = BrandUiState.Success(
-                brand = brand,
-                sections = sections,
-                focusedItem = firstItem
-            )
+                brandCache[brandId] = successState
+                _uiState.value = successState
+            }
         }
     }
 

@@ -6,6 +6,9 @@ import com.example.tujelly.data.repository.MediaRepository
 import com.example.tujelly.domain.model.HomeSection
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -314,7 +317,7 @@ class GetHomeFeedUseCase(
             } catch (_: Exception) {}
 
             // =====================================================================
-            // PASO 4: PLATAFORMAS OFICIALES DE STREAMING (CRUZADAS CON TU JELLYFIN)
+            // PASO 4: PLATAFORMAS OFICIALES DE STREAMING (PARALELIZADO & CRUZADO CON TU JELLYFIN)
             // =====================================================================
             val selected = prefs.selectedPlatforms
             val activeProviders = if (selected.isEmpty()) {
@@ -323,35 +326,51 @@ class GetHomeFeedUseCase(
                 com.example.tujelly.data.model.SUPPORTED_PLATFORMS.filter { it.id in selected }
             }
 
-            for (platform in activeProviders) {
-                try {
-                    val result = mediaRepository.getTmdbByProvider(
-                        apiKey = prefs.tmdbApiKey,
-                        providerId = platform.providerId,
-                        region = prefs.watchRegion
-                    )
-                    val matched = filterToLibraryUseCase.filterTmdbItems(
-                        tmdbItems = result.getOrDefault(emptyList()),
-                        serverUrl = prefs.jellyfinServerUrl,
-                        userId = prefs.jellyfinUserId,
-                        token = prefs.jellyfinAccessToken,
-                        maxCandidates = 50
-                    )
-                    if (matched.isNotEmpty()) {
-                        shownMediaIds.addAll(matched.map { it.id })
-                        sections.add(
-                            HomeSection(
-                                title = "Populares en ${platform.name}",
-                                items = matched.take(20).map {
-                                    it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                                },
-                                badge = platform.name
+            try {
+                coroutineScope {
+                    val providerDeferreds = activeProviders.map { platform ->
+                        async {
+                            val result = mediaRepository.getTmdbByProvider(
+                                apiKey = prefs.tmdbApiKey,
+                                providerId = platform.providerId,
+                                region = prefs.watchRegion
                             )
-                        )
+                            val matched = filterToLibraryUseCase.filterTmdbItems(
+                                tmdbItems = result.getOrDefault(emptyList()),
+                                serverUrl = prefs.jellyfinServerUrl,
+                                userId = prefs.jellyfinUserId,
+                                token = prefs.jellyfinAccessToken,
+                                maxCandidates = 50
+                            )
+                            if (matched.isNotEmpty()) {
+                                platform to matched
+                            } else null
+                        }
+                    }
+
+                    val providerResults = providerDeferreds.awaitAll().filterNotNull()
+                    var addedAny = false
+                    for ((platform, matched) in providerResults) {
+                        val uniqueMatched = matched.filter { it.id !in shownMediaIds }
+                        if (uniqueMatched.isNotEmpty()) {
+                            shownMediaIds.addAll(uniqueMatched.map { it.id })
+                            sections.add(
+                                HomeSection(
+                                    title = "Populares en ${platform.name}",
+                                    items = uniqueMatched.take(20).map {
+                                        it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                                    },
+                                    badge = platform.name
+                                )
+                            )
+                            addedAny = true
+                        }
+                    }
+                    if (addedAny) {
                         emit(sections.toList())
                     }
-                } catch (_: Exception) {}
-            }
+                }
+            } catch (_: Exception) {}
         }
 
         // =========================================================================

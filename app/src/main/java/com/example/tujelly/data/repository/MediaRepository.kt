@@ -52,6 +52,7 @@ class MediaRepository(
         val syncProgress: StateFlow<SyncProgress> = _syncProgress.asStateFlow()
         private val syncMutex = Mutex()
         private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val providerCache = java.util.concurrent.ConcurrentHashMap<String, List<TmdbItemDto>>()
 
         fun updateProgress(progress: SyncProgress) {
             _syncProgress.value = progress
@@ -703,13 +704,20 @@ class MediaRepository(
     }
 
     suspend fun getTmdbByProvider(apiKey: String, providerId: String, region: String = "ES"): Result<List<TmdbItemDto>> {
+        val cacheKey = "$providerId-$region"
+        providerCache[cacheKey]?.let { return Result.success(it) }
+
         return runCatching {
             val api = NetworkClientFactory.createService("https://api.themoviedb.org/3/", TmdbApiService::class.java)
             val movies = runCatching { api.discoverMoviesByProvider(apiKey = apiKey, providerId = providerId, watchRegion = region) }
                 .getOrNull()?.results ?: emptyList()
             val tv = runCatching { api.discoverTvByProvider(apiKey = apiKey, providerId = providerId, watchRegion = region) }
                 .getOrNull()?.results ?: emptyList()
-            movies + tv
+            val combined = movies + tv
+            if (combined.isNotEmpty()) {
+                providerCache[cacheKey] = combined
+            }
+            combined
         }
     }
 
