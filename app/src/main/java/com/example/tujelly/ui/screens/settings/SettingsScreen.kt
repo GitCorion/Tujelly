@@ -50,7 +50,9 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -1304,6 +1306,21 @@ fun SettingsScreen(
             val keyboardController = LocalSoftwareKeyboardController.current
             var isPasswordVisible by remember(field) { mutableStateOf(false) }
 
+            // Use TextFieldValue to keep cursor at end — fixes TV box D-pad issues
+            // where cursor resets to position 0 on every recomposition
+            var textFieldValue by remember(field) {
+                val text = uiState.activeDialogValue
+                mutableStateOf(TextFieldValue(text, TextRange(text.length)))
+            }
+
+            // Sync ViewModel → local TextFieldValue when external changes happen (e.g. Clear button)
+            LaunchedEffect(uiState.activeDialogValue) {
+                if (textFieldValue.text != uiState.activeDialogValue) {
+                    val newText = uiState.activeDialogValue
+                    textFieldValue = TextFieldValue(newText, TextRange(newText.length))
+                }
+            }
+
             LaunchedEffect(field) {
                 delay(150)
                 focusRequester.requestFocus()
@@ -1341,8 +1358,11 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(18.dp))
 
                         OutlinedTextField(
-                            value = uiState.activeDialogValue,
-                            onValueChange = { viewModel.onDialogValueChange(it) },
+                            value = textFieldValue,
+                            onValueChange = { newTfv ->
+                                textFieldValue = newTfv
+                                viewModel.onDialogValueChange(newTfv.text)
+                            },
                             singleLine = true,
                             placeholder = {
                                 Text(
