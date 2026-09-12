@@ -198,6 +198,9 @@ fun MediaCard(
                             isTvSeries &&
                             item.playedEpisodes != null &&
                             item.playedEpisodes > 0
+                    val hasMovieProgress = !item.isPlayed &&
+                            !isTvSeries &&
+                            item.playbackPositionTicks > 0
 
                     if (hasEpisodeProgress) {
                         val progressBorder = if (isMonochrome) Color(0x66FFFFFF) else Color(0x9900A4DC)
@@ -251,7 +254,7 @@ fun MediaCard(
                         }
                     }
 
-                    if (item.isPlayed && !hasEpisodeProgress) {
+                    if (item.isPlayed && !hasEpisodeProgress && !hasMovieProgress) {
                         val checkColor = if (isMonochrome) Color.White else Color(0xFF10B981)
                         val checkBorder = if (isMonochrome) Color(0x66FFFFFF) else Color(0x9910B981)
 

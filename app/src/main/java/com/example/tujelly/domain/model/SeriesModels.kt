@@ -83,3 +83,9 @@ data class EpisodeItem(
     val displayCode: String get() = "T${seasonNumber}:E${episodeNumber}"
     val formattedDuration: String? get() = durationMinutes?.takeIf { it > 0 }?.let { "$it min" }
 }
+
+data class SeriesEpisodeStats(
+    val totalUniqueEpisodes: Int,
+    val playedUniqueEpisodes: Int,
+    val unplayedUniqueEpisodes: Int
+)

@@ -29,6 +29,7 @@ data class JellyfinMediaEntity(
     val communityRating: Float? = null,
     val productionYear: Int? = null,
     val genres: String? = null,
+    val officialRating: String? = null,
     val tags: String? = null,
     val isPlayed: Boolean = false,
     val playbackPositionTicks: Long = 0L,

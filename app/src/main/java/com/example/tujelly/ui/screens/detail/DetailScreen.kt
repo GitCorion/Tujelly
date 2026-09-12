@@ -299,9 +299,9 @@ fun DetailScreen(
                         Spacer(modifier = Modifier.height(14.dp))
 
                         // Metadata Badges Row
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             if (entity.communityRating != null && entity.communityRating > 0f) {
                                 TvRatingBadge(rating = entity.communityRating, compact = false)
@@ -327,6 +327,16 @@ fun DetailScreen(
                                 textColor = if (state.isCollection && !isMonochrome) Color(0xFF7DD3FC) else Color(0xFFE2E8F0),
                                 borderColor = if (state.isCollection) Color(0x6638BDF8) else Color(0x22FFFFFF)
                             )
+
+                            // Age Rating Badge (OfficialRating: PG-13, R, TV-MA, etc.)
+                            if (!entity.officialRating.isNullOrBlank()) {
+                                TvPill(
+                                    text = entity.officialRating,
+                                    containerColor = if (isMonochrome) Color(0x18FFFFFF) else Color(0x28F59E0B),
+                                    textColor = if (isMonochrome) Color.White else Color(0xFFFCD34D),
+                                    borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x55F59E0B)
+                                )
+                            }
 
                             // Series Status Badge (Terminada, Continúa, Suspendida / Sin final)
                             if (state.seriesStatus != null && state.seriesStatus.type != SeriesStatusType.UNKNOWN) {
@@ -359,12 +369,19 @@ fun DetailScreen(
                                 }
                             }
 
-                            if (!entity.genres.isNullOrBlank()) {
+                            // Individual Genre Pills
+                            val genreList = entity.genres
+                                ?.split(",", ";")
+                                ?.map { it.trim() }
+                                ?.filter { it.isNotBlank() }
+                                ?: emptyList()
+
+                            genreList.forEach { genre ->
                                 TvPill(
-                                    text = entity.genres,
-                                    containerColor = Color(0x12FFFFFF),
-                                    textColor = Color(0xFF94A3B8),
-                                    borderColor = Color(0x18FFFFFF)
+                                    text = genre,
+                                    containerColor = if (isMonochrome) Color(0x12FFFFFF) else Color(0x188B5CF6),
+                                    textColor = if (isMonochrome) Color(0xFF94A3B8) else Color(0xFFC4B5FD),
+                                    borderColor = if (isMonochrome) Color(0x18FFFFFF) else Color(0x338B5CF6)
                                 )
                             }
 
@@ -373,10 +390,20 @@ fun DetailScreen(
                             val playedEps = if (totalEps != null && unplayedEps != null) (totalEps - unplayedEps).coerceAtLeast(0) else null
                             val isSeriesFinished = if (isTvSeries && unplayedEps != null) unplayedEps == 0 && (totalEps ?: 0) > 0 else entity.isPlayed
                             val hasSeriesProgress = !isSeriesFinished && isTvSeries && playedEps != null && totalEps != null && playedEps > 0
+                            val hasItemProgress = !isTvSeries && entity.playbackPositionTicks > 0 && !entity.isPlayed
 
                             if (hasSeriesProgress) {
                                 TvPill(
                                     text = "PROGRESO: $playedEps/$totalEps",
+                                    containerColor = Color(0x22FFFFFF),
+                                    textColor = if (isMonochrome) Color.White else Color(0xFF38BDF8),
+                                    borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x5500A4DC)
+                                )
+                            }
+
+                            if (hasItemProgress) {
+                                TvPill(
+                                    text = "EN PROGRESO",
                                     containerColor = Color(0x22FFFFFF),
                                     textColor = if (isMonochrome) Color.White else Color(0xFF38BDF8),
                                     borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x5500A4DC)
@@ -392,7 +419,7 @@ fun DetailScreen(
                                 )
                             }
 
-                            if (isSeriesFinished && !hasSeriesProgress) {
+                            if (isSeriesFinished && !hasSeriesProgress && !hasItemProgress) {
                                 TvPill(
                                     text = "✓ VISTO",
                                     containerColor = Color(0x22FFFFFF),
@@ -416,11 +443,13 @@ fun DetailScreen(
                                 isTvSeries && state.nextUpEpisode != null -> state.nextUpEpisode.id
                                 else -> entity.id
                             }
-                            val isResume = state.nextUpEpisode != null && (state.nextUpEpisode.isPlayed || state.nextUpEpisode.playbackPositionTicks > 0)
+                            val isResume = (state.nextUpEpisode != null && (state.nextUpEpisode.isPlayed || state.nextUpEpisode.playbackPositionTicks > 0)) ||
+                                    (!isTvSeries && entity.playbackPositionTicks > 0)
                             val playLabel = when {
                                 state.isCollection -> if (state.collectionItems.isNotEmpty()) "Reproducir Colección" else "Reproducir"
                                 isTvSeries && state.nextUpEpisode != null && isResume -> "Continuar ${state.nextUpEpisode.displayCode}"
                                 isTvSeries && state.nextUpEpisode != null -> "Reproducir ${state.nextUpEpisode.displayCode}"
+                                !isTvSeries && entity.playbackPositionTicks > 0 -> "Continuar"
                                 else -> "Reproducir"
                             }
 

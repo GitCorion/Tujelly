@@ -89,8 +89,7 @@ data class JellyfinUserDataDto(
                 rawPlayed
             }
         } else {
-            rawPlayed || playCount > 0 || playCountLower > 0 ||
-                    (playedPercentage != null && playedPercentage >= 90.0)
+            rawPlayed || (playedPercentage != null && playedPercentage >= 90.0)
         }
     }
 
@@ -226,6 +225,7 @@ data class JellyfinItemDto(
     @SerialName("ProductionYear") val productionYear: Int? = null,
     @SerialName("Genres") val genres: List<String>? = null,
     @SerialName("Tags") val tags: List<String>? = null,
+    @SerialName("OfficialRating") val officialRating: String? = null,
     @SerialName("UserData") val userData: JellyfinUserDataDto? = null,
     @SerialName("MediaSources") val mediaSources: List<JellyfinMediaSourceDto> = emptyList(),
     @SerialName("IndexNumber") val indexNumber: Int? = null,

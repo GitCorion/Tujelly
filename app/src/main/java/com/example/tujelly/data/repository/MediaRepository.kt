@@ -324,9 +324,9 @@ class MediaRepository(
                     for (view in mediaViews.ifEmpty { listOf(null) }) {
                         val isSeries = view?.collectionType.equals("tvshows", ignoreCase = true) || view?.name.equals("Series", ignoreCase = true)
                         val viewFields = if (isSeries) {
-                            "ProviderIds,PrimaryImageTag,CommunityRating,Genres,Tags,UserData,RecursiveItemCount"
+                            "ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData,RecursiveItemCount"
                         } else {
-                            "ProviderIds,PrimaryImageTag,CommunityRating,Genres,Tags,UserData"
+                            "ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData"
                         }
                         var deltaOffset = 0
                         do {
@@ -417,9 +417,9 @@ class MediaRepository(
                     val itemType = if (isSeries) "Series" else if (view != null) "Movie" else "Movie,Series"
                     val isRecursive = !isSeries // Series son hijas directas del CollectionFolder, Movies pueden estar en subcarpetas
                     val viewFields = if (isSeries) {
-                        "ProviderIds,PrimaryImageTag,CommunityRating,Tags,UserData,RecursiveItemCount"
+                        "ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData,RecursiveItemCount"
                     } else {
-                        "ProviderIds,PrimaryImageTag,CommunityRating,Tags,UserData"
+                        "ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData"
                     }
 
                     var startIndex = if (viewIndex == savedViewIndex) savedOffset else 0
@@ -579,7 +579,13 @@ class MediaRepository(
             val dto = api.getItemDetail(authHeader = authHeader, userId = userId, itemId = itemId)
             val entity = dto.toEntity()
             if (entity.title.isNotBlank()) {
-                val mergedEntity = if (local != null && entity.overview.isNullOrBlank()) local else entity
+                val mergedEntity = if (local != null) {
+                    entity.copy(
+                        overview = if (entity.overview.isNullOrBlank()) local.overview else entity.overview,
+                        genres = if (entity.genres.isNullOrBlank()) local.genres else entity.genres,
+                        officialRating = if (entity.officialRating.isNullOrBlank()) local.officialRating else entity.officialRating
+                    )
+                } else entity
                 jellyfinDao.insertOrUpdate(mergedEntity)
                 return@runCatching mergedEntity
             }
@@ -742,7 +748,7 @@ class MediaRepository(
                 authHeader = authHeader,
                 userId = userId,
                 includeItemTypes = "Movie",
-                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres,Tags",
+                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,UserData,Genres,Tags",
                 recursive = true,
                 limit = limit,
                 sortBy = "CommunityRating",
@@ -768,7 +774,7 @@ class MediaRepository(
                 authHeader = authHeader,
                 userId = userId,
                 includeItemTypes = "Series",
-                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres,Tags",
+                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,UserData,Genres,Tags",
                 recursive = true,
                 limit = limit,
                 sortBy = "CommunityRating",
@@ -905,12 +911,14 @@ class MediaRepository(
             jellyfinDao.getEpisodesForSeries(entity.seriesId)
         } else emptyList()
 
-        val playedCount = if (eps.isNotEmpty()) {
-            eps.count { it.isPlayed }
+        val uniqueEps = eps.filter { (it.seasonNumber ?: 0) > 0 && (it.episodeNumber ?: 0) > 0 }
+            .groupBy { Pair(it.seasonNumber, it.episodeNumber) }
+        val playedCount = if (uniqueEps.isNotEmpty()) {
+            uniqueEps.count { (_, duplicates) -> duplicates.any { it.isPlayed } }
         } else {
             if (entity.isPlayed) 1 else 0
         }
-        val totalCount = entity.totalItemCount ?: if (playedCount > 0) maxOf(playedCount + 1, 10) else 10
+        val totalCount = if (uniqueEps.isNotEmpty()) uniqueEps.size else (entity.totalItemCount ?: if (playedCount > 0) maxOf(playedCount + 1, 10) else 10)
         val unplayedCount = (totalCount - playedCount).coerceAtLeast(0)
 
         return JellyfinMediaEntity(
@@ -1020,6 +1028,44 @@ class MediaRepository(
                 )
             }.sortedWith(compareBy({ if (it.seasonNumber == 0) 9999 else it.seasonNumber }))
         }.getOrDefault(emptyList())
+    }
+
+    suspend fun getSeriesEpisodeStats(serverUrl: String, userId: String, token: String, seriesId: String): com.example.tujelly.domain.model.SeriesEpisodeStats? {
+        return runCatching {
+            val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
+            val authHeader = buildJellyfinAuthHeader(token = token)
+            val response = api.getEpisodesForSeries(
+                authHeader = authHeader,
+                seriesId = seriesId,
+                userId = userId,
+                fields = "UserData,IndexNumber,ParentIndexNumber"
+            )
+            val validEpisodes = response.items.filter { (it.parentIndexNumber ?: 0) > 0 && (it.indexNumber ?: 0) > 0 }
+            if (validEpisodes.isEmpty()) return@runCatching null
+
+            // Deduplicate across multi-sources and versions by (seasonNumber, episodeNumber)
+            val uniqueEpisodes = validEpisodes.groupBy { Pair(it.parentIndexNumber ?: 1, it.indexNumber ?: 1) }
+            val total = uniqueEpisodes.size
+            val played = uniqueEpisodes.count { (_, duplicates) ->
+                duplicates.any { it.userData?.isPlayed == true }
+            }
+            val unplayed = (total - played).coerceAtLeast(0)
+
+            jellyfinDao.getItemById(seriesId)?.let { localSeries ->
+                val updated = localSeries.copy(
+                    totalItemCount = total,
+                    unplayedItemCount = unplayed,
+                    isPlayed = unplayed == 0 && total > 0
+                )
+                jellyfinDao.insertOrUpdate(updated)
+            }
+
+            com.example.tujelly.domain.model.SeriesEpisodeStats(
+                totalUniqueEpisodes = total,
+                playedUniqueEpisodes = played,
+                unplayedUniqueEpisodes = unplayed
+            )
+        }.getOrNull()
     }
 
     suspend fun getCollectionItems(
@@ -1195,6 +1241,7 @@ class MediaRepository(
             communityRating = communityRating,
             productionYear = productionYear,
             genres = genres?.joinToString(", "),
+            officialRating = officialRating,
             tags = tags?.joinToString(", "),
             isPlayed = playedStatus,
             playbackPositionTicks = userData?.effectivePositionTicks ?: 0L,
@@ -1240,6 +1287,10 @@ fun List<JellyfinMediaEntity>.deduplicateMediaEntities(): List<JellyfinMediaEnti
                         itemA.productionYear == itemB.productionYear &&
                         itemA.title.trim().equals(itemB.title.trim(), ignoreCase = true) -> true
 
+                // 4. Same Title for Series when TMDB/IMDB ID missing
+                itemA.type.equals("Series", ignoreCase = true) &&
+                        itemA.title.trim().equals(itemB.title.trim(), ignoreCase = true) -> true
+
                 else -> false
             }
 
@@ -1263,6 +1314,9 @@ fun List<JellyfinMediaEntity>.deduplicateMediaEntities(): List<JellyfinMediaEnti
                 !name.contains("remux", ignoreCase = true)
             } ?: duplicates.first()
 
+            val bestTotal = duplicates.mapNotNull { it.totalItemCount }.filter { it > 0 }.minOrNull() ?: cleanTitleItem.totalItemCount
+            val bestUnplayed = duplicates.mapNotNull { it.unplayedItemCount }.minOrNull() ?: cleanTitleItem.unplayedItemCount
+
             val primaryItem = duplicates.firstOrNull { it.isPlayed || it.playbackPositionTicks > 0 }
                 ?: cleanTitleItem
 
@@ -1271,6 +1325,8 @@ fun List<JellyfinMediaEntity>.deduplicateMediaEntities(): List<JellyfinMediaEnti
                     id = primaryItem.id,
                     isPlayed = bestPlayed,
                     playbackPositionTicks = maxTicks,
+                    totalItemCount = bestTotal,
+                    unplayedItemCount = bestUnplayed,
                     overview = cleanTitleItem.overview ?: duplicates.firstNotNullOfOrNull { it.overview },
                     primaryImageTag = cleanTitleItem.primaryImageTag ?: duplicates.firstNotNullOfOrNull { it.primaryImageTag },
                     backdropImageTag = cleanTitleItem.backdropImageTag ?: duplicates.firstNotNullOfOrNull { it.backdropImageTag }

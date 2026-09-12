@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [JellyfinMediaEntity::class], version = 7, exportSchema = false)
+@Database(entities = [JellyfinMediaEntity::class], version = 8, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun jellyfinDao(): JellyfinDao

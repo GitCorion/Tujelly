@@ -218,6 +218,9 @@ fun HeroBanner(
                             isTvSeries &&
                             item.playedEpisodes != null &&
                             item.playedEpisodes > 0
+                    val hasMovieProgress = !item.isPlayed &&
+                            !isTvSeries &&
+                            item.playbackPositionTicks > 0
 
                     if (hasEpisodeProgress) {
                         val progressText = if (item.totalEpisodes != null && item.totalEpisodes > 0) {
@@ -234,6 +237,16 @@ fun HeroBanner(
                         )
                     }
 
+                    if (hasMovieProgress) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TvPill(
+                            text = "EN PROGRESO",
+                            containerColor = Color(0x22FFFFFF),
+                            textColor = if (isMonochrome) Color.White else Color(0xFF38BDF8),
+                            borderColor = if (isMonochrome) Color(0x33FFFFFF) else Color(0x5500A4DC)
+                        )
+                    }
+
                     if (item.isFavorite) {
                         Spacer(modifier = Modifier.width(8.dp))
                         TvPill(
@@ -244,7 +257,7 @@ fun HeroBanner(
                         )
                     }
 
-                    if (item.isPlayed && !hasEpisodeProgress) {
+                    if (item.isPlayed && !hasEpisodeProgress && !hasMovieProgress) {
                         Spacer(modifier = Modifier.width(8.dp))
                         TvPill(
                             text = "✓ VISTO",

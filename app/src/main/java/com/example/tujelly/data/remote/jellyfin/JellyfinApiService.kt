@@ -49,7 +49,7 @@ interface JellyfinApiService {
         @Query("UserId") userId: String,
         @Query("ParentId") parentId: String? = null,
         @Query("IncludeItemTypes") includeItemTypes: String? = "Movie,Series,BoxSet",
-        @Query("Fields") fields: String? = "ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,ItemCounts,RecursiveItemCount",
+        @Query("Fields") fields: String? = "ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,Genres,UserData,ItemCounts,RecursiveItemCount",
         @Query("Recursive") recursive: Boolean = true,
         @Query("Limit") limit: Int? = 500,
         @Query("StartIndex") startIndex: Int? = 0,
@@ -64,7 +64,7 @@ interface JellyfinApiService {
         @Header("X-Emby-Authorization") authHeader: String,
         @Query("UserId") userId: String,
         @Query("ParentId") parentId: String,
-        @Query("Fields") fields: String = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres,ProductionYear",
+        @Query("Fields") fields: String = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,UserData,Genres,ProductionYear",
         @Query("SortBy") sortBy: String = "SortName,ProductionYear",
         @Query("SortOrder") sortOrder: String = "Ascending"
     ): JellyfinItemsResponse
@@ -77,7 +77,7 @@ interface JellyfinApiService {
         @Query("IncludeItemTypes") includeItemTypes: String = "Movie,Series,BoxSet",
         @Query("Recursive") recursive: Boolean = true,
         @Query("Limit") limit: Int = 5,
-        @Query("Fields") fields: String = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,Genres"
+        @Query("Fields") fields: String = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,UserData,Genres"
     ): JellyfinItemsResponse
 
     @GET("Users/{userId}/Items/Resume")

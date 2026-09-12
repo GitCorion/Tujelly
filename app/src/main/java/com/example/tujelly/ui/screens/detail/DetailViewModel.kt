@@ -178,6 +178,21 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                         if (nextUpEpisode == null && episodes.isNotEmpty()) {
                             nextUpEpisode = episodes.firstOrNull()
                         }
+
+                        // 6. Accurate episode stats (deduplicates multi-sources, versions, strm files)
+                        val episodeStats = mediaRepository.getSeriesEpisodeStats(
+                            serverUrl = baseUrl,
+                            userId = prefs.jellyfinUserId,
+                            token = token,
+                            seriesId = finalEntity.id
+                        )
+                        if (episodeStats != null) {
+                            finalEntity = finalEntity.copy(
+                                totalItemCount = episodeStats.totalUniqueEpisodes,
+                                unplayedItemCount = episodeStats.unplayedUniqueEpisodes,
+                                isPlayed = episodeStats.unplayedUniqueEpisodes == 0 && episodeStats.totalUniqueEpisodes > 0
+                            )
+                        }
                     } else if (isTv && finalEntity.type.equals("Episode", ignoreCase = true) && !finalEntity.seriesId.isNullOrBlank()) {
                         val sId = finalEntity.seriesId!!
                         seasons = mediaRepository.getSeasons(
