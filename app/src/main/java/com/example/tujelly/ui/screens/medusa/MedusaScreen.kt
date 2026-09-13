@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
@@ -59,7 +60,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Border
+import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
@@ -88,6 +92,12 @@ fun MedusaScreen(
     val userPrefsRepo = remember { com.example.tujelly.data.local.UserPreferencesRepository(context) }
     val userPrefs by userPrefsRepo.userPreferencesFlow.collectAsState(initial = null)
     val particleScale = remember(userPrefs) { userPrefs?.getEffectiveParticleScale(context) ?: 1.0f }
+
+    val formatNounPlural = when (uiState.format) {
+        MediaFormat.ALL -> "títulos"
+        MediaFormat.MOVIES -> "películas"
+        MediaFormat.SERIES -> "series"
+    }
 
     val topBarMedusaFocusRequester = remember { FocusRequester() }
     val canvasFocusRequester = remember { FocusRequester() }
@@ -250,7 +260,7 @@ fun MedusaScreen(
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = "✦ VER ${uiState.matchingMovies.size} PELÍCULAS",
+                                    text = "✦ VER ${uiState.matchingMovies.size} ${formatNounPlural.uppercase()}",
                                     color = if (isPortalPillFocused) Color(0xFF05070B) else (if (isMonochrome) Color.White else Color(0xFF00E5FF)),
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
@@ -266,6 +276,20 @@ fun MedusaScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(start = 12.dp)
                     ) {
+                        Button(
+                            onClick = { viewModel.surpriseMe()?.let { onDetailMedia(it.id) } },
+                            colors = ButtonDefaults.colors(
+                                containerColor = if (isMonochrome) Color(0x18FFFFFF) else Color(0x2200E5FF),
+                                contentColor = if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF00E5FF),
+                                focusedContainerColor = if (isMonochrome) Color.White else Color(0xFF00E5FF),
+                                focusedContentColor = Color(0xFF05070B)
+                            ),
+                            shape = ButtonDefaults.shape(RoundedCornerShape(16.dp)),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text(text = "Sorpréndeme", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
                         Button(
                             onClick = { viewModel.onBackPress() },
                             colors = ButtonDefaults.colors(
@@ -293,9 +317,30 @@ fun MedusaScreen(
                             Text(text = "Reiniciar", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
+                } else {
+                    Button(
+                        onClick = { viewModel.surpriseMe()?.let { onDetailMedia(it.id) } },
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (isMonochrome) Color(0x18FFFFFF) else Color(0x2200E5FF),
+                            contentColor = if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF00E5FF),
+                            focusedContainerColor = if (isMonochrome) Color.White else Color(0xFF00E5FF),
+                            focusedContentColor = Color(0xFF05070B)
+                        ),
+                        shape = ButtonDefaults.shape(RoundedCornerShape(16.dp)),
+                        modifier = Modifier.padding(start = 12.dp)
+                    ) {
+                        Text(text = "Sorpréndeme", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
+
+        // Filtro de formato del descubrimiento (Todos / Películas / Series)
+        MedusaFormatChips(
+            selected = uiState.format,
+            onSelect = { viewModel.setFormat(it) },
+            isMonochrome = isMonochrome
+        )
 
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -362,7 +407,7 @@ fun MedusaScreen(
 
                 val hudGuide = when {
                     isFocusedOnPortal -> {
-                        "[OK] Abrir películas (${uiState.matchingMovies.size})  ·  [D-PAD] Moverse por la constelación  ·  [BACK] Deshacer"
+                        "[OK] Abrir $formatNounPlural (${uiState.matchingMovies.size})  ·  [D-PAD] Moverse por la constelación  ·  [BACK] Deshacer"
                     }
                     isFocusedAlreadyConnected -> {
                         "[OK] Desconectar etiqueta  ·  [D-PAD] Explorar constelación  ·  [BACK] Deshacer"
@@ -472,7 +517,7 @@ fun MedusaScreen(
                             }
 
                             Text(
-                                text = "✦ Ver ${uiState.matchingMovies.size} películas  ➔",
+                                text = "✦ Ver ${uiState.matchingMovies.size} $formatNounPlural  ➔",
                                 color = if (isBottomPillFocused) Color(0xFF05070B) else (if (isMonochrome) Color.White else Color(0xFF00E5FF)),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -494,6 +539,7 @@ fun MedusaScreen(
                     MovieDiscoveryDrawer(
                         chain = uiState.activeChain,
                         movies = uiState.matchingMovies,
+                        formatNoun = formatNounPlural,
                         onClose = {
                             viewModel.toggleMoviesOverlay()
                             canvasFocusRequester.requestFocus()
@@ -522,6 +568,7 @@ fun MedusaScreen(
 private fun MovieDiscoveryDrawer(
     chain: List<SpatialNebulaNode>,
     movies: List<MediaItem>,
+    formatNoun: String = "títulos",
     onClose: () -> Unit,
     onSelectMovie: (MediaItem) -> Unit,
     onDetailMovie: (MediaItem) -> Unit,
@@ -575,7 +622,7 @@ private fun MovieDiscoveryDrawer(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "✦ OBRAS MAESTRAS QUE RESONAN CON TU CONSTELACIÓN (${movies.size})",
+                        text = "✦ ${movies.size} ${formatNoun.uppercase()} QUE RESONAN CON TU CONSTELACIÓN",
                         color = if (isMonochrome) Color.White else Color(0xFFC084FC),
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold,
@@ -647,6 +694,80 @@ private fun MovieDiscoveryDrawer(
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun MedusaFormatChips(
+    selected: MediaFormat,
+    onSelect: (MediaFormat) -> Unit,
+    isMonochrome: Boolean = false
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 48.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MedusaFormatChip(
+            label = "Todas",
+            isSelected = selected == MediaFormat.ALL,
+            isMonochrome = isMonochrome
+        ) { onSelect(MediaFormat.ALL) }
+        MedusaFormatChip(
+            label = "Películas",
+            isSelected = selected == MediaFormat.MOVIES,
+            isMonochrome = isMonochrome
+        ) { onSelect(MediaFormat.MOVIES) }
+        MedusaFormatChip(
+            label = "Series",
+            isSelected = selected == MediaFormat.SERIES,
+            isMonochrome = isMonochrome
+        ) { onSelect(MediaFormat.SERIES) }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun MedusaFormatChip(
+    label: String,
+    isSelected: Boolean,
+    isMonochrome: Boolean,
+    onClick: () -> Unit
+) {
+    val selectedBorder = if (isMonochrome) Color.White else Color(0xFF00E5FF)
+    Surface(
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(16.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isSelected) Color(0x2EFFFFFF) else Color(0x10FFFFFF),
+            focusedContainerColor = if (isSelected) Color(0x40FFFFFF) else Color(0x28FFFFFF)
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(
+                border = BorderStroke(
+                    width = if (isSelected) 1.5.dp else 0.75.dp,
+                    color = if (isSelected) selectedBorder else Color(0x18FFFFFF)
+                )
+            ),
+            focusedBorder = Border(border = BorderStroke(2.dp, Color.White))
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f)
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                color = Color.White,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                fontSize = 12.sp,
+                letterSpacing = 0.5.sp
+            )
         }
     }
 }

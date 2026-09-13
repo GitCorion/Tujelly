@@ -918,7 +918,11 @@ class MediaRepository(
         } else {
             if (entity.isPlayed) 1 else 0
         }
-        val totalCount = if (uniqueEps.isNotEmpty()) uniqueEps.size else (entity.totalItemCount ?: if (playedCount > 0) maxOf(playedCount + 1, 10) else 10)
+        val totalCount = maxOf(
+            entity.totalItemCount ?: 0,
+            if (uniqueEps.isNotEmpty()) uniqueEps.size else 0,
+            if (playedCount > 0) maxOf(playedCount + 1, 10) else 10
+        )
         val unplayedCount = (totalCount - playedCount).coerceAtLeast(0)
 
         return JellyfinMediaEntity(
@@ -979,6 +983,22 @@ class MediaRepository(
 
     suspend fun getItemsByGenre(genre: String): List<JellyfinMediaEntity> {
         return jellyfinDao.getItemsByGenre(genre)
+    }
+
+    suspend fun getMoviesByGenre(genre: String, limit: Int = 40): List<JellyfinMediaEntity> {
+        return jellyfinDao.getMoviesByGenre(genre, limit)
+    }
+
+    suspend fun getSeriesByGenre(genre: String, limit: Int = 40): List<JellyfinMediaEntity> {
+        return jellyfinDao.getSeriesByGenre(genre, limit)
+    }
+
+    suspend fun getRecentMoviesByGenre(genre: String, limit: Int = 20): List<JellyfinMediaEntity> {
+        return jellyfinDao.getRecentMoviesByGenre(genre, limit)
+    }
+
+    suspend fun getRecentSeriesByGenre(genre: String, limit: Int = 20): List<JellyfinMediaEntity> {
+        return jellyfinDao.getRecentSeriesByGenre(genre, limit)
     }
 
     suspend fun getRecommendedMovies(excludeIds: Set<String>, limit: Int = 20): List<JellyfinMediaEntity> {

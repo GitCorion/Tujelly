@@ -160,9 +160,48 @@ class NebulaSpatialEngineTest {
         org.junit.Assert.assertFalse(compatibleIds.contains(criaturasBosqueNode.id))
         org.junit.Assert.assertFalse(compatibleIds.contains(viajesFantasticosNode.id))
 
-        // 4. Si se forzara la cadena de 4 etiquetas, el catálogo debe dar 0 películas (intersección pura)
+        // 4. Si se forzara la cadena de 4 etiquetas incompatibles, la intersección estricta
+        //    es vacía; el motor degrada con elegancia y devuelve las coincidencias parciales
+        //    más cercanas en lugar de dejar el portal sin resultados.
         val fullChain = listOf(historiasRealesNode, dramaFamiliarNode, criaturasBosqueNode, viajesFantasticosNode)
         val matches = engine.getMatchingMoviesForChain(fullChain, catalog, "http://localhost:8096", "token123")
-        assertTrue("La intersección forzada de etiquetas incompatibles debe devolver 0 películas", matches.isEmpty())
+        assertTrue("El motor debe degradar y ofrecer coincidencias parciales en lugar de quedar vacío", matches.isNotEmpty())
+    }
+
+    @Test
+    fun testFormatFilterSeparatesMoviesAndSeries() {
+        val engine = NebulaSpatialEngine()
+        val catalog = listOf(
+            JellyfinMediaEntity(
+                id = "m1",
+                title = "Película Dramática",
+                type = "Movie",
+                genres = "Drama",
+                tags = "familia",
+                overview = "Un intenso drama familiar.",
+                communityRating = 8.0f
+            ),
+            JellyfinMediaEntity(
+                id = "s1",
+                title = "Serie Dramática",
+                type = "Series",
+                genres = "Drama",
+                tags = "familia",
+                overview = "Un intenso drama familiar por entregas.",
+                communityRating = 8.0f
+            )
+        )
+
+        engine.buildUniverse(catalog, "http://localhost:8096", "token123")
+        val dramaNode = engine.getAllNodes().first { it.id == "CLUSTER_1" }
+
+        val chain = listOf(dramaNode)
+        val movies = engine.getMatchingMoviesForChain(chain, catalog, "http://localhost:8096", "token123", MediaFormat.MOVIES)
+        val series = engine.getMatchingMoviesForChain(chain, catalog, "http://localhost:8096", "token123", MediaFormat.SERIES)
+
+        assertTrue("El filtro de películas debe encontrar el título Movie", movies.isNotEmpty())
+        assertTrue("El filtro de películas solo debe devolver títulos de tipo Movie", movies.all { it.type == "Movie" })
+        assertTrue("El filtro de series debe encontrar el título Series", series.isNotEmpty())
+        assertTrue("El filtro de series solo debe devolver títulos de tipo Series", series.all { it.type == "Series" })
     }
 }

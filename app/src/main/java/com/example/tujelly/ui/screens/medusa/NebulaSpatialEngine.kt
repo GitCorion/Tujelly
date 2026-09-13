@@ -41,6 +41,12 @@ data class SpatialFilament(
 
 enum class DPadDirection { LEFT, RIGHT, UP, DOWN }
 
+/** Filtro de formato aplicado al descubrimiento de Medusa. */
+enum class MediaFormat { ALL, MOVIES, SERIES }
+
+/** Mínimo de resultados en intersección estricta antes de degradar a coincidencia mayoritaria. */
+private const val MIN_STRICT_MATCHES = 4
+
 /**
  * Motor Espacial Profesional para la Nebulosa de Descubrimiento:
  * 1. Genera un espacio semántico continuo a partir de los datos reales de la biblioteca.
@@ -299,7 +305,7 @@ class NebulaSpatialEngine {
                 minZoomVisible = 0.5f,
                 maxZoomVisible = 4.0f,
                 importance = 1.45f,
-                movieCount = clusterCount.coerceAtLeast(1),
+                movieCount = clusterCount,
                 keywords = cluster.keywords
             )
             addNode(clusterCenterNode)
@@ -349,7 +355,7 @@ class NebulaSpatialEngine {
                     minZoomVisible = minZoom,
                     maxZoomVisible = 8.0f,
                     importance = importance,
-                    movieCount = if (tagCount > 0) tagCount else (clusterCount / numTags).coerceAtLeast(1),
+                    movieCount = tagCount,
                     keywords = tagKeywords
                 )
                 addNode(tagNode)
@@ -581,14 +587,17 @@ class NebulaSpatialEngine {
     }
 
     /**
-     * Filtra y califica películas de la biblioteca que coinciden con la cadena de etiquetas conectadas.
-     * Exige que las películas satisfagan TODAS las etiquetas de la cadena (intersección pura).
+     * Filtra y califica títulos de la biblioteca que coinciden con la cadena de etiquetas conectadas.
+     * Intenta primero la intersección estricta (todas las etiquetas). Si no reúne suficientes
+     * resultados, degrada con elegancia a los títulos que coinciden con la mayoría de etiquetas,
+     * de modo que el portal nunca quede vacío de forma prematura.
      */
     fun getMatchingMoviesForChain(
         chain: List<SpatialNebulaNode>,
         catalog: List<JellyfinMediaEntity>,
         serverUrl: String,
-        accessToken: String
+        accessToken: String,
+        format: MediaFormat = MediaFormat.ALL
     ): List<MediaItem> {
         if (catalog.isEmpty() || chain.isEmpty()) return emptyList()
 
@@ -597,35 +606,79 @@ class NebulaSpatialEngine {
             node.keywords.map { it.lowercase().trim() }.filter { it.isNotEmpty() }
         }
 
-        val targetCatalog = if (tokenizedCatalog.isNotEmpty()) tokenizedCatalog else {
+        val targetCatalog = (if (tokenizedCatalog.isNotEmpty()) tokenizedCatalog else {
             catalog.map { entity ->
                 val raw = "${entity.genres ?: ""} ${entity.tags ?: ""} ${entity.title} ${entity.originalTitle ?: ""} ${entity.overview ?: ""}"
                 Pair(entity, normalizeForSearch(raw))
             }
+        }).filter { (entity, _) -> entity.matchesFormat(format) }
+
+        // Puntuación por coincidencia parcial
+        val scored = targetCatalog.mapNotNull { (entity, text) ->
+            val matchedTags = chainKeywords.count { kws -> kws.any { kw -> text.contains(kw) } }
+            if (matchedTags == 0) return@mapNotNull null
+            val totalHits = chainKeywords.sumOf { kws -> kws.count { kw -> text.contains(kw) } }
+            val rating = entity.communityRating ?: 0f
+            val score = 1000f + (totalHits.coerceAtMost(20) * 5f) + (rating * 3f)
+            ScoredEntity(entity, matchedTags, score)
         }
 
-        // Exigir intersección completa: la película debe satisfacer todas las etiquetas de la cadena
-        val matchedEntities = targetCatalog.mapNotNull { (entity, text) ->
-            val tagsMatched = chainKeywords.count { kws -> kws.any { kw -> text.contains(kw) } }
-            if (tagsMatched == chain.size) {
-                val totalHits = chainKeywords.sumOf { kws -> kws.count { kw -> text.contains(kw) } }
-                val rating = entity.communityRating ?: 0f
-                val score = 1000f + (totalHits.coerceAtMost(20) * 5f) + (rating * 3f)
-                Pair(entity, score)
-            } else {
-                null
-            }
+        // 1. Intersección estricta: satisface TODAS las etiquetas de la cadena
+        val strict = scored.filter { it.matchedTags == chain.size }
+        val chosen = if (strict.size >= MIN_STRICT_MATCHES) {
+            strict
+        } else {
+            // 2. Degradación: coincidir con la mayoría de etiquetas; si aún no hay, con al menos una
+            val majorityThreshold = (chain.size - 1).coerceAtLeast(1)
+            scored.filter { it.matchedTags >= majorityThreshold }.ifEmpty { scored }
         }
 
-        val finalEntities = matchedEntities
-            .sortedByDescending { it.second }
+        val finalEntities = chosen
+            .sortedWith(compareByDescending<ScoredEntity> { it.matchedTags }.thenByDescending { it.score })
             .take(30)
-            .map { it.first }
+            .map { it.entity }
 
         return finalEntities.map { it.toMediaItem(serverUrl, accessToken) }
     }
 
-    fun updatePortalNode(chain: List<SpatialNebulaNode>, movieCount: Int) {
+    /**
+     * Elige una obra aleatoria bien valorada y no vista para el momento "no sé qué ver".
+     * Respeta el filtro de formato activo.
+     */
+    fun pickSurprise(
+        catalog: List<JellyfinMediaEntity>,
+        serverUrl: String,
+        accessToken: String,
+        format: MediaFormat = MediaFormat.ALL
+    ): MediaItem? {
+        val formatted = catalog.filter { it.matchesFormat(format) }
+        if (formatted.isEmpty()) return null
+
+        val unwatchedGood = formatted.filter { !it.isPlayed && (it.communityRating ?: 0f) >= 6.5f }
+        val pool = unwatchedGood.ifEmpty { formatted.filter { (it.communityRating ?: 0f) >= 6.5f } }
+            .ifEmpty { formatted }
+        return pool.randomOrNull()?.toMediaItem(serverUrl, accessToken)
+    }
+
+    private data class ScoredEntity(
+        val entity: JellyfinMediaEntity,
+        val matchedTags: Int,
+        val score: Float
+    )
+
+    private fun JellyfinMediaEntity.matchesFormat(format: MediaFormat): Boolean = when (format) {
+        MediaFormat.ALL -> true
+        MediaFormat.MOVIES -> type.equals("Movie", ignoreCase = true)
+        MediaFormat.SERIES -> type.equals("Series", ignoreCase = true)
+    }
+
+    private fun formatNoun(format: MediaFormat): String = when (format) {
+        MediaFormat.ALL -> "TÍTULOS"
+        MediaFormat.MOVIES -> "PELÍCULAS"
+        MediaFormat.SERIES -> "SERIES"
+    }
+
+    fun updatePortalNode(chain: List<SpatialNebulaNode>, movieCount: Int, format: MediaFormat = MediaFormat.ALL) {
         allNodes.removeAll { it.id == PORTAL_NODE_ID }
         nodeById.remove(PORTAL_NODE_ID)
         allFilaments.removeAll { it.fromNodeId == PORTAL_NODE_ID || it.toNodeId == PORTAL_NODE_ID }
@@ -645,7 +698,7 @@ class NebulaSpatialEngine {
 
         val portalNode = SpatialNebulaNode(
             id = PORTAL_NODE_ID,
-            label = "✦ VER $movieCount PELÍCULAS",
+            label = "✦ VER $movieCount ${formatNoun(format)}",
             category = "Portal",
             worldX = portalPos.x,
             worldY = portalPos.y,

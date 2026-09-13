@@ -1,5 +1,6 @@
 package com.example.tujelly.ui.screens.genre
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -11,14 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.tv.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -31,10 +27,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.tv.material3.Button
-import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Border
+import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.example.tujelly.ui.components.HeroBanner
 import com.example.tujelly.ui.components.MediaRow
@@ -68,10 +65,10 @@ fun GenreScreen(
                     .background(Color(0xFF090A0F)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Cargando catálogo de $genreName...",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White
+                com.example.tujelly.ui.components.JellyLoadingIndicator(
+                    size = 72.dp,
+                    message = "Cargando catálogo de $genreName...",
+                    isMonochrome = isMonochrome
                 )
             }
         }
@@ -135,7 +132,15 @@ fun GenreScreen(
                         )
                     }
 
-                    // Hero Banner for focused item
+                    // Filtro de formato: Todas / Películas / Series
+                    item {
+                        GenreFormatChips(
+                            selected = state.format,
+                            onSelect = { viewModel.setFormat(it) }
+                        )
+                    }
+
+                    // Hero Banner para el elemento enfocado
                     item {
                         HeroBanner(
                             item = state.focusedItem,
@@ -144,7 +149,7 @@ fun GenreScreen(
                         )
                     }
 
-                    // Genre Rows
+                    // Secciones de Género
                     items(state.sections) { section ->
                         MediaRow(
                             section = section,
@@ -153,11 +158,87 @@ fun GenreScreen(
                         )
                     }
 
+                    if (state.sections.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 48.dp, vertical = 48.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No hay títulos para este filtro en ${state.genreName}.",
+                                    color = Color(0x99FFFFFF),
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+
                     item {
                         Spacer(modifier = Modifier.height(32.dp))
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun GenreFormatChips(
+    selected: GenreFormat,
+    onSelect: (GenreFormat) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 48.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FormatChip(label = "Todas", isSelected = selected == GenreFormat.ALL) { onSelect(GenreFormat.ALL) }
+        FormatChip(label = "Películas", isSelected = selected == GenreFormat.MOVIES) { onSelect(GenreFormat.MOVIES) }
+        FormatChip(label = "Series", isSelected = selected == GenreFormat.SERIES) { onSelect(GenreFormat.SERIES) }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun FormatChip(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isSelected) Color(0x33FFFFFF) else Color(0x10FFFFFF),
+            focusedContainerColor = if (isSelected) Color(0x40FFFFFF) else Color(0x28FFFFFF)
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(
+                border = BorderStroke(
+                    width = if (isSelected) 1.5.dp else 0.75.dp,
+                    color = if (isSelected) Color.White else Color(0x18FFFFFF)
+                )
+            ),
+            focusedBorder = Border(border = BorderStroke(2.dp, Color.White))
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f)
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                color = Color.White,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                fontSize = 13.sp,
+                letterSpacing = 0.5.sp
+            )
         }
     }
 }

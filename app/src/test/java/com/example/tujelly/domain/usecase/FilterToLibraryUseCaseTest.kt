@@ -87,6 +87,20 @@ class FakeJellyfinDao : JellyfinDao {
     override suspend fun getItemsByGenre(genre: String, limit: Int): List<JellyfinMediaEntity> =
         localDb.filter { it.genres?.contains(genre, ignoreCase = true) == true }.take(limit)
 
+    override suspend fun getMoviesByGenre(genre: String, limit: Int): List<JellyfinMediaEntity> =
+        localDb.filter { it.type == "Movie" && it.genres?.contains(genre, ignoreCase = true) == true }.take(limit)
+
+    override suspend fun getSeriesByGenre(genre: String, limit: Int): List<JellyfinMediaEntity> =
+        localDb.filter { it.type == "Series" && it.genres?.contains(genre, ignoreCase = true) == true }.take(limit)
+
+    override suspend fun getRecentMoviesByGenre(genre: String, limit: Int): List<JellyfinMediaEntity> =
+        localDb.filter { it.type == "Movie" && it.genres?.contains(genre, ignoreCase = true) == true }
+            .sortedByDescending { it.productionYear ?: 0 }.take(limit)
+
+    override suspend fun getRecentSeriesByGenre(genre: String, limit: Int): List<JellyfinMediaEntity> =
+        localDb.filter { it.type == "Series" && it.genres?.contains(genre, ignoreCase = true) == true }
+            .sortedByDescending { it.productionYear ?: 0 }.take(limit)
+
     override suspend fun getWatchedGenres(): List<String> = emptyList()
 
     override suspend fun getAllGenresRaw(): List<String> = emptyList()

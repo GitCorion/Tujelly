@@ -28,6 +28,7 @@ data class ConstellationUiState(
     val compatibleNodeIds: Set<String>? = null,
     val incompatibleWarning: String? = null,
     val matchingMovies: List<MediaItem> = emptyList(),
+    val format: MediaFormat = MediaFormat.ALL,
     val targetCameraX: Float = 0.5f,
     val targetCameraY: Float = 0.5f,
     val targetZoom: Float = 1.0f,
@@ -89,10 +90,11 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
                 chain = emptyList(),
                 catalog = rawCatalog,
                 serverUrl = serverUrl,
-                accessToken = accessToken
+                accessToken = accessToken,
+                format = _uiState.value.format
             )
 
-            spatialEngine.updatePortalNode(chain = emptyList(), movieCount = initialMatches.size)
+            spatialEngine.updatePortalNode(chain = emptyList(), movieCount = initialMatches.size, format = _uiState.value.format)
             val allNodes = spatialEngine.getAllNodes()
             val allFilaments = spatialEngine.getAllFilaments()
             val initialNode = allNodes.firstOrNull { it.id == "CLUSTER_0" } ?: allNodes.firstOrNull()
@@ -152,8 +154,8 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             val newChain = currentChain.take(index)
             val newZoom = calculateZoomForChain(newChain.size)
             
-            val matches = spatialEngine.getMatchingMoviesForChain(newChain, rawCatalog, serverUrl, accessToken)
-            spatialEngine.updatePortalNode(newChain, matches.size)
+            val matches = spatialEngine.getMatchingMoviesForChain(newChain, rawCatalog, serverUrl, accessToken, _uiState.value.format)
+            spatialEngine.updatePortalNode(newChain, matches.size, _uiState.value.format)
             val compatIds = if (newChain.isNotEmpty()) spatialEngine.getCompatibleNodeIds(newChain) else null
 
             _uiState.value = _uiState.value.copy(
@@ -175,8 +177,8 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             currentChain.add(focused)
             val newZoom = calculateZoomForChain(currentChain.size)
             
-            val matches = spatialEngine.getMatchingMoviesForChain(currentChain, rawCatalog, serverUrl, accessToken)
-            spatialEngine.updatePortalNode(currentChain, matches.size)
+            val matches = spatialEngine.getMatchingMoviesForChain(currentChain, rawCatalog, serverUrl, accessToken, _uiState.value.format)
+            spatialEngine.updatePortalNode(currentChain, matches.size, _uiState.value.format)
             val compatIds = spatialEngine.getCompatibleNodeIds(currentChain)
 
             _uiState.value = _uiState.value.copy(
@@ -207,6 +209,29 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
         if (_uiState.value.matchingMovies.isNotEmpty()) {
             toggleMoviesOverlay()
         }
+    }
+
+    /**
+     * Cambia el filtro de formato (Todos / Películas / Series) y recalcula el portal.
+     */
+    fun setFormat(format: MediaFormat) {
+        if (_uiState.value.format == format) return
+        val chain = _uiState.value.activeChain
+        val matches = spatialEngine.getMatchingMoviesForChain(chain, rawCatalog, serverUrl, accessToken, format)
+        spatialEngine.updatePortalNode(chain, matches.size, format)
+        _uiState.value = _uiState.value.copy(
+            format = format,
+            matchingMovies = matches,
+            nodes = spatialEngine.getAllNodes(),
+            filaments = spatialEngine.getAllFilaments()
+        )
+    }
+
+    /**
+     * Elige una obra aleatoria bien valorada y sin ver para el momento "no sé qué ver".
+     */
+    fun surpriseMe(): MediaItem? {
+        return spatialEngine.pickSurprise(rawCatalog, serverUrl, accessToken, _uiState.value.format)
     }
 
     fun toggleMoviesOverlay() {
@@ -254,8 +279,8 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             val newChain = chain.dropLast(1)
             val prevNode = newChain.lastOrNull() ?: _uiState.value.focusedNode
             val newZoom = calculateZoomForChain(newChain.size)
-            val matches = spatialEngine.getMatchingMoviesForChain(newChain, rawCatalog, serverUrl, accessToken)
-            spatialEngine.updatePortalNode(newChain, matches.size)
+            val matches = spatialEngine.getMatchingMoviesForChain(newChain, rawCatalog, serverUrl, accessToken, _uiState.value.format)
+            spatialEngine.updatePortalNode(newChain, matches.size, _uiState.value.format)
             val compatIds = if (newChain.isNotEmpty()) spatialEngine.getCompatibleNodeIds(newChain) else null
 
             _uiState.value = _uiState.value.copy(
@@ -277,8 +302,8 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun resetConstellation() {
-        val matches = spatialEngine.getMatchingMoviesForChain(emptyList(), rawCatalog, serverUrl, accessToken)
-        spatialEngine.updatePortalNode(emptyList(), matches.size)
+        val matches = spatialEngine.getMatchingMoviesForChain(emptyList(), rawCatalog, serverUrl, accessToken, _uiState.value.format)
+        spatialEngine.updatePortalNode(emptyList(), matches.size, _uiState.value.format)
         val initialNode = spatialEngine.getAllNodes().firstOrNull { it.id == "CLUSTER_0" } ?: spatialEngine.getAllNodes().firstOrNull()
 
         _uiState.value = _uiState.value.copy(

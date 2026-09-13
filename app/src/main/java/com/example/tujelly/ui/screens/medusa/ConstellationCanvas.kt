@@ -427,7 +427,7 @@ fun ConstellationCanvas(
                         hypot(p.x - focusedScreenPos.x, p.y - focusedScreenPos.y) < 85.dp.toPx()
                 val isNearPortal = portalScreenPos != null &&
                         hypot(p.x - portalScreenPos.x, p.y - portalScreenPos.y) < 130.dp.toPx()
-                val isCompatible = compatibleNodeIds == null || node.id in compatibleNodeIds
+                val isCompatible = (compatibleNodeIds == null || node.id in compatibleNodeIds) && node.movieCount > 0
 
                 drawTagNode(
                     node = node,
@@ -490,7 +490,7 @@ fun ConstellationCanvas(
                         isMonochrome = isMonochrome
                     )
                 } else {
-                    val isCompatible = compatibleNodeIds == null || fNode.id in compatibleNodeIds
+                    val isCompatible = (compatibleNodeIds == null || fNode.id in compatibleNodeIds) && fNode.movieCount > 0
                     drawTagNode(
                         node = fNode,
                         screenPos = fPos,

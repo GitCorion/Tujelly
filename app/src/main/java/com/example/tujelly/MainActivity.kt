@@ -222,7 +222,7 @@ fun TujellyApp(
                     navController.navigate("genre/$genreName")
                 },
                 onOpenMedusa = {
-                    navController.navigate("medusa")
+                    navController.navigate("medusa") { launchSingleTop = true }
                 }
             )
         }
@@ -269,7 +269,7 @@ fun TujellyApp(
                     }
                 },
                 onOpenMedusa = {
-                    navController.navigate("medusa")
+                    navController.navigate("medusa") { launchSingleTop = true }
                 },
                 onOpenSearch = {
                     navController.navigate("search")
@@ -297,7 +297,7 @@ fun TujellyApp(
                     }
                 },
                 onOpenMedusa = {
-                    navController.navigate("medusa")
+                    navController.navigate("medusa") { launchSingleTop = true }
                 },
                 onOpenFavorites = {
                     navController.navigate("favorites")
@@ -330,7 +330,7 @@ fun TujellyApp(
                     }
                 },
                 onOpenMedusa = {
-                    navController.navigate("medusa")
+                    navController.navigate("medusa") { launchSingleTop = true }
                 },
                 onOpenFavorites = {
                     navController.navigate("favorites")
@@ -366,7 +366,7 @@ fun TujellyApp(
                     }
                 },
                 onOpenMedusa = {
-                    navController.navigate("medusa")
+                    navController.navigate("medusa") { launchSingleTop = true }
                 },
                 onOpenFavorites = {
                     navController.navigate("favorites")
@@ -423,7 +423,7 @@ fun TujellyApp(
                     }
                 },
                 onOpenMedusa = {
-                    navController.navigate("medusa")
+                    navController.navigate("medusa") { launchSingleTop = true }
                 },
                 onOpenFavorites = {
                     navController.navigate("favorites")
