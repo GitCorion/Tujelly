@@ -7,21 +7,22 @@ import com.example.tujelly.data.local.UserPreferencesRepository
 import com.example.tujelly.data.local.db.JellyfinMediaEntity
 import com.example.tujelly.data.remote.NetworkClientFactory
 import com.example.tujelly.data.remote.tmdb.TmdbApiService
+import com.example.tujelly.data.local.ACCENT_CYAN
+import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
 import com.example.tujelly.domain.model.HomeSection
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class GenreFormat(val label: String) {
-    ALL("Todas"),
-    MOVIES("Películas"),
-    SERIES("Series")
-}
+typealias GenreFormat = com.example.tujelly.domain.model.MediaFormatFilter
 
 sealed interface GenreUiState {
     object Loading : GenreUiState
@@ -43,6 +44,18 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow<GenreUiState>(GenreUiState.Loading)
     val uiState: StateFlow<GenreUiState> = _uiState.asStateFlow()
+
+    val accentColor: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
+        .map { it.accentColor }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ACCENT_CYAN)
+
+    val isMonochrome: StateFlow<Boolean> = userPreferencesRepository.userPreferencesFlow
+        .map { it.isMonochrome }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val buttonStyle: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
+        .map { it.buttonStyle }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BUTTON_STYLE_ICONS_ONLY)
 
     private var formatSections: List<Pair<GenreFormat, HomeSection>> = emptyList()
     private var currentFormat: GenreFormat = GenreFormat.ALL
@@ -137,9 +150,9 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
                 shownMediaIds.addAll(curatedTopCandidates.map { it.id })
                 collected.add(
                     GenreFormat.ALL to HomeSection(
-                        title = "Top 10 Imprescindibles en $genreName",
+                        title = "Top 10 Imprescindibles",
                         items = curatedTopCandidates,
-                        badge = "TOP 10",
+                        badge = null,
                         isRanked = true
                     )
                 )
@@ -156,9 +169,9 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
                 shownMediaIds.addAll(hiddenGems.map { it.id })
                 collected.add(
                     GenreFormat.ALL to HomeSection(
-                        title = "Joyas Ocultas en $genreName",
+                        title = "Joyas Ocultas",
                         items = hiddenGems,
-                        badge = "DESCUBRE"
+                        badge = null
                     )
                 )
             }
@@ -173,9 +186,9 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
                 shownMediaIds.addAll(curatedMovies.map { it.id })
                 collected.add(
                     GenreFormat.MOVIES to HomeSection(
-                        title = "Películas de $genreName",
+                        title = "Películas",
                         items = curatedMovies,
-                        badge = "PELÍCULAS"
+                        badge = null
                     )
                 )
             }
@@ -190,9 +203,9 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
                 shownMediaIds.addAll(curatedSeries.map { it.id })
                 collected.add(
                     GenreFormat.SERIES to HomeSection(
-                        title = "Series de $genreName",
+                        title = "Series",
                         items = curatedSeries,
-                        badge = "SERIES"
+                        badge = null
                     )
                 )
             }
@@ -217,7 +230,7 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
                     GenreFormat.ALL to HomeSection(
                         title = "Novedades Recientes",
                         items = recentCombined,
-                        badge = "RECIENTES"
+                        badge = null
                     )
                 )
             }
@@ -241,8 +254,18 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
 
         val filtered = when (currentFormat) {
             GenreFormat.ALL -> formatSections.map { it.second }
-            GenreFormat.MOVIES -> formatSections.filter { it.first == GenreFormat.MOVIES || it.first == GenreFormat.ALL }.map { it.second }.filter { it.badge != "SERIES" }
-            GenreFormat.SERIES -> formatSections.filter { it.first == GenreFormat.SERIES || it.first == GenreFormat.ALL }.map { it.second }.filter { it.badge != "PELÍCULAS" }
+            GenreFormat.MOVIES -> formatSections.mapNotNull { (format, section) ->
+                if (format == GenreFormat.SERIES) return@mapNotNull null
+                val movieItems = section.items.filter { it.type.equals("Movie", ignoreCase = true) }
+                if (movieItems.isNotEmpty()) section.copy(items = movieItems) else null
+            }
+            GenreFormat.SERIES -> formatSections.mapNotNull { (format, section) ->
+                if (format == GenreFormat.MOVIES) return@mapNotNull null
+                val seriesItems = section.items.filter {
+                    it.type.equals("Series", ignoreCase = true) || it.type.equals("Episode", ignoreCase = true)
+                }
+                if (seriesItems.isNotEmpty()) section.copy(items = seriesItems) else null
+            }
         }
 
         val firstItem = filtered.firstOrNull()?.items?.firstOrNull()
@@ -318,11 +341,32 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem {
         val authParam = if (token.isNotBlank()) "api_key=$token" else ""
-        val tagParam = if (!primaryImageTag.isNullOrEmpty()) "&tag=$primaryImageTag" else ""
-        val posterUrl = "$baseUrl/Items/$id/Images/Primary?$authParam$tagParam"
 
-        val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
-        val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
+        val posterUrl = when {
+            primaryImageTag?.startsWith("tmdb:") == true -> {
+                "https://image.tmdb.org/t/p/w500${primaryImageTag.removePrefix("tmdb:")}"
+            }
+            !primaryImageTag.isNullOrEmpty() -> {
+                val tagParam = "&tag=$primaryImageTag"
+                "$baseUrl/Items/$id/Images/Primary?$authParam$tagParam"
+            }
+            else -> {
+                "$baseUrl/Items/$id/Images/Primary?$authParam"
+            }
+        }
+
+        val backdropUrl = when {
+            backdropImageTag?.startsWith("tmdb:") == true -> {
+                "https://image.tmdb.org/t/p/w1280${backdropImageTag.removePrefix("tmdb:")}"
+            }
+            !backdropImageTag.isNullOrEmpty() -> {
+                val backdropTagParam = "&tag=$backdropImageTag"
+                "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
+            }
+            else -> {
+                "$baseUrl/Items/$id/Images/Backdrop/0?$authParam"
+            }
+        }
 
         val effectiveLogoId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
         val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/$effectiveLogoId/Images/Logo?$authParam" else null

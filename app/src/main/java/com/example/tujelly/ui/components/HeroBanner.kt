@@ -1,5 +1,13 @@
 package com.example.tujelly.ui.components
 
+import android.annotation.SuppressLint
+import android.view.ViewGroup
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -15,18 +23,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -36,6 +49,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -51,7 +66,9 @@ import com.example.tujelly.domain.model.MediaSource
 import com.example.tujelly.ui.theme.TvAccent
 import com.example.tujelly.ui.theme.TvPill
 import com.example.tujelly.ui.theme.TvRatingBadge
+import kotlinx.coroutines.delay
 
+@SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun HeroBanner(
@@ -59,27 +76,116 @@ fun HeroBanner(
     onPlayClick: (MediaItem) -> Unit,
     onDetailClick: (MediaItem) -> Unit,
     modifier: Modifier = Modifier,
+    featuredItems: List<MediaItem> = emptyList(),
     accentColor: String = ACCENT_CYAN,
     buttonStyle: String = BUTTON_STYLE_ICONS_ONLY
 ) {
+    val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
+    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current ||
+            indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
+
+    // 1. Carrusel de destacados autorrotatorio cuando no hay foco directo
+    val cleanFeatured = remember(featuredItems) { featuredItems.take(5) }
+    var carouselIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(item, cleanFeatured) {
+        if (item == null && cleanFeatured.size > 1) {
+            while (true) {
+                delay(6000L)
+                carouselIndex = (carouselIndex + 1) % cleanFeatured.size
+            }
+        }
+    }
+
+    val effectiveItem = item ?: cleanFeatured.getOrNull(carouselIndex)
+
+    // 2. Previsualización diferida del tráiler tras 2.5s
+    var showTrailer by remember(effectiveItem?.id) { mutableStateOf(false) }
+
+    LaunchedEffect(effectiveItem?.id) {
+        showTrailer = false
+        if (effectiveItem?.trailerUrl != null && effectiveItem.trailerUrl.isNotBlank()) {
+            delay(2500L)
+            showTrailer = true
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(310.dp)
     ) {
-        if (item?.backdropUrl != null || item?.posterUrl != null) {
-            AsyncImage(
-                model = item.backdropUrl ?: item.posterUrl,
-                contentDescription = item.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF0C0D14))
-            )
+        // Crossfade cinematográfico de la imagen de fondo
+        Crossfade(
+            targetState = effectiveItem,
+            animationSpec = tween(durationMillis = 400),
+            label = "heroBackdropCrossfade"
+        ) { currentItem ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (currentItem?.backdropUrl != null || currentItem?.posterUrl != null) {
+                    AsyncImage(
+                        model = currentItem.backdropUrl ?: currentItem.posterUrl,
+                        contentDescription = currentItem.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF0C0D14))
+                    )
+                }
+            }
+        }
+
+        // Background Trailer Video Overlay (si hay tráiler disponible y tras 2.5s)
+        if (showTrailer && effectiveItem?.trailerUrl != null) {
+            val videoId = extractYoutubeId(effectiveItem.trailerUrl)
+            if (videoId.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(0.45f)
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                settings.mediaPlaybackRequiresUserGesture = false
+                                webChromeClient = WebChromeClient()
+                                webViewClient = WebViewClient()
+
+                                val html = """
+                                    <!DOCTYPE html>
+                                    <html>
+                                    <head>
+                                        <style>
+                                            * { margin:0; padding:0; }
+                                            html, body { width:100vw; height:100vh; background:#000; overflow:hidden; }
+                                            iframe { width:100vw; height:100vh; border:none; pointer-events:none; }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <iframe src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&mute=1&controls=0&loop=1&playlist=$videoId&playsinline=1"
+                                                allow="autoplay; encrypted-media">
+                                        </iframe>
+                                    </body>
+                                    </html>
+                                """.trimIndent()
+
+                                loadDataWithBaseURL("https://www.youtube-nocookie.com", html, "text/html", "UTF-8", null)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
         }
 
         // Horizontal gradient for dark left text background
@@ -116,7 +222,7 @@ fun HeroBanner(
                 )
         )
 
-        if (item != null) {
+        if (effectiveItem != null) {
             Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -124,17 +230,17 @@ fun HeroBanner(
                     .fillMaxWidth(0.68f)
             ) {
                 // Title / ClearLogo
-                var isLogoLoaded by remember(item.id, item.logoUrl) { mutableStateOf(false) }
+                var isLogoLoaded by remember(effectiveItem.id, effectiveItem.logoUrl) { mutableStateOf(false) }
 
-                if (!item.logoUrl.isNullOrBlank()) {
+                if (!effectiveItem.logoUrl.isNullOrBlank()) {
                     Box(
                         modifier = Modifier
                             .heightIn(max = 64.dp)
                             .padding(bottom = 6.dp)
                     ) {
                         AsyncImage(
-                            model = item.logoUrl,
-                            contentDescription = item.title,
+                            model = effectiveItem.logoUrl,
+                            contentDescription = effectiveItem.title,
                             contentScale = ContentScale.Fit,
                             alignment = Alignment.CenterStart,
                             modifier = Modifier
@@ -146,7 +252,7 @@ fun HeroBanner(
 
                         if (!isLogoLoaded) {
                             Text(
-                                text = item.title,
+                                text = effectiveItem.title,
                                 style = MaterialTheme.typography.headlineLarge.copy(
                                     fontWeight = FontWeight.ExtraBold,
                                     shadow = Shadow(
@@ -163,7 +269,7 @@ fun HeroBanner(
                     }
                 } else {
                     Text(
-                        text = item.title,
+                        text = effectiveItem.title,
                         style = MaterialTheme.typography.headlineLarge.copy(
                             fontWeight = FontWeight.ExtraBold,
                             shadow = Shadow(
@@ -181,17 +287,15 @@ fun HeroBanner(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Metadata Badges Row
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (item.rating != null && item.rating > 0f) {
-                        TvRatingBadge(rating = item.rating, compact = false)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (effectiveItem.rating != null && effectiveItem.rating > 0f) {
+                        TvRatingBadge(rating = effectiveItem.rating, compact = false)
                         Spacer(modifier = Modifier.width(8.dp))
                     }
 
-                    if (item.year != null) {
+                    if (effectiveItem.year != null) {
                         TvPill(
-                            text = "${item.year}",
+                            text = "${effectiveItem.year}",
                             containerColor = Color(0x18FFFFFF),
                             textColor = Color(0xFFE2E8F0),
                             borderColor = Color(0x22FFFFFF)
@@ -199,34 +303,30 @@ fun HeroBanner(
                         Spacer(modifier = Modifier.width(8.dp))
                     }
 
-                    val isTv = item.type.equals("Series", ignoreCase = true) ||
-                            item.type.equals("TvProgram", ignoreCase = true) ||
-                            item.type.equals("Episode", ignoreCase = true)
+                    val isTv = effectiveItem.type.equals("Series", ignoreCase = true) ||
+                            effectiveItem.type.equals("TvProgram", ignoreCase = true) ||
+                            effectiveItem.type.equals("Episode", ignoreCase = true)
                     TvPill(
                         text = if (isTv) "SERIE" else "PELÍCULA",
-                        containerColor = Color(0x18FFFFFF),
-                        textColor = Color(0xFFE2E8F0),
-                        borderColor = Color(0x22FFFFFF)
+                        containerColor = if (isMonochrome) Color(0x18FFFFFF) else Color(0x2400A4DC),
+                        textColor = if (isMonochrome) Color(0xFFE2E8F0) else Color(0xFF7DD3FC),
+                        borderColor = if (isMonochrome) Color(0x22FFFFFF) else Color(0x5500A4DC)
                     )
 
-                    val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
-                    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current ||
-                            indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
-
-                    val isTvSeries = item.type.equals("Series", ignoreCase = true)
-                    val hasEpisodeProgress = !item.isPlayed &&
+                    val isTvSeries = effectiveItem.type.equals("Series", ignoreCase = true)
+                    val hasEpisodeProgress = !effectiveItem.isPlayed &&
                             isTvSeries &&
-                            item.playedEpisodes != null &&
-                            item.playedEpisodes > 0
-                    val hasMovieProgress = !item.isPlayed &&
+                            effectiveItem.playedEpisodes != null &&
+                            effectiveItem.playedEpisodes > 0
+                    val hasMovieProgress = !effectiveItem.isPlayed &&
                             !isTvSeries &&
-                            item.playbackPositionTicks > 0
+                            effectiveItem.playbackPositionTicks > 0
 
                     if (hasEpisodeProgress) {
-                        val progressText = if (item.totalEpisodes != null && item.totalEpisodes > 0) {
-                            "PROGRESO: ${item.playedEpisodes}/${item.totalEpisodes}"
+                        val progressText = if (effectiveItem.totalEpisodes != null && effectiveItem.totalEpisodes > 0) {
+                            "PROGRESO: ${effectiveItem.playedEpisodes}/${effectiveItem.totalEpisodes}"
                         } else {
-                            "PROGRESO: ${item.playedEpisodes} caps"
+                            "PROGRESO: ${effectiveItem.playedEpisodes} caps"
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         TvPill(
@@ -247,7 +347,7 @@ fun HeroBanner(
                         )
                     }
 
-                    if (item.isFavorite) {
+                    if (effectiveItem.isFavorite) {
                         Spacer(modifier = Modifier.width(8.dp))
                         TvPill(
                             text = "♥ FAVORITO",
@@ -257,7 +357,7 @@ fun HeroBanner(
                         )
                     }
 
-                    if (item.isPlayed && !hasEpisodeProgress && !hasMovieProgress) {
+                    if (effectiveItem.isPlayed && !hasEpisodeProgress && !hasMovieProgress) {
                         Spacer(modifier = Modifier.width(8.dp))
                         TvPill(
                             text = "✓ VISTO",
@@ -267,7 +367,7 @@ fun HeroBanner(
                         )
                     }
 
-                    val sourceLabel = when (item.source) {
+                    val sourceLabel = when (effectiveItem.source) {
                         MediaSource.TRAKT_RECOMMENDATION -> "Trakt Recomendado"
                         MediaSource.TMDB_TRENDING -> "En Tendencia"
                         MediaSource.TMDB_RECOMMENDATION -> "Para ti"
@@ -284,10 +384,10 @@ fun HeroBanner(
                 }
 
                 // Synopsis
-                if (!item.overview.isNullOrBlank()) {
+                if (!effectiveItem.overview.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = item.overview,
+                        text = effectiveItem.overview,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             lineHeight = 20.sp
                         ),
@@ -307,12 +407,20 @@ fun HeroBanner(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(
-                        onClick = { onPlayClick(item) },
+                        onClick = { onPlayClick(effectiveItem) },
                         colors = ButtonDefaults.colors(
-                            containerColor = Color(0x28FFFFFF),
-                            contentColor = Color.White,
+                            containerColor = if (isMonochrome) Color(0x28FFFFFF) else focusColor.copy(alpha = 0.22f),
+                            contentColor = if (isMonochrome) Color.White else focusColor,
                             focusedContainerColor = focusColor,
                             focusedContentColor = focusContent
+                        ),
+                        shape = ButtonDefaults.shape(shape = CircleShape),
+                        border = ButtonDefaults.border(
+                            border = Border(
+                                border = BorderStroke(1.dp, if (isMonochrome) Color(0x33FFFFFF) else focusColor.copy(alpha = 0.60f)),
+                                shape = CircleShape
+                            ),
+                            focusedBorder = Border.None
                         )
                     ) {
                         Row(
@@ -342,12 +450,20 @@ fun HeroBanner(
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Button(
-                        onClick = { onDetailClick(item) },
+                        onClick = { onDetailClick(effectiveItem) },
                         colors = ButtonDefaults.colors(
                             containerColor = Color(0x14FFFFFF),
                             contentColor = Color(0xFFE2E8F0),
                             focusedContainerColor = focusColor,
                             focusedContentColor = focusContent
+                        ),
+                        shape = ButtonDefaults.shape(shape = CircleShape),
+                        border = ButtonDefaults.border(
+                            border = Border(
+                                border = BorderStroke(1.dp, Color(0x22FFFFFF)),
+                                shape = CircleShape
+                            ),
+                            focusedBorder = Border.None
                         )
                     ) {
                         Row(
@@ -376,5 +492,37 @@ fun HeroBanner(
                 }
             }
         }
+
+        // Carousel Indicators (Bottom Right)
+        if (item == null && cleanFeatured.size > 1) {
+            val focusColor = TvAccent.getColor(accentColor)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 48.dp, bottom = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                cleanFeatured.indices.forEach { idx ->
+                    val isActive = idx == carouselIndex
+                    Box(
+                        modifier = Modifier
+                            .size(if (isActive) 8.dp else 6.dp)
+                            .clip(CircleShape)
+                            .background(if (isActive) (if (isMonochrome) Color.White else focusColor) else Color(0x44FFFFFF))
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun extractYoutubeId(url: String): String {
+    return when {
+        url.contains("v=") -> url.substringAfter("v=").substringBefore("&")
+        url.contains("youtu.be/") -> url.substringAfter("youtu.be/").substringBefore("?")
+        url.contains("/embed/") -> url.substringAfter("/embed/").substringBefore("?")
+        url.length == 11 && !url.contains("/") -> url
+        else -> ""
     }
 }

@@ -3,15 +3,16 @@ package com.example.tujelly.ui.screens.brand
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.tujelly.data.local.DEFAULT_TMDB_API_KEY
 import com.example.tujelly.data.local.UserPreferencesRepository
 import com.example.tujelly.data.remote.NetworkClientFactory
 import com.example.tujelly.data.remote.tmdb.TmdbApiService
+import com.example.tujelly.data.remote.tmdb.TmdbItemDto
 import com.example.tujelly.domain.model.HomeSection
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import java.util.concurrent.ConcurrentHashMap
 
 data class BrandInfo(
@@ -37,7 +39,8 @@ sealed interface BrandUiState {
     data class Success(
         val brand: BrandInfo,
         val sections: List<HomeSection>,
-        val focusedItem: MediaItem? = null
+        val focusedItem: MediaItem? = null,
+        val format: com.example.tujelly.domain.model.MediaFormatFilter = com.example.tujelly.domain.model.MediaFormatFilter.ALL
     ) : BrandUiState
     data class Error(val message: String) : BrandUiState
 }
@@ -68,22 +71,62 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow<BrandUiState>(BrandUiState.Loading)
     val uiState: StateFlow<BrandUiState> = _uiState.asStateFlow()
 
-    fun loadBrandFeed(brandId: String) {
+    private var allRawSections: List<HomeSection> = emptyList()
+    private var currentFormat = com.example.tujelly.domain.model.MediaFormatFilter.ALL
+
+    fun setFormat(format: com.example.tujelly.domain.model.MediaFormatFilter) {
+        currentFormat = format
+        val state = _uiState.value
+        if (state is BrandUiState.Success) {
+            val filtered = filterSections(allRawSections, format)
+            _uiState.value = state.copy(
+                sections = filtered,
+                focusedItem = filtered.firstOrNull()?.items?.firstOrNull(),
+                format = format
+            )
+        }
+    }
+
+    private fun filterSections(
+        rawSections: List<HomeSection>,
+        format: com.example.tujelly.domain.model.MediaFormatFilter
+    ): List<HomeSection> {
+        return when (format) {
+            com.example.tujelly.domain.model.MediaFormatFilter.ALL -> rawSections
+            com.example.tujelly.domain.model.MediaFormatFilter.MOVIES -> rawSections.mapNotNull { section ->
+                val filteredItems = section.items.filter { it.type.equals("Movie", ignoreCase = true) }
+                if (filteredItems.isNotEmpty()) section.copy(items = filteredItems) else null
+            }
+            com.example.tujelly.domain.model.MediaFormatFilter.SERIES -> rawSections.mapNotNull { section ->
+                val filteredItems = section.items.filter {
+                    it.type.equals("Series", ignoreCase = true) || it.type.equals("Episode", ignoreCase = true)
+                }
+                if (filteredItems.isNotEmpty()) section.copy(items = filteredItems) else null
+            }
+        }
+    }
+
+    fun loadBrandFeed(brandId: String, forceRefresh: Boolean = false) {
+        if (forceRefresh) {
+            brandCache.remove(brandId)
+        }
         val cached = brandCache[brandId]
-        if (cached != null) {
-            _uiState.value = cached
+        if (cached != null && cached.sections.isNotEmpty()) {
+            allRawSections = cached.sections
+            val filtered = filterSections(allRawSections, currentFormat)
+            _uiState.value = cached.copy(
+                sections = filtered,
+                focusedItem = filtered.firstOrNull()?.items?.firstOrNull(),
+                format = currentFormat
+            )
         } else {
             _uiState.value = BrandUiState.Loading
         }
 
         viewModelScope.launch {
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
-            if (prefs.jellyfinServerUrl.isBlank() || prefs.jellyfinAccessToken.isBlank()) {
-                if (_uiState.value !is BrandUiState.Success) {
-                    _uiState.value = BrandUiState.Error("Servidor Jellyfin no configurado.")
-                }
-                return@launch
-            }
+            val effectiveApiKey = prefs.tmdbApiKey.takeIf { it.isNotBlank() } ?: DEFAULT_TMDB_API_KEY
+            val effectiveRegion = prefs.watchRegion.takeIf { it.isNotBlank() } ?: "ES"
 
             val platform = com.example.tujelly.data.model.platformById(brandId)
                 ?: com.example.tujelly.data.model.SUPPORTED_PLATFORMS.first()
@@ -102,93 +145,123 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
             val api = NetworkClientFactory.createService("https://api.themoviedb.org/3/", TmdbApiService::class.java)
 
             try {
-                coroutineScope {
-                    val trendingDef = async {
-                        val trendingMovies = runCatching { api.discoverMoviesByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, page = 1) }.getOrNull()?.results ?: emptyList()
-                        val trendingTv = runCatching { api.discoverTvByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, page = 1) }.getOrNull()?.results ?: emptyList()
-                        filterToLibraryUseCase.filterTmdbItems(
-                            tmdbItems = (trendingMovies + trendingTv).take(30),
+                supervisorScope {
+                    val trendingDeferred = async {
+                        val trendingMovies = runCatching {
+                            api.discoverMoviesByProvider(apiKey = effectiveApiKey, providerId = brand.providerId, watchRegion = effectiveRegion, page = 1)
+                        }.getOrNull()?.results ?: emptyList()
+                        val trendingTv = runCatching {
+                            api.discoverTvByProvider(apiKey = effectiveApiKey, providerId = brand.providerId, watchRegion = effectiveRegion, page = 1)
+                        }.getOrNull()?.results ?: emptyList()
+                        val combined = (trendingMovies + trendingTv).take(30)
+
+                        val localMatched = filterToLibraryUseCase.filterTmdbItems(
+                            tmdbItems = combined,
                             serverUrl = prefs.jellyfinServerUrl,
                             userId = prefs.jellyfinUserId,
                             token = prefs.jellyfinAccessToken,
                             maxCandidates = 30
                         )
+                        if (localMatched.isNotEmpty()) {
+                            localMatched.map {
+                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                            }
+                        } else {
+                            combined.take(20).map { it.toDirectMediaItem() }
+                        }
                     }
 
-                    val seriesDef = async {
-                        val tvItems = runCatching { api.discoverTvByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, page = 2) }.getOrNull()?.results ?: emptyList()
-                        filterToLibraryUseCase.filterTmdbItems(
-                            tmdbItems = tvItems.take(30),
+                    val seriesDeferred = async {
+                        val trendingTv = runCatching {
+                            api.discoverTvByProvider(apiKey = effectiveApiKey, providerId = brand.providerId, watchRegion = effectiveRegion, page = 2)
+                        }.getOrNull()?.results ?: emptyList()
+
+                        val localMatched = filterToLibraryUseCase.filterTmdbItems(
+                            tmdbItems = trendingTv.take(30),
                             serverUrl = prefs.jellyfinServerUrl,
                             userId = prefs.jellyfinUserId,
                             token = prefs.jellyfinAccessToken,
                             maxCandidates = 30
                         )
+                        if (localMatched.isNotEmpty()) {
+                            localMatched.map {
+                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                            }
+                        } else {
+                            trendingTv.take(20).map { it.toDirectMediaItem() }
+                        }
                     }
 
-                    val topMoviesDef = async {
-                        val topMovies = runCatching { api.discoverMoviesByProvider(apiKey = prefs.tmdbApiKey, providerId = brand.providerId, watchRegion = prefs.watchRegion, sortBy = "vote_average.desc", voteCountGte = 200, page = 1) }.getOrNull()?.results ?: emptyList()
-                        filterToLibraryUseCase.filterTmdbItems(
+                    val topDeferred = async {
+                        val topMovies = runCatching {
+                            api.discoverMoviesByProvider(apiKey = effectiveApiKey, providerId = brand.providerId, watchRegion = effectiveRegion, sortBy = "vote_average.desc", voteCountGte = 200, page = 1)
+                        }.getOrNull()?.results ?: emptyList()
+
+                        val localMatched = filterToLibraryUseCase.filterTmdbItems(
                             tmdbItems = topMovies.take(30),
                             serverUrl = prefs.jellyfinServerUrl,
                             userId = prefs.jellyfinUserId,
                             token = prefs.jellyfinAccessToken,
                             maxCandidates = 30
                         )
+                        if (localMatched.isNotEmpty()) {
+                            localMatched.map {
+                                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                            }
+                        } else {
+                            topMovies.take(20).map { it.toDirectMediaItem() }
+                        }
                     }
 
-                    val matchedTrending = trendingDef.await()
-                    val matchedTv = seriesDef.await()
-                    val matchedTop = topMoviesDef.await()
+                    val trendingItems = trendingDeferred.await()
+                    val seriesItems = seriesDeferred.await()
+                    val topItems = topDeferred.await()
 
-                    if (matchedTrending.isNotEmpty()) {
+                    if (trendingItems.isNotEmpty()) {
                         sections.add(
                             HomeSection(
-                                title = "En Tendencia en ${brand.name}",
-                                items = matchedTrending.take(15).map {
-                                    it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                                },
-                                badge = brand.name
+                                title = "En Tendencia",
+                                items = trendingItems,
+                                badge = null
                             )
                         )
                     }
 
-                    if (matchedTv.isNotEmpty()) {
+                    if (seriesItems.isNotEmpty()) {
                         sections.add(
                             HomeSection(
-                                title = "Series Destacadas en ${brand.name}",
-                                items = matchedTv.take(15).map {
-                                    it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                                },
-                                badge = "SERIES"
+                                title = "Series Destacadas",
+                                items = seriesItems,
+                                badge = null
                             )
                         )
                     }
 
-                    if (matchedTop.isNotEmpty()) {
+                    if (topItems.isNotEmpty()) {
                         sections.add(
                             HomeSection(
-                                title = "Cine Aclamado en ${brand.name}",
-                                items = matchedTop.take(15).map {
-                                    it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
-                                },
-                                badge = "TOP CRÍTICA"
+                                title = "Cine Aclamado",
+                                items = topItems,
+                                badge = null
                             )
                         )
                     }
                 }
             } catch (_: Exception) {}
 
-            if (sections.isNotEmpty() || _uiState.value !is BrandUiState.Success) {
-                val firstItem = sections.firstOrNull()?.items?.firstOrNull()
-                val successState = BrandUiState.Success(
-                    brand = brand,
-                    sections = sections,
-                    focusedItem = firstItem
-                )
-                brandCache[brandId] = successState
-                _uiState.value = successState
+            allRawSections = sections
+            val filtered = filterSections(allRawSections, currentFormat)
+            val firstItem = filtered.firstOrNull()?.items?.firstOrNull()
+            val successState = BrandUiState.Success(
+                brand = brand,
+                sections = filtered,
+                focusedItem = firstItem,
+                format = currentFormat
+            )
+            if (sections.isNotEmpty()) {
+                brandCache[brandId] = successState.copy(sections = allRawSections, format = com.example.tujelly.domain.model.MediaFormatFilter.ALL)
             }
+            _uiState.value = successState
         }
     }
 
@@ -199,13 +272,54 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun TmdbItemDto.toDirectMediaItem(): MediaItem {
+        val isTv = mediaType?.equals("tv", ignoreCase = true) == true || name != null
+        val titleText = title ?: name ?: "Título"
+        val poster = if (!posterPath.isNullOrBlank()) "https://image.tmdb.org/t/p/w500$posterPath" else null
+        val backdrop = if (!backdropPath.isNullOrBlank()) "https://image.tmdb.org/t/p/w1280$backdropPath" else null
+        val releaseYear = (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull()
+
+        return MediaItem(
+            id = "tmdb-$id",
+            title = titleText,
+            overview = overview,
+            type = if (isTv) "Series" else "Movie",
+            posterUrl = poster,
+            backdropUrl = backdrop,
+            rating = voteAverage,
+            year = releaseYear,
+            source = MediaSource.TMDB_TRENDING
+        )
+    }
+
     private fun com.example.tujelly.data.local.db.JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem {
         val authParam = if (token.isNotBlank()) "api_key=$token" else ""
-        val tagParam = if (!primaryImageTag.isNullOrEmpty()) "&tag=$primaryImageTag" else ""
-        val posterUrl = "$baseUrl/Items/$id/Images/Primary?$authParam$tagParam"
 
-        val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
-        val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
+        val posterUrl = when {
+            primaryImageTag?.startsWith("tmdb:") == true -> {
+                "https://image.tmdb.org/t/p/w500${primaryImageTag.removePrefix("tmdb:")}"
+            }
+            !primaryImageTag.isNullOrEmpty() -> {
+                val tagParam = "&tag=$primaryImageTag"
+                "$baseUrl/Items/$id/Images/Primary?$authParam$tagParam"
+            }
+            else -> {
+                "$baseUrl/Items/$id/Images/Primary?$authParam"
+            }
+        }
+
+        val backdropUrl = when {
+            backdropImageTag?.startsWith("tmdb:") == true -> {
+                "https://image.tmdb.org/t/p/w1280${backdropImageTag.removePrefix("tmdb:")}"
+            }
+            !backdropImageTag.isNullOrEmpty() -> {
+                val backdropTagParam = "&tag=$backdropImageTag"
+                "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
+            }
+            else -> {
+                "$baseUrl/Items/$id/Images/Backdrop/0?$authParam"
+            }
+        }
 
         val effectiveLogoId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
         val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/$effectiveLogoId/Images/Logo?$authParam" else null

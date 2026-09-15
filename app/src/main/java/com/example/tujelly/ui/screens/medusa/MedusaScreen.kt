@@ -335,10 +335,24 @@ fun MedusaScreen(
             }
         }
 
-        // Filtro de formato del descubrimiento (Todos / Películas / Series)
-        MedusaFormatChips(
-            selected = uiState.format,
-            onSelect = { viewModel.setFormat(it) },
+        // Filtro de formato universal centrado, fino y elegante
+        com.example.tujelly.ui.components.FormatFilterBar(
+            selected = when (uiState.format) {
+                MediaFormat.ALL -> com.example.tujelly.domain.model.MediaFormatFilter.ALL
+                MediaFormat.MOVIES -> com.example.tujelly.domain.model.MediaFormatFilter.MOVIES
+                MediaFormat.SERIES -> com.example.tujelly.domain.model.MediaFormatFilter.SERIES
+            },
+            onSelect = { filter ->
+                viewModel.setFormat(
+                    when (filter) {
+                        com.example.tujelly.domain.model.MediaFormatFilter.ALL -> MediaFormat.ALL
+                        com.example.tujelly.domain.model.MediaFormatFilter.MOVIES -> MediaFormat.MOVIES
+                        com.example.tujelly.domain.model.MediaFormatFilter.SERIES -> MediaFormat.SERIES
+                    }
+                )
+            },
+            accentColorKey = accentColorKey,
+            buttonStyleKey = buttonStyleKey,
             isMonochrome = isMonochrome
         )
 
@@ -698,76 +712,4 @@ private fun MovieDiscoveryDrawer(
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun MedusaFormatChips(
-    selected: MediaFormat,
-    onSelect: (MediaFormat) -> Unit,
-    isMonochrome: Boolean = false
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 48.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        MedusaFormatChip(
-            label = "Todas",
-            isSelected = selected == MediaFormat.ALL,
-            isMonochrome = isMonochrome
-        ) { onSelect(MediaFormat.ALL) }
-        MedusaFormatChip(
-            label = "Películas",
-            isSelected = selected == MediaFormat.MOVIES,
-            isMonochrome = isMonochrome
-        ) { onSelect(MediaFormat.MOVIES) }
-        MedusaFormatChip(
-            label = "Series",
-            isSelected = selected == MediaFormat.SERIES,
-            isMonochrome = isMonochrome
-        ) { onSelect(MediaFormat.SERIES) }
-    }
-}
 
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun MedusaFormatChip(
-    label: String,
-    isSelected: Boolean,
-    isMonochrome: Boolean,
-    onClick: () -> Unit
-) {
-    val selectedBorder = if (isMonochrome) Color.White else Color(0xFF00E5FF)
-    Surface(
-        onClick = onClick,
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(16.dp)),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isSelected) Color(0x2EFFFFFF) else Color(0x10FFFFFF),
-            focusedContainerColor = if (isSelected) Color(0x40FFFFFF) else Color(0x28FFFFFF)
-        ),
-        border = ClickableSurfaceDefaults.border(
-            border = Border(
-                border = BorderStroke(
-                    width = if (isSelected) 1.5.dp else 0.75.dp,
-                    color = if (isSelected) selectedBorder else Color(0x18FFFFFF)
-                )
-            ),
-            focusedBorder = Border(border = BorderStroke(2.dp, Color.White))
-        ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f)
-    ) {
-        Box(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = label,
-                color = Color.White,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                fontSize = 12.sp,
-                letterSpacing = 0.5.sp
-            )
-        }
-    }
-}

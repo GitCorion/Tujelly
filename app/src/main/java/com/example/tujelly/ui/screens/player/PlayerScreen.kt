@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SubtitlesOff
 import androidx.compose.material.icons.filled.Tune
+import com.example.tujelly.ui.theme.TvAccent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -146,6 +147,9 @@ fun PlayerScreen(
     val streamInfo by viewModel.streamInfo.collectAsState()
     val buttonStyle by viewModel.buttonStyle.collectAsState()
     val isMonochrome by viewModel.isMonochrome.collectAsState()
+    val accentColorKey by viewModel.accentColor.collectAsState()
+    val focusColor = if (isMonochrome) Color.White else TvAccent.getColor(accentColorKey)
+    val focusContent = if (isMonochrome) Color(0xFF0F172A) else TvAccent.getFocusedContentColor(accentColorKey)
 
     var showOverlayControls by remember { mutableStateOf(true) }
     var seekIndicatorText by remember { mutableStateOf<String?>(null) }
@@ -492,7 +496,10 @@ fun PlayerScreen(
                         exoPlayer.prepare()
                         exoPlayer.playWhenReady = true
                         exoPlayer.play()
-                    }
+                    },
+                    isMonochrome = isMonochrome,
+                    focusColor = focusColor,
+                    focusContent = focusContent
                 )
             }
 
@@ -686,6 +693,8 @@ fun PlayerScreen(
                                 currentPositionMs = currentPosition,
                                 bufferedPositionMs = bufferedPosition,
                                 durationMs = duration,
+                                isMonochrome = isMonochrome,
+                                focusColor = focusColor,
                                 modifier = Modifier.fillMaxWidth()
                             )
 
@@ -713,10 +722,12 @@ fun PlayerScreen(
                                         contentDescription = if (isPlaying) "Pausar" else "Reproducir",
                                         size = 46.dp,
                                         iconSize = 24.dp,
-                                        containerColor = Color.White,
-                                        focusedContainerColor = Color.White,
-                                        contentColor = Color(0xFF0F172A),
-                                        focusedContentColor = Color(0xFF0F172A),
+                                        containerColor = if (isMonochrome) Color.White else focusColor,
+                                        focusedContainerColor = if (isMonochrome) Color.White else focusColor,
+                                        contentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                                        focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                                        isMonochrome = isMonochrome,
+                                        focusColor = focusColor,
                                         focusRequester = playPauseFocusRequester
                                     )
 
@@ -732,9 +743,11 @@ fun PlayerScreen(
                                         size = 42.dp,
                                         iconSize = 20.dp,
                                         containerColor = Color(0x22FFFFFF),
-                                        focusedContainerColor = Color.White,
+                                        focusedContainerColor = if (isMonochrome) Color.White else focusColor,
                                         contentColor = Color.White,
-                                        focusedContentColor = Color(0xFF0F172A)
+                                        focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                                        isMonochrome = isMonochrome,
+                                        focusColor = focusColor
                                     )
 
                                     // 3. Fast Forward 10s
@@ -749,9 +762,11 @@ fun PlayerScreen(
                                         size = 42.dp,
                                         iconSize = 20.dp,
                                         containerColor = Color(0x22FFFFFF),
-                                        focusedContainerColor = Color.White,
+                                        focusedContainerColor = if (isMonochrome) Color.White else focusColor,
                                         contentColor = Color.White,
-                                        focusedContentColor = Color(0xFF0F172A)
+                                        focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                                        isMonochrome = isMonochrome,
+                                        focusColor = focusColor
                                     )
 
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -778,7 +793,10 @@ fun PlayerScreen(
                                         icon = Icons.Default.Audiotrack,
                                         label = "Audio",
                                         isSelected = activeModalTab == PlayerModalTab.AUDIO,
-                                        buttonStyle = buttonStyle
+                                        buttonStyle = buttonStyle,
+                                        isMonochrome = isMonochrome,
+                                        focusColor = focusColor,
+                                        focusContent = focusContent
                                     )
 
                                     // 5. Subtitles Selector Button
@@ -789,7 +807,10 @@ fun PlayerScreen(
                                         icon = Icons.Default.Subtitles,
                                         label = "Subtítulos",
                                         isSelected = activeModalTab == PlayerModalTab.SUBTITLES,
-                                        buttonStyle = buttonStyle
+                                        buttonStyle = buttonStyle,
+                                        isMonochrome = isMonochrome,
+                                        focusColor = focusColor,
+                                        focusContent = focusContent
                                     )
 
                                     // 6. Settings Selector Button
@@ -800,7 +821,10 @@ fun PlayerScreen(
                                         icon = Icons.Default.Tune,
                                         label = "Ajustes",
                                         isSelected = activeModalTab == PlayerModalTab.SETTINGS,
-                                        buttonStyle = buttonStyle
+                                        buttonStyle = buttonStyle,
+                                        isMonochrome = isMonochrome,
+                                        focusColor = focusColor,
+                                        focusContent = focusContent
                                     )
                                 }
                             }
@@ -832,7 +856,10 @@ fun PlayerScreen(
                     },
                     onClose = {
                         activeModalTab = PlayerModalTab.NONE
-                    }
+                    },
+                    isMonochrome = isMonochrome,
+                    focusColor = focusColor,
+                    focusContent = focusContent
                 )
             }
         } else {
@@ -845,7 +872,7 @@ fun PlayerScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     CircularProgressIndicator(
-                        color = Color.White,
+                        color = if (isMonochrome) Color.White else focusColor,
                         strokeWidth = 3.dp,
                         modifier = Modifier.size(36.dp)
                     )
@@ -872,6 +899,8 @@ private fun TvCircularIconButton(
     focusedContainerColor: Color = Color.White,
     contentColor: Color = Color.White,
     focusedContentColor: Color = Color(0xFF0F172A),
+    isMonochrome: Boolean = false,
+    focusColor: Color = Color.White,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null
 ) {
@@ -887,7 +916,7 @@ private fun TvCircularIconButton(
         ),
         border = ClickableSurfaceDefaults.border(
             border = Border(border = BorderStroke(1.dp, Color(0x18FFFFFF)), shape = CircleShape),
-            focusedBorder = Border(border = BorderStroke(1.5.dp, Color.White), shape = CircleShape)
+            focusedBorder = Border(border = BorderStroke(1.5.dp, if (isMonochrome) Color.White else focusColor), shape = CircleShape)
         ),
         modifier = modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
@@ -916,6 +945,9 @@ private fun TvPillButton(
     label: String,
     isSelected: Boolean,
     buttonStyle: String = BUTTON_STYLE_ICONS_AND_TEXT,
+    isMonochrome: Boolean = false,
+    focusColor: Color = Color.White,
+    focusContent: Color = Color(0xFF0F172A),
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -926,18 +958,18 @@ private fun TvPillButton(
         onClick = onClick,
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isSelected) Color(0x35FFFFFF) else Color(0x18FFFFFF),
-            focusedContainerColor = Color.White,
+            containerColor = if (isSelected) (if (isMonochrome) Color(0x35FFFFFF) else focusColor.copy(alpha = 0.22f)) else Color(0x18FFFFFF),
+            focusedContainerColor = if (isMonochrome) Color.White else focusColor,
             contentColor = Color.White,
-            focusedContentColor = Color(0xFF0F172A)
+            focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent
         ),
         border = ClickableSurfaceDefaults.border(
             border = Border(
-                border = BorderStroke(1.dp, if (isSelected) Color.White else Color(0x20FFFFFF)),
+                border = BorderStroke(1.dp, if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0x20FFFFFF)),
                 shape = RoundedCornerShape(20.dp)
             ),
             focusedBorder = Border(
-                border = BorderStroke(1.5.dp, Color.White),
+                border = BorderStroke(1.5.dp, if (isMonochrome) Color.White else focusColor),
                 shape = RoundedCornerShape(20.dp)
             )
         ),
@@ -952,7 +984,7 @@ private fun TvPillButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            val currentContentColor = if (isFocused) Color(0xFF0F172A) else Color.White
+            val currentContentColor = if (isFocused) (if (isMonochrome) Color(0xFF0F172A) else focusContent) else Color.White
             if (showIcons) {
                 Icon(
                     imageVector = icon,
@@ -986,7 +1018,10 @@ private fun PlayerCustomModalSheet(
     onSelectSubtitleTrack: (TrackItem?) -> Unit,
     onSelectSpeed: (Float) -> Unit,
     onSelectResizeMode: (Int) -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    isMonochrome: Boolean = false,
+    focusColor: Color = Color.White,
+    focusContent: Color = Color(0xFF0F172A)
 ) {
     Box(
         modifier = Modifier
@@ -1000,7 +1035,7 @@ private fun PlayerCustomModalSheet(
                 .fillMaxHeight()
                 .width(420.dp)
                 .clickable(enabled = false) {}
-                .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)),
+                .border(1.dp, if (isMonochrome) Color(0x22FFFFFF) else focusColor.copy(alpha = 0.35f), RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)),
             shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp),
             colors = NonInteractiveSurfaceDefaults.colors(
                 containerColor = Color(0xFA11121E)
@@ -1038,7 +1073,7 @@ private fun PlayerCustomModalSheet(
                         Icon(
                             imageVector = titleIcon,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = if (isMonochrome) Color.White else focusColor,
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
@@ -1054,8 +1089,8 @@ private fun PlayerCustomModalSheet(
                         colors = ButtonDefaults.colors(
                             containerColor = Color(0x22FFFFFF),
                             contentColor = Color.White,
-                            focusedContainerColor = Color.White,
-                            focusedContentColor = Color(0xFF0F172A)
+                            focusedContainerColor = if (isMonochrome) Color.White else focusColor,
+                            focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent
                         ),
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -1089,6 +1124,9 @@ private fun PlayerCustomModalSheet(
                                     TrackOptionItem(
                                         label = track.label,
                                         isSelected = track.isSelected,
+                                        isMonochrome = isMonochrome,
+                                        focusColor = focusColor,
+                                        focusContent = focusContent,
                                         onClick = {
                                             onSelectAudioTrack(track)
                                             onClose()
@@ -1105,6 +1143,9 @@ private fun PlayerCustomModalSheet(
                                     label = "Desactivados",
                                     isSelected = isSubDisabled,
                                     icon = Icons.Default.SubtitlesOff,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor,
+                                    focusContent = focusContent,
                                     onClick = {
                                         onSelectSubtitleTrack(null)
                                         onClose()
@@ -1116,6 +1157,9 @@ private fun PlayerCustomModalSheet(
                                 TrackOptionItem(
                                     label = track.label,
                                     isSelected = track.isSelected,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor,
+                                    focusContent = focusContent,
                                     onClick = {
                                         onSelectSubtitleTrack(track)
                                         onClose()
@@ -1141,6 +1185,9 @@ private fun PlayerCustomModalSheet(
                                 TrackOptionItem(
                                     label = label,
                                     isSelected = currentSpeed == speed,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor,
+                                    focusContent = focusContent,
                                     onClick = {
                                         onSelectSpeed(speed)
                                     }
@@ -1168,6 +1215,9 @@ private fun PlayerCustomModalSheet(
                                 TrackOptionItem(
                                     label = label,
                                     isSelected = currentResizeMode == mode,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor,
+                                    focusContent = focusContent,
                                     onClick = {
                                         onSelectResizeMode(mode)
                                     }
@@ -1189,15 +1239,18 @@ private fun TrackOptionItem(
     label: String,
     isSelected: Boolean,
     icon: ImageVector? = null,
+    isMonochrome: Boolean = false,
+    focusColor: Color = Color.White,
+    focusContent: Color = Color(0xFF0F172A),
     onClick: () -> Unit
 ) {
     Button(
         onClick = onClick,
         colors = ButtonDefaults.colors(
-            containerColor = if (isSelected) Color(0x35FFFFFF) else Color(0x14FFFFFF),
+            containerColor = if (isSelected) (if (isMonochrome) Color(0x35FFFFFF) else focusColor.copy(alpha = 0.25f)) else Color(0x14FFFFFF),
             contentColor = Color.White,
-            focusedContainerColor = Color.White,
-            focusedContentColor = Color(0xFF0F172A)
+            focusedContainerColor = if (isMonochrome) Color.White else focusColor,
+            focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1218,7 +1271,7 @@ private fun TrackOptionItem(
                         imageVector = icon,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = if (isSelected) Color.White else Color(0xFF94A3B8)
+                        tint = if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0xFF94A3B8)
                     )
                 }
                 Text(
@@ -1233,7 +1286,7 @@ private fun TrackOptionItem(
             Icon(
                 imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.Check,
                 contentDescription = null,
-                tint = if (isSelected) Color.White else Color(0x33FFFFFF),
+                tint = if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0x33FFFFFF),
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -1245,6 +1298,8 @@ private fun TvProgressBar(
     currentPositionMs: Long,
     bufferedPositionMs: Long,
     durationMs: Long,
+    isMonochrome: Boolean = false,
+    focusColor: Color = Color.White,
     modifier: Modifier = Modifier
 ) {
     val progress = if (durationMs > 0) (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
@@ -1280,7 +1335,15 @@ private fun TvProgressBar(
                 .fillMaxWidth(progress)
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color.White)
+                .background(
+                    if (isMonochrome) {
+                        Brush.horizontalGradient(listOf(Color.White, Color.White))
+                    } else {
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFF22D3EE), focusColor)
+                        )
+                    }
+                )
         )
 
         // Thumb Dot
@@ -1292,10 +1355,10 @@ private fun TvProgressBar(
         ) {
             Box(
                 modifier = Modifier
-                    .size(10.dp)
+                    .size(11.dp)
                     .clip(CircleShape)
-                    .background(Color.White)
-                    .border(1.dp, Color(0x44000000), CircleShape)
+                    .background(if (isMonochrome) Color.White else focusColor)
+                    .border(1.dp, Color(0x66000000), CircleShape)
             )
         }
     }
@@ -1425,7 +1488,10 @@ private fun Context.findActivity(): Activity? {
 private fun ResumePlaybackDialog(
     savedPositionMs: Long,
     onResume: () -> Unit,
-    onStartOver: () -> Unit
+    onStartOver: () -> Unit,
+    isMonochrome: Boolean = false,
+    focusColor: Color = Color.White,
+    focusContent: Color = Color(0xFF0F172A)
 ) {
     val resumeFocusRequester = remember { FocusRequester() }
 
@@ -1448,7 +1514,7 @@ private fun ResumePlaybackDialog(
             modifier = Modifier
                 .clip(RoundedCornerShape(20.dp))
                 .background(Color(0xEE121424))
-                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
+                .border(1.dp, if (isMonochrome) Color(0x33FFFFFF) else focusColor.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
                 .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
             // Resume button (focused by default) with position included
@@ -1456,10 +1522,10 @@ private fun ResumePlaybackDialog(
                 onClick = onResume,
                 modifier = Modifier.focusRequester(resumeFocusRequester),
                 colors = ButtonDefaults.colors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF0F172A),
-                    focusedContainerColor = Color(0xFFE0E7FF),
-                    focusedContentColor = Color(0xFF0F172A)
+                    containerColor = if (isMonochrome) Color.White else focusColor,
+                    contentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                    focusedContainerColor = if (isMonochrome) Color(0xFFE0E7FF) else focusColor,
+                    focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent
                 ),
                 shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp))
             ) {
@@ -1487,8 +1553,8 @@ private fun ResumePlaybackDialog(
                 colors = ButtonDefaults.colors(
                     containerColor = Color(0x22FFFFFF),
                     contentColor = Color.White,
-                    focusedContainerColor = Color.White,
-                    focusedContentColor = Color(0xFF0F172A)
+                    focusedContainerColor = if (isMonochrome) Color.White else focusColor,
+                    focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent
                 ),
                 shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp))
             ) {

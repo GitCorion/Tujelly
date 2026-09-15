@@ -1,6 +1,5 @@
 package com.example.tujelly.ui.screens.genre
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -12,9 +11,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -27,14 +32,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.tv.material3.Border
-import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.example.tujelly.ui.components.HeroBanner
+import com.example.tujelly.data.local.BUTTON_STYLE_TEXT_ONLY
+import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
 import com.example.tujelly.ui.components.MediaRow
+import com.example.tujelly.ui.theme.TvAccent
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -51,7 +58,9 @@ fun GenreScreen(
     viewModel: GenreViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current
+    val accentColorKey by viewModel.accentColor.collectAsState()
+    val isMonochrome by viewModel.isMonochrome.collectAsState()
+    val buttonStyleKey by viewModel.buttonStyle.collectAsState()
 
     LaunchedEffect(genreName) {
         viewModel.loadGenreFeed(genreName)
@@ -100,145 +109,81 @@ fun GenreScreen(
                         )
                     )
             ) {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize()) {
                     // Universal Persistent TV TopBar
-                    item {
-                        com.example.tujelly.ui.components.TvTopBar(
-                            selectedTab = com.example.tujelly.ui.components.TvNavTab.NONE,
-                            onNavigateHome = onNavigateHome,
-                            onOpenMedusa = onOpenMedusa,
-                            onOpenFavorites = onOpenFavorites,
-                            onOpenSearch = onOpenSearch,
-                            onOpenSettings = onOpenSettings,
-                            accentColorKey = com.example.tujelly.data.local.ACCENT_CYAN,
-                            buttonStyleKey = com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY,
-                            isMonochrome = isMonochrome,
-                            titleBadge = {
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color(0x22FFFFFF), RoundedCornerShape(16.dp))
-                                        .border(0.75.dp, Color(0x33FFFFFF), RoundedCornerShape(16.dp))
-                                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                                ) {
-                                    Text(
-                                        text = "GÉNERO • ${state.genreName.uppercase()}",
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
-                            }
-                        )
-                    }
-
-                    // Filtro de formato: Todas / Películas / Series
-                    item {
-                        GenreFormatChips(
-                            selected = state.format,
-                            onSelect = { viewModel.setFormat(it) }
-                        )
-                    }
-
-                    // Hero Banner para el elemento enfocado
-                    item {
-                        HeroBanner(
-                            item = state.focusedItem,
-                            onPlayClick = { item -> onPlayMedia(item.id) },
-                            onDetailClick = { item -> onDetailMedia(item.id) }
-                        )
-                    }
-
-                    // Secciones de Género
-                    items(state.sections) { section ->
-                        MediaRow(
-                            section = section,
-                            onItemClick = { item -> onDetailMedia(item.id) },
-                            onItemFocus = { item -> viewModel.setFocusedItem(item) }
-                        )
-                    }
-
-                    if (state.sections.isEmpty()) {
-                        item {
+                    com.example.tujelly.ui.components.TvTopBar(
+                        selectedTab = com.example.tujelly.ui.components.TvNavTab.NONE,
+                        onNavigateHome = onNavigateHome,
+                        onOpenMedusa = onOpenMedusa,
+                        onOpenFavorites = onOpenFavorites,
+                        onOpenSearch = onOpenSearch,
+                        onOpenSettings = onOpenSettings,
+                        accentColorKey = accentColorKey,
+                        buttonStyleKey = buttonStyleKey,
+                        isMonochrome = isMonochrome,
+                        titleBadge = {
+                            val badgeBg = if (isMonochrome) Color(0x22FFFFFF) else TvAccent.getColor(accentColorKey).copy(alpha = 0.18f)
+                            val badgeBorder = if (isMonochrome) Color(0x33FFFFFF) else TvAccent.getColor(accentColorKey).copy(alpha = 0.55f)
+                            val badgeText = if (isMonochrome) Color.White else TvAccent.getColor(accentColorKey)
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 48.dp, vertical = 48.dp),
-                                contentAlignment = Alignment.Center
+                                    .background(badgeBg, RoundedCornerShape(16.dp))
+                                    .border(0.75.dp, badgeBorder, RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
                             ) {
                                 Text(
-                                    text = "No hay títulos para este filtro en ${state.genreName}.",
-                                    color = Color(0x99FFFFFF),
-                                    fontSize = 14.sp
+                                    text = "GÉNERO • ${state.genreName.uppercase()}",
+                                    color = badgeText,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
                                 )
                             }
                         }
-                    }
+                    )
 
-                    item {
-                        Spacer(modifier = Modifier.height(32.dp))
+                    // Filtro de formato centrado, fino y elegante
+                    com.example.tujelly.ui.components.FormatFilterBar(
+                        selected = state.format,
+                        onSelect = { viewModel.setFormat(it) },
+                        accentColorKey = accentColorKey,
+                        buttonStyleKey = buttonStyleKey,
+                        isMonochrome = isMonochrome
+                    )
+
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        // Secciones de Género
+                        items(state.sections) { section ->
+                            MediaRow(
+                                section = section,
+                                onItemClick = { item -> onDetailMedia(item.id) },
+                                onItemFocus = { item -> viewModel.setFocusedItem(item) }
+                            )
+                        }
+
+                        if (state.sections.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 48.dp, vertical = 48.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No hay títulos para este filtro en ${state.genreName}.",
+                                        color = Color(0x99FFFFFF),
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        item {
+                            Spacer(modifier = Modifier.height(32.dp))
+                        }
                     }
                 }
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun GenreFormatChips(
-    selected: GenreFormat,
-    onSelect: (GenreFormat) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 48.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        FormatChip(label = "Todas", isSelected = selected == GenreFormat.ALL) { onSelect(GenreFormat.ALL) }
-        FormatChip(label = "Películas", isSelected = selected == GenreFormat.MOVIES) { onSelect(GenreFormat.MOVIES) }
-        FormatChip(label = "Series", isSelected = selected == GenreFormat.SERIES) { onSelect(GenreFormat.SERIES) }
-    }
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun FormatChip(
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isSelected) Color(0x33FFFFFF) else Color(0x10FFFFFF),
-            focusedContainerColor = if (isSelected) Color(0x40FFFFFF) else Color(0x28FFFFFF)
-        ),
-        border = ClickableSurfaceDefaults.border(
-            border = Border(
-                border = BorderStroke(
-                    width = if (isSelected) 1.5.dp else 0.75.dp,
-                    color = if (isSelected) Color.White else Color(0x18FFFFFF)
-                )
-            ),
-            focusedBorder = Border(border = BorderStroke(2.dp, Color.White))
-        ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f)
-    ) {
-        Box(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = label,
-                color = Color.White,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                fontSize = 13.sp,
-                letterSpacing = 0.5.sp
-            )
         }
     }
 }

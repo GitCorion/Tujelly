@@ -117,11 +117,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // Si ya tenemos snapshot previo, lo mostramos de inmediato (sin spinner) y refrescamos en segundo plano.
         val cached = lastSections
         if (!cached.isNullOrEmpty()) {
+            val filtered = filterSections(cached, _selectedFormat.value)
             val currentFocused = (_uiState.value as? HomeUiState.Success)?.focusedItem
             _uiState.value = HomeUiState.Success(
-                sections = cached,
+                sections = filtered,
                 genres = lastGenres,
-                focusedItem = currentFocused ?: cached.firstOrNull()?.items?.firstOrNull()
+                focusedItem = currentFocused ?: filtered.firstOrNull()?.items?.firstOrNull()
             )
         } else {
             _uiState.value = HomeUiState.Loading
@@ -146,10 +147,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         hasEmitted = true
                         lastSections = sections
                         lastGenres = mediaRepository.getMostWatchedGenres()
+                        val filtered = filterSections(sections, _selectedFormat.value)
                         val currentFocused = (_uiState.value as? HomeUiState.Success)?.focusedItem
-                        val firstItem = currentFocused ?: sections.firstOrNull()?.items?.firstOrNull()
+                        val firstItem = currentFocused ?: filtered.firstOrNull()?.items?.firstOrNull()
                         _uiState.value = HomeUiState.Success(
-                            sections = sections,
+                            sections = filtered,
                             genres = lastGenres,
                             focusedItem = firstItem
                         )
@@ -164,6 +166,45 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } finally {
                 isFeedLoading = false
+            }
+        }
+    }
+
+    private val _selectedFormat = MutableStateFlow(com.example.tujelly.domain.model.MediaFormatFilter.ALL)
+    val selectedFormat: StateFlow<com.example.tujelly.domain.model.MediaFormatFilter> = _selectedFormat.asStateFlow()
+
+    fun setFormat(format: com.example.tujelly.domain.model.MediaFormatFilter) {
+        _selectedFormat.value = format
+        val sections = lastSections ?: return
+        val filtered = filterSections(sections, format)
+        val currentFocused = (_uiState.value as? HomeUiState.Success)?.focusedItem
+        val firstItem = if (filtered.any { it.items.any { item -> item.id == currentFocused?.id } }) {
+            currentFocused
+        } else {
+            filtered.firstOrNull()?.items?.firstOrNull()
+        }
+        _uiState.value = HomeUiState.Success(
+            sections = filtered,
+            genres = lastGenres,
+            focusedItem = firstItem
+        )
+    }
+
+    private fun filterSections(
+        rawSections: List<HomeSection>,
+        format: com.example.tujelly.domain.model.MediaFormatFilter
+    ): List<HomeSection> {
+        return when (format) {
+            com.example.tujelly.domain.model.MediaFormatFilter.ALL -> rawSections
+            com.example.tujelly.domain.model.MediaFormatFilter.MOVIES -> rawSections.mapNotNull { section ->
+                val filteredItems = section.items.filter { it.type.equals("Movie", ignoreCase = true) }
+                if (filteredItems.isNotEmpty()) section.copy(items = filteredItems) else null
+            }
+            com.example.tujelly.domain.model.MediaFormatFilter.SERIES -> rawSections.mapNotNull { section ->
+                val filteredItems = section.items.filter {
+                    it.type.equals("Series", ignoreCase = true) || it.type.equals("Episode", ignoreCase = true)
+                }
+                if (filteredItems.isNotEmpty()) section.copy(items = filteredItems) else null
             }
         }
     }

@@ -8,9 +8,13 @@ import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
 
 class GetHomeFeedUseCase(
     private val mediaRepository: MediaRepository,
@@ -108,7 +112,7 @@ class GetHomeFeedUseCase(
                     items = curatedTopMovies.map {
                         it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
                     },
-                    badge = "DESTACADO"
+                    badge = null
                 )
             )
         }
@@ -121,7 +125,7 @@ class GetHomeFeedUseCase(
                     items = curatedTopSeries.map {
                         it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
                     },
-                    badge = "SERIES"
+                    badge = null
                 )
             )
         }
@@ -148,9 +152,9 @@ class GetHomeFeedUseCase(
                 items = resumeItems.take(15).map {
                     it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
                 },
-                badge = "EN CURSO"
+                badge = null
             )
-            sections.removeAll { it.badge == "EN CURSO" }
+            sections.removeAll { it.title == "Continuar Viendo" }
             sections.add(0, continueSection)
             emit(sections.toList())
         }
@@ -183,9 +187,9 @@ class GetHomeFeedUseCase(
                 items = latestItems.take(20).map {
                     it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
                 },
-                badge = "NOVEDADES"
+                badge = null
             )
-            val insertIdx = if (sections.any { it.badge == "EN CURSO" }) 1 else 0
+            val insertIdx = if (sections.any { it.title == "Continuar Viendo" }) 1 else 0
             sections.add(insertIdx, latestSection)
             emit(sections.toList())
         }
@@ -248,7 +252,7 @@ class GetHomeFeedUseCase(
                                     items = finalRecs.map {
                                         it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_RECOMMENDATION)
                                     },
-                                    badge = "RECOMENDADO"
+                                    badge = null
                                 )
                             )
                             emit(sections.toList())
@@ -276,7 +280,7 @@ class GetHomeFeedUseCase(
                             items = genreItems.map {
                                 it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
                             },
-                            badge = "RECOMENDADO"
+                            badge = null
                         )
                     )
                     emit(sections.toList())
@@ -306,10 +310,10 @@ class GetHomeFeedUseCase(
                             items = matchedDaily.take(10).mapIndexed { idx, it ->
                                 it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING).copy(rank = idx + 1)
                             },
-                            badge = "TOP 10",
+                            badge = null,
                             isRanked = true
                         )
-                        val insertIdx = if (sections.any { it.badge == "EN CURSO" }) 1 else 0
+                        val insertIdx = if (sections.any { it.title == "Continuar Viendo" }) 1 else 0
                         sections.add(insertIdx, top10Section)
                         emit(sections.toList())
                     }
@@ -327,30 +331,43 @@ class GetHomeFeedUseCase(
             }
 
             try {
-                coroutineScope {
-                    val providerDeferreds = activeProviders.map { platform ->
-                        async {
-                            val result = mediaRepository.getTmdbByProvider(
-                                apiKey = prefs.tmdbApiKey,
-                                providerId = platform.providerId,
-                                region = prefs.watchRegion
-                            )
-                            val matched = filterToLibraryUseCase.filterTmdbItems(
-                                tmdbItems = result.getOrDefault(emptyList()),
-                                serverUrl = prefs.jellyfinServerUrl,
-                                userId = prefs.jellyfinUserId,
-                                token = prefs.jellyfinAccessToken,
-                                maxCandidates = 50
-                            )
-                            if (matched.isNotEmpty()) {
-                                platform to matched
-                            } else null
+                supervisorScope {
+                    val channel = Channel<Pair<com.example.tujelly.data.model.StreamPlatform, List<JellyfinMediaEntity>>>(Channel.UNLIMITED)
+                    val semaphore = Semaphore(3)
+
+                    val workers = activeProviders.map { platform ->
+                        launch {
+                            runCatching {
+                                semaphore.acquire()
+                                try {
+                                    val result = mediaRepository.getTmdbByProvider(
+                                        apiKey = prefs.tmdbApiKey,
+                                        providerId = platform.providerId,
+                                        region = prefs.watchRegion
+                                    )
+                                    val matched = filterToLibraryUseCase.filterTmdbItems(
+                                        tmdbItems = result.getOrDefault(emptyList()),
+                                        serverUrl = prefs.jellyfinServerUrl,
+                                        userId = prefs.jellyfinUserId,
+                                        token = prefs.jellyfinAccessToken,
+                                        maxCandidates = 50
+                                    )
+                                    if (matched.isNotEmpty()) {
+                                        channel.send(platform to matched)
+                                    }
+                                } finally {
+                                    semaphore.release()
+                                }
+                            }
                         }
                     }
 
-                    val providerResults = providerDeferreds.awaitAll().filterNotNull()
-                    var addedAny = false
-                    for ((platform, matched) in providerResults) {
+                    launch {
+                        workers.forEach { it.join() }
+                        channel.close()
+                    }
+
+                    for ((platform, matched) in channel) {
                         val uniqueMatched = matched.filter { it.id !in shownMediaIds }
                         if (uniqueMatched.isNotEmpty()) {
                             shownMediaIds.addAll(uniqueMatched.map { it.id })
@@ -360,14 +377,11 @@ class GetHomeFeedUseCase(
                                     items = uniqueMatched.take(20).map {
                                         it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
                                     },
-                                    badge = platform.name
+                                    badge = null
                                 )
                             )
-                            addedAny = true
+                            emit(sections.toList())
                         }
-                    }
-                    if (addedAny) {
-                        emit(sections.toList())
                     }
                 }
             } catch (_: Exception) {}
@@ -395,7 +409,7 @@ class GetHomeFeedUseCase(
                     items = effectiveRecommended.map {
                         it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
                     },
-                    badge = "PELÍCULAS"
+                    badge = null
                 )
             )
             emit(sections.toList())
@@ -428,7 +442,7 @@ class GetHomeFeedUseCase(
                             items = matchedTraktRecs.map {
                                 it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TRAKT_RECOMMENDATION)
                             },
-                            badge = "TRAKT"
+                            badge = null
                         )
                     )
                     emit(sections.toList())
@@ -457,7 +471,7 @@ class GetHomeFeedUseCase(
                             items = matchedWatchlist.map {
                                 it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TRAKT_WATCHLIST)
                             },
-                            badge = "TRAKT"
+                            badge = null
                         )
                     )
                     emit(sections.toList())
@@ -484,7 +498,7 @@ class GetHomeFeedUseCase(
                         items = matchedTrending.map {
                             it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TRAKT_RECOMMENDATION)
                         },
-                        badge = "TRAKT"
+                        badge = null
                     )
                 )
                 emit(sections.toList())

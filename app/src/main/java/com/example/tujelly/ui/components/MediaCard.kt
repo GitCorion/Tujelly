@@ -25,6 +25,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -143,12 +145,52 @@ fun MediaCard(
                     .aspectRatio(2f / 3f)
                     .clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
             ) {
-                AsyncImage(
-                    model = item.posterUrl,
-                    contentDescription = item.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                var isImageError by remember(item.id, item.posterUrl) { mutableStateOf(false) }
+
+                if (!isImageError && !item.posterUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = item.posterUrl,
+                        contentDescription = item.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                        onError = { isImageError = true }
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color(0xFF232A3B), Color(0xFF0F1420))
+                                )
+                            )
+                            .padding(10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Movie,
+                                contentDescription = null,
+                                tint = Color(0x66FFFFFF),
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = item.title,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+                }
 
                 // Top-Right Rating Badge
                 if (item.rating != null && item.rating > 0f) {
@@ -161,7 +203,7 @@ fun MediaCard(
                     )
                 }
 
-                // Top-Left Badges: TOP 10 rank, Favorito, Visto
+                // Top-Left Badges: Favorito, Visto
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -169,26 +211,6 @@ fun MediaCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (item.rank != null) {
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = Color(0xCC000000),
-                                    shape = RoundedCornerShape(3.dp)
-                                )
-                                .border(0.5.dp, Color(0x33FFFFFF), RoundedCornerShape(3.dp))
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "TOP 10",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 8.sp,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-                    }
-
                     val indicatorTheme = com.example.tujelly.ui.theme.LocalIndicatorTheme.current
                     val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current ||
                             indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
@@ -290,16 +312,37 @@ fun MediaCard(
                             )
                     )
 
-                    Text(
-                        text = "${item.rank}",
-                        color = Color.White,
-                        fontWeight = FontWeight.Black,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                        fontSize = 42.sp,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = 6.dp, bottom = 2.dp)
-                    )
+                    if (isMonochrome) {
+                        Text(
+                            text = "${item.rank}",
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            fontSize = 42.sp,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(start = 6.dp, bottom = 2.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "${item.rank}",
+                            style = MaterialTheme.typography.displayMedium.copy(
+                                brush = Brush.verticalGradient(
+                                    listOf(
+                                        Color(0xFFFFFFFF),
+                                        Color(0xFF38BDF8),
+                                        Color(0xFFA775F8)
+                                    )
+                                ),
+                                fontWeight = FontWeight.Black,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                fontSize = 42.sp
+                            ),
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(start = 6.dp, bottom = 2.dp)
+                        )
+                    }
                 }
             }
 
@@ -311,7 +354,11 @@ fun MediaCard(
                 Text(
                     text = item.title,
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (isFocused) Color.White else Color(0xFFE2E8F0),
+                    color = if (isFocused) {
+                        if (isMonochrome) Color.White else focusBorderColor
+                    } else {
+                        Color(0xFFE2E8F0)
+                    },
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

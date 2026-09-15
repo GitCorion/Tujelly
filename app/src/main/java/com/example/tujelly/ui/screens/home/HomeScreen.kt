@@ -71,7 +71,6 @@ import com.example.tujelly.ui.components.GenreRow
 import com.example.tujelly.ui.components.HeroBanner
 import com.example.tujelly.ui.components.MediaRow
 import com.example.tujelly.ui.theme.TvAccent
-import com.example.tujelly.ui.theme.TvPill
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -91,6 +90,7 @@ fun HomeScreen(
     val isMonochrome by viewModel.isMonochrome.collectAsState()
     val buttonStyleKey by viewModel.buttonStyle.collectAsState()
     val selectedPlatforms by viewModel.selectedPlatforms.collectAsState()
+    val selectedFormat by viewModel.selectedFormat.collectAsState()
     val showTopIcons = buttonStyleKey != BUTTON_STYLE_TEXT_ONLY
     val showTopText = buttonStyleKey != BUTTON_STYLE_ICONS_ONLY
 
@@ -154,6 +154,17 @@ fun HomeScreen(
             syncProgress = syncProgress,
             localMediaCount = localMediaCount
         )
+
+        // Universal Format Filter Bar (Homogéneo, centrado, fino y elegante)
+        if (uiState is HomeUiState.Success) {
+            com.example.tujelly.ui.components.FormatFilterBar(
+                selected = selectedFormat,
+                onSelect = { viewModel.setFormat(it) },
+                accentColorKey = accentColorKey,
+                buttonStyleKey = buttonStyleKey,
+                isMonochrome = isMonochrome
+            )
+        }
 
 
         when (val state = uiState) {
@@ -327,6 +338,8 @@ fun HomeScreen(
                             }
                         }
 
+                        val featuredItems = state.sections.firstOrNull()?.items?.take(5) ?: emptyList()
+
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -341,6 +354,7 @@ fun HomeScreen(
                         ) {
                             HeroBanner(
                                 item = state.focusedItem,
+                                featuredItems = featuredItems,
                                 onPlayClick = { item -> onPlayMedia(item.id) },
                                 onDetailClick = { item -> onDetailMedia(item.id) },
                                 accentColor = accentColorKey,

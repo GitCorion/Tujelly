@@ -157,7 +157,9 @@ fun LuxurySettingTile(
     description: String? = null,
     badge: String? = null,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isMonochrome: Boolean = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current,
+    focusColor: Color = if (isMonochrome) Color.White else TvAccent.getColor(com.example.tujelly.ui.theme.LocalAccentColor.current)
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
@@ -174,7 +176,7 @@ fun LuxurySettingTile(
         ),
         border = ClickableSurfaceDefaults.border(
             border = Border(border = BorderStroke(0.75.dp, Color(0x18FFFFFF))),
-            focusedBorder = Border(border = BorderStroke(2.dp, Color.White))
+            focusedBorder = Border(border = BorderStroke(2.dp, if (isMonochrome) Color.White else focusColor))
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f)
     ) {
@@ -237,7 +239,9 @@ fun SidebarCategoryButton(
     title: String,
     subtitle: String,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isMonochrome: Boolean = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current,
+    focusColor: Color = if (isMonochrome) Color.White else TvAccent.getColor(com.example.tujelly.ui.theme.LocalAccentColor.current)
 ) {
     Surface(
         onClick = onClick,
@@ -246,19 +250,28 @@ fun SidebarCategoryButton(
             .padding(vertical = 4.dp),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isSelected) Color(0x35FFFFFF) else Color(0x10FFFFFF),
-            focusedContainerColor = Color(0x28FFFFFF)
+            containerColor = if (isSelected) {
+                if (isMonochrome) Color(0x35FFFFFF) else focusColor.copy(alpha = 0.22f)
+            } else Color(0x10FFFFFF),
+            focusedContainerColor = if (isSelected) {
+                if (isMonochrome) Color(0x45FFFFFF) else focusColor.copy(alpha = 0.35f)
+            } else Color(0x28FFFFFF)
         ),
         border = ClickableSurfaceDefaults.border(
-            border = Border(border = BorderStroke(1.dp, if (isSelected) Color.White else Color(0x18FFFFFF))),
-            focusedBorder = Border(border = BorderStroke(2.dp, Color.White))
+            border = Border(
+                border = BorderStroke(
+                    1.dp,
+                    if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0x18FFFFFF)
+                )
+            ),
+            focusedBorder = Border(border = BorderStroke(2.dp, if (isMonochrome) Color.White else focusColor))
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f)
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text(
                 text = title,
-                color = Color.White,
+                color = if (isSelected && !isMonochrome) focusColor else Color.White,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                 fontSize = 13.sp,
                 letterSpacing = 0.5.sp
@@ -285,6 +298,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val focusColor = if (uiState.isMonochrome) Color.White else TvAccent.getColor(uiState.accentColor)
+    val focusContent = if (uiState.isMonochrome) Color(0xFF0F172A) else TvAccent.getFocusedContentColor(uiState.accentColor)
 
     // Auto-navigate back after successful Jellyfin connection
     LaunchedEffect(uiState.isSuccess) {
@@ -348,21 +363,27 @@ fun SettingsScreen(
                     title = "SERVIDOR JELLYFIN",
                     subtitle = jfSubtitle,
                     isSelected = uiState.activeCategory == 0,
-                    onClick = { viewModel.selectCategory(0) }
+                    onClick = { viewModel.selectCategory(0) },
+                    isMonochrome = uiState.isMonochrome,
+                    focusColor = focusColor
                 )
 
                 SidebarCategoryButton(
                     title = "TRAKT.TV",
                     subtitle = if (uiState.isTraktConnected) "Vinculado" else "No vinculado",
                     isSelected = uiState.activeCategory == 1,
-                    onClick = { viewModel.selectCategory(1) }
+                    onClick = { viewModel.selectCategory(1) },
+                    isMonochrome = uiState.isMonochrome,
+                    focusColor = focusColor
                 )
 
                 SidebarCategoryButton(
                     title = "REGIÓN & STREAMING",
                     subtitle = "País: ${uiState.watchRegion}",
                     isSelected = uiState.activeCategory == 2,
-                    onClick = { viewModel.selectCategory(2) }
+                    onClick = { viewModel.selectCategory(2) },
+                    isMonochrome = uiState.isMonochrome,
+                    focusColor = focusColor
                 )
 
                 SidebarCategoryButton(
@@ -373,14 +394,18 @@ fun SettingsScreen(
                         else -> "Iconos y Letras"
                     },
                     isSelected = uiState.activeCategory == 3,
-                    onClick = { viewModel.selectCategory(3) }
+                    onClick = { viewModel.selectCategory(3) },
+                    isMonochrome = uiState.isMonochrome,
+                    focusColor = focusColor
                 )
 
                 SidebarCategoryButton(
                     title = "ACTUALIZACIONES",
                     subtitle = if (uiState.updateInfo?.hasUpdate == true) "¡Actualización disponible!" else "v1.0 (Al día)",
                     isSelected = uiState.activeCategory == 4,
-                    onClick = { viewModel.selectCategory(4) }
+                    onClick = { viewModel.selectCategory(4) },
+                    isMonochrome = uiState.isMonochrome,
+                    focusColor = focusColor
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
@@ -390,8 +415,8 @@ fun SettingsScreen(
                     colors = ButtonDefaults.colors(
                         containerColor = Color(0x14FFFFFF),
                         contentColor = Color.White,
-                        focusedContainerColor = Color.White,
-                        focusedContentColor = Color(0xFF0F172A)
+                        focusedContainerColor = if (uiState.isMonochrome) Color.White else focusColor,
+                        focusedContentColor = if (uiState.isMonochrome) Color(0xFF0F172A) else focusContent
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -422,12 +447,34 @@ fun SettingsScreen(
                         3 -> "Estilo de Botones e Interfaz"
                         else -> "Actualizaciones de Tujelly (GitHub)"
                     }
-                    Text(
-                        text = categoryTitle,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!uiState.isMonochrome) {
+                            Box(
+                                modifier = Modifier
+                                    .width(4.dp)
+                                    .height(20.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(Color(0xFF22D3EE), focusColor)
+                                        )
+                                    )
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                        }
+                        Text(
+                            text = categoryTitle,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                brush = if (!uiState.isMonochrome) {
+                                    Brush.horizontalGradient(
+                                        colors = listOf(Color.White, Color(0xFFE2E8F0), focusColor.copy(alpha = 0.85f))
+                                    )
+                                } else null
+                            ),
+                            color = if (uiState.isMonochrome) Color.White else Color.Unspecified,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         // Jellyfin Status Pill
@@ -1474,22 +1521,25 @@ fun ButtonStyleSelectionCard(
     description: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isMonochrome: Boolean = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current,
+    focusColor: Color = if (isMonochrome) Color.White else TvAccent.getColor(com.example.tujelly.ui.theme.LocalAccentColor.current),
+    focusContent: Color = if (isMonochrome) Color(0xFF0F172A) else TvAccent.getFocusedContentColor(com.example.tujelly.ui.theme.LocalAccentColor.current)
 ) {
     Surface(
         onClick = onClick,
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isSelected) Color(0x28FFFFFF) else Color(0xFF131422),
+            containerColor = if (isSelected) (if (isMonochrome) Color(0x28FFFFFF) else focusColor.copy(alpha = 0.22f)) else Color(0xFF131422),
             focusedContainerColor = Color(0x40FFFFFF)
         ),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
         border = ClickableSurfaceDefaults.border(
             border = Border(
-                border = BorderStroke(1.dp, if (isSelected) Color.White else Color(0xFF222438)),
+                border = BorderStroke(1.dp, if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0xFF222438)),
                 shape = RoundedCornerShape(10.dp)
             ),
             focusedBorder = Border(
-                border = BorderStroke(1.5.dp, Color.White),
+                border = BorderStroke(1.5.dp, if (isMonochrome) Color.White else focusColor),
                 shape = RoundedCornerShape(10.dp)
             )
         ),
@@ -1502,7 +1552,7 @@ fun ButtonStyleSelectionCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = if (isSelected) Color.White else Color(0xFFE2E8F0),
+                    color = if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0xFFE2E8F0),
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                     fontSize = 14.sp
                 )
@@ -1517,9 +1567,9 @@ fun ButtonStyleSelectionCard(
                 Spacer(modifier = Modifier.width(12.dp))
                 TvPill(
                     text = "SELECCIONADO",
-                    containerColor = Color.White,
-                    textColor = Color(0xFF0F172A),
-                    borderColor = Color.White
+                    containerColor = if (isMonochrome) Color.White else focusColor,
+                    textColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                    borderColor = if (isMonochrome) Color.White else focusColor
                 )
             }
         }
@@ -1703,22 +1753,25 @@ fun IndicatorThemeSelectionCard(
     isSelected: Boolean,
     isColorMode: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isMonochrome: Boolean = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current,
+    focusColor: Color = if (isMonochrome) Color.White else TvAccent.getColor(com.example.tujelly.ui.theme.LocalAccentColor.current),
+    focusContent: Color = if (isMonochrome) Color(0xFF0F172A) else TvAccent.getFocusedContentColor(com.example.tujelly.ui.theme.LocalAccentColor.current)
 ) {
     Surface(
         onClick = onClick,
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isSelected) Color(0x28FFFFFF) else Color(0xFF131422),
+            containerColor = if (isSelected) (if (isMonochrome) Color(0x28FFFFFF) else focusColor.copy(alpha = 0.22f)) else Color(0xFF131422),
             focusedContainerColor = Color(0x40FFFFFF)
         ),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
         border = ClickableSurfaceDefaults.border(
             border = Border(
-                border = BorderStroke(1.dp, if (isSelected) Color.White else Color(0xFF222438)),
+                border = BorderStroke(1.dp, if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0xFF222438)),
                 shape = RoundedCornerShape(10.dp)
             ),
             focusedBorder = Border(
-                border = BorderStroke(2.dp, Color.White),
+                border = BorderStroke(2.dp, if (isMonochrome) Color.White else focusColor),
                 shape = RoundedCornerShape(10.dp)
             )
         ),
@@ -1786,7 +1839,7 @@ fun IndicatorThemeSelectionCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = if (isSelected) Color.White else Color(0xFFE2E8F0),
+                    color = if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0xFFE2E8F0),
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                     fontSize = 14.sp
                 )
@@ -1802,9 +1855,9 @@ fun IndicatorThemeSelectionCard(
                 Spacer(modifier = Modifier.width(12.dp))
                 TvPill(
                     text = "ACTIVO",
-                    containerColor = Color.White,
-                    textColor = Color(0xFF0F172A),
-                    borderColor = Color.White
+                    containerColor = if (isMonochrome) Color.White else focusColor,
+                    textColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                    borderColor = if (isMonochrome) Color.White else focusColor
                 )
             }
         }
@@ -1819,22 +1872,25 @@ private fun PlatformLogoStyleSelectionCard(
     isSelected: Boolean,
     isColorMode: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isMonochrome: Boolean = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current,
+    focusColor: Color = if (isMonochrome) Color.White else TvAccent.getColor(com.example.tujelly.ui.theme.LocalAccentColor.current),
+    focusContent: Color = if (isMonochrome) Color(0xFF0F172A) else TvAccent.getFocusedContentColor(com.example.tujelly.ui.theme.LocalAccentColor.current)
 ) {
     Surface(
         onClick = onClick,
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isSelected) Color(0x28FFFFFF) else Color(0xFF131422),
+            containerColor = if (isSelected) (if (isMonochrome) Color(0x28FFFFFF) else focusColor.copy(alpha = 0.22f)) else Color(0xFF131422),
             focusedContainerColor = Color(0x40FFFFFF)
         ),
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
         border = ClickableSurfaceDefaults.border(
             border = Border(
-                border = BorderStroke(1.dp, if (isSelected) Color.White else Color(0xFF222438)),
+                border = BorderStroke(1.dp, if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0xFF222438)),
                 shape = RoundedCornerShape(10.dp)
             ),
             focusedBorder = Border(
-                border = BorderStroke(2.dp, Color.White),
+                border = BorderStroke(2.dp, if (isMonochrome) Color.White else focusColor),
                 shape = RoundedCornerShape(10.dp)
             )
         ),
@@ -1909,7 +1965,7 @@ private fun PlatformLogoStyleSelectionCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = if (isSelected) Color.White else Color(0xFFE2E8F0),
+                    color = if (isSelected) (if (isMonochrome) Color.White else focusColor) else Color(0xFFE2E8F0),
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                     fontSize = 14.sp
                 )
@@ -1925,9 +1981,9 @@ private fun PlatformLogoStyleSelectionCard(
                 Spacer(modifier = Modifier.width(12.dp))
                 TvPill(
                     text = "ACTIVO",
-                    containerColor = Color.White,
-                    textColor = Color(0xFF0F172A),
-                    borderColor = Color.White
+                    containerColor = if (isMonochrome) Color.White else focusColor,
+                    textColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                    borderColor = if (isMonochrome) Color.White else focusColor
                 )
             }
         }
@@ -1940,7 +1996,9 @@ private fun PlatformToggleRow(
     platform: com.example.tujelly.data.model.StreamPlatform,
     isSelected: Boolean,
     onToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isMonochrome: Boolean = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current,
+    focusColor: Color = if (isMonochrome) Color.White else TvAccent.getColor(com.example.tujelly.ui.theme.LocalAccentColor.current)
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
@@ -1956,8 +2014,8 @@ private fun PlatformToggleRow(
             focusedContainerColor = Color(0x28FFFFFF)
         ),
         border = ClickableSurfaceDefaults.border(
-            border = Border(border = BorderStroke(0.75.dp, if (isSelected) Color(0x664F46E5) else Color(0x18FFFFFF))),
-            focusedBorder = Border(border = BorderStroke(2.dp, Color.White))
+            border = Border(border = BorderStroke(0.75.dp, if (isSelected) (if (isMonochrome) Color(0x66FFFFFF) else focusColor.copy(alpha = 0.6f)) else Color(0x18FFFFFF))),
+            focusedBorder = Border(border = BorderStroke(2.dp, if (isMonochrome) Color.White else focusColor))
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f)
     ) {

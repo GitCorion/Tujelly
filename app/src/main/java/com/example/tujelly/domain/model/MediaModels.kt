@@ -24,7 +24,8 @@ data class MediaItem(
     val isPlayed: Boolean = false,
     val isFavorite: Boolean = false,
     val totalEpisodes: Int? = null,
-    val playedEpisodes: Int? = null
+    val playedEpisodes: Int? = null,
+    val trailerUrl: String? = null
 )
 
 data class HomeSection(

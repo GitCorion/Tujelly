@@ -64,10 +64,20 @@ class FilterToLibraryUseCase(
                 title = title,
                 year = year
             )
-            if (entity != null && item.voteAverage != null && item.voteAverage > 0f) {
-                entity.copy(communityRating = item.voteAverage)
+            if (entity != null) {
+                var updated = entity
+                if (item.voteAverage != null && item.voteAverage > 0f) {
+                    updated = updated.copy(communityRating = item.voteAverage)
+                }
+                if (updated.primaryImageTag.isNullOrEmpty() && !item.posterPath.isNullOrBlank()) {
+                    updated = updated.copy(primaryImageTag = "tmdb:${item.posterPath}")
+                }
+                if (updated.backdropImageTag.isNullOrEmpty() && !item.backdropPath.isNullOrBlank()) {
+                    updated = updated.copy(backdropImageTag = "tmdb:${item.backdropPath}")
+                }
+                updated
             } else {
-                entity
+                null
             }
         }.filter { seenIds.add(it.id) }
     }

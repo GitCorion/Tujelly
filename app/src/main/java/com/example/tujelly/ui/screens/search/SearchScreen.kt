@@ -44,7 +44,6 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
 import com.example.tujelly.data.local.BUTTON_STYLE_TEXT_ONLY
-import com.example.tujelly.ui.components.HeroBanner
 import com.example.tujelly.ui.components.MediaRow
 import com.example.tujelly.ui.theme.TvAccent
 import com.example.tujelly.ui.theme.TvPill
@@ -106,9 +105,9 @@ fun SearchScreen(
         ) {
             TvPill(
                 text = "BUSCADOR",
-                containerColor = Color(0x18FFFFFF),
-                textColor = Color(0xFFE2E8F0),
-                borderColor = Color(0x22FFFFFF),
+                containerColor = if (isMonochrome) Color(0x18FFFFFF) else focusColor.copy(alpha = 0.18f),
+                textColor = if (isMonochrome) Color(0xFFE2E8F0) else focusColor,
+                borderColor = if (isMonochrome) Color(0x22FFFFFF) else focusColor.copy(alpha = 0.45f),
                 fontSizeSp = 11,
                 horizontalPadDp = 10.dp,
                 verticalPadDp = 6.dp
@@ -124,7 +123,7 @@ fun SearchScreen(
                     Icon(
                         imageVector = Icons.Rounded.Search,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = if (isMonochrome) Color.White else focusColor,
                         modifier = Modifier.size(20.dp)
                     )
                 },
@@ -140,9 +139,9 @@ fun SearchScreen(
                     unfocusedTextColor = Color.White,
                     focusedContainerColor = Color(0xFF1B1E2E),
                     unfocusedContainerColor = Color(0xFF141624),
-                    focusedBorderColor = Color(0xFF38BDF8),
+                    focusedBorderColor = if (isMonochrome) Color.White else focusColor,
                     unfocusedBorderColor = Color(0x44FFFFFF),
-                    cursorColor = Color(0xFF38BDF8)
+                    cursorColor = if (isMonochrome) Color.White else focusColor
                 )
             )
         }
@@ -164,18 +163,7 @@ fun SearchScreen(
                 }
             }
 
-            // Hero Banner for focused item
-            if (uiState.focusedItem != null) {
-                item {
-                    HeroBanner(
-                        item = uiState.focusedItem,
-                        onPlayClick = { item -> onPlayMedia(item.id) },
-                        onDetailClick = { item -> onDetailMedia(item.id) },
-                        accentColor = accentColorKey,
-                        buttonStyle = buttonStyleKey
-                    )
-                }
-            }
+
 
             // Media Results Rows
             items(uiState.sections) { section ->

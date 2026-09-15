@@ -17,8 +17,26 @@ object NetworkClientFactory {
         isLenient = true
     }
 
+    private val trustAllCerts = arrayOf<javax.net.ssl.TrustManager>(object : javax.net.ssl.X509TrustManager {
+        override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
+        override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
+        override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
+    })
+
+    private val sslContext = javax.net.ssl.SSLContext.getInstance("TLS").apply {
+        init(null, trustAllCerts, java.security.SecureRandom())
+    }
+
     val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
+        .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as javax.net.ssl.X509TrustManager)
+        .hostnameVerifier { _, _ -> true }
+        .dns(object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> {
+                val addresses = okhttp3.Dns.SYSTEM.lookup(hostname)
+                return addresses.sortedBy { it !is java.net.Inet4Address }
+            }
+        })
+        .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->

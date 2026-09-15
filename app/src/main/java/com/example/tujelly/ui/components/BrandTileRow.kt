@@ -81,6 +81,9 @@ private fun BrandCard(
 
     val iconRes = if (isMonochrome) brand.iconMonoRes else brand.iconRes
 
+    val accentKey = com.example.tujelly.ui.theme.LocalAccentColor.current
+    val accentColor = com.example.tujelly.ui.theme.TvAccent.getColor(accentKey)
+
     Card(
         onClick = onClick,
         colors = CardDefaults.colors(
@@ -95,7 +98,7 @@ private fun BrandCard(
             .clip(RoundedCornerShape(10.dp))
             .border(
                 width = if (isFocused) 2.dp else 0.75.dp,
-                color = if (isFocused) Color.White else Color(0x18FFFFFF),
+                color = if (isFocused) (if (isMonochrome) Color.White else accentColor) else Color(0x18FFFFFF),
                 shape = RoundedCornerShape(10.dp)
             )
     ) {

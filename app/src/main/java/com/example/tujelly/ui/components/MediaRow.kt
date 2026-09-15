@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -41,26 +42,64 @@ fun MediaRow(
             .fillMaxWidth()
             .padding(vertical = 12.dp)
     ) {
+        val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current
+        val accentKey = com.example.tujelly.ui.theme.LocalAccentColor.current
+        val accentColor = com.example.tujelly.ui.theme.TvAccent.getColor(accentKey)
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 48.dp, vertical = 8.dp)
         ) {
-            if (!section.badge.isNullOrBlank()) {
-                TvPill(
-                    text = section.badge,
-                    containerColor = Color(0x18FFFFFF),
-                    textColor = Color(0xFFE2E8F0),
-                    borderColor = Color(0x22FFFFFF)
+            if (!isMonochrome) {
+                Box(
+                    modifier = Modifier
+                        .width(3.5.dp)
+                        .height(18.dp)
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                listOf(
+                                    Color(0xFF00E5FF),
+                                    accentColor
+                                )
+                            ),
+                            shape = RoundedCornerShape(2.dp)
+                        )
                 )
                 Spacer(modifier = Modifier.width(10.dp))
             }
 
-            Text(
-                text = section.title,
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
+            if (!section.badge.isNullOrBlank()) {
+                TvPill(
+                    text = section.badge,
+                    containerColor = if (isMonochrome) Color(0x18FFFFFF) else accentColor.copy(alpha = 0.18f),
+                    textColor = if (isMonochrome) Color(0xFFE2E8F0) else Color(0xFF7DD3FC),
+                    borderColor = if (isMonochrome) Color(0x22FFFFFF) else accentColor.copy(alpha = 0.45f)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+
+            if (isMonochrome) {
+                Text(
+                    text = section.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            } else {
+                Text(
+                    text = section.title,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            listOf(
+                                Color(0xFFFFFFFF),
+                                Color(0xFFE0F7FE),
+                                Color(0xFFBAE6FD)
+                            )
+                        )
+                    ),
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
 
         LazyRow(

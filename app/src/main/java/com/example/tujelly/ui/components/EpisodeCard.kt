@@ -214,7 +214,11 @@ fun EpisodeCard(
                     text = "${episode.episodeNumber}. ${episode.name}",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = if (isFocused) Color.White else Color(0xFFE2E8F0),
+                    color = if (isFocused) {
+                        if (isMonochrome) Color.White else focusBorderColor
+                    } else {
+                        Color(0xFFE2E8F0)
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

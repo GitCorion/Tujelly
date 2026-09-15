@@ -67,6 +67,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         .map { it.isMonochrome }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val accentColor: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
+        .map { it.accentColor }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.example.tujelly.data.local.ACCENT_CYAN)
+
     private var currentPlayableId: String = ""
     private var jellyfinBaseUrl: String = ""
     private var jellyfinAuthHeader: String = ""

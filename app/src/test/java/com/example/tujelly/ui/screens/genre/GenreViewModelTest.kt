@@ -10,7 +10,7 @@ class GenreViewModelTest {
 
     @Test
     fun `genre formats define correct display labels`() {
-        assertEquals("Todas", GenreFormat.ALL.label)
+        assertEquals("Todo", GenreFormat.ALL.label)
         assertEquals("Películas", GenreFormat.MOVIES.label)
         assertEquals("Series", GenreFormat.SERIES.label)
     }

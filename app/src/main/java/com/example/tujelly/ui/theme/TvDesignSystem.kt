@@ -48,11 +48,16 @@ fun TvRatingBadge(
     if (rating == null || rating <= 0f) return
 
     val formattedRating = String.format(java.util.Locale.US, "%.1f", rating)
+    val isMonochrome = LocalIsMonochromeTheme.current
+
+    val starTint = if (isMonochrome) Color.White else Color(0xFFFBBF24)
+    val badgeBg = if (isMonochrome) Color(0xCC000000) else Color(0xDC080A10)
+    val badgeBorder = if (isMonochrome) Color(0x33FFFFFF) else Color(0x44FBBF24)
 
     Box(
         modifier = modifier
-            .background(Color(0xCC000000), RoundedCornerShape(4.dp))
-            .border(0.5.dp, Color(0x33FFFFFF), RoundedCornerShape(4.dp))
+            .background(badgeBg, RoundedCornerShape(4.dp))
+            .border(0.5.dp, badgeBorder, RoundedCornerShape(4.dp))
             .padding(
                 horizontal = if (compact) 5.dp else 7.dp,
                 vertical = if (compact) 2.dp else 3.dp
@@ -64,7 +69,7 @@ fun TvRatingBadge(
             Icon(
                 imageVector = Icons.Rounded.Star,
                 contentDescription = null,
-                tint = Color.White,
+                tint = starTint,
                 modifier = Modifier.size(if (compact) 10.dp else 12.dp)
             )
             Spacer(modifier = Modifier.width(3.dp))

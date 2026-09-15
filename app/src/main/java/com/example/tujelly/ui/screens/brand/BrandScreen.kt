@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,7 +42,6 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.example.tujelly.ui.components.HeroBanner
 import com.example.tujelly.ui.components.MediaRow
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -150,68 +150,93 @@ fun BrandScreen(
                     }
                 }
 
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize()) {
                     // Universal Persistent TV TopBar
-                    item {
-                        com.example.tujelly.ui.components.TvTopBar(
-                            selectedTab = com.example.tujelly.ui.components.TvNavTab.NONE,
-                            onNavigateHome = onNavigateHome,
-                            onOpenMedusa = onOpenMedusa,
-                            onOpenFavorites = onOpenFavorites,
-                            onOpenSearch = onOpenSearch,
-                            onOpenSettings = onOpenSettings,
-                            accentColorKey = accentColorKey,
-                            buttonStyleKey = buttonStyleKey,
-                            isMonochrome = isMonochrome,
-                            titleBadge = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
+                    com.example.tujelly.ui.components.TvTopBar(
+                        selectedTab = com.example.tujelly.ui.components.TvNavTab.NONE,
+                        onNavigateHome = onNavigateHome,
+                        onOpenMedusa = onOpenMedusa,
+                        onOpenFavorites = onOpenFavorites,
+                        onOpenSearch = onOpenSearch,
+                        onOpenSettings = onOpenSettings,
+                        accentColorKey = accentColorKey,
+                        buttonStyleKey = buttonStyleKey,
+                        isMonochrome = isMonochrome,
+                        titleBadge = {
+                            val iconRes = if (isMonochrome) brand.iconMonoRes else brand.iconRes
+                            Image(
+                                painter = painterResource(id = iconRes),
+                                contentDescription = brand.name,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .height(36.dp)
+                                    .wrapContentWidth()
+                            )
+                        }
+                    )
+
+                    // Filtro de formato centrado, fino y elegante
+                    com.example.tujelly.ui.components.FormatFilterBar(
+                        selected = state.format,
+                        onSelect = { viewModel.setFormat(it) },
+                        accentColorKey = accentColorKey,
+                        buttonStyleKey = buttonStyleKey,
+                        isMonochrome = isMonochrome
+                    )
+
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        if (state.sections.isEmpty()) {
+                            item {
+                                Box(
                                     modifier = Modifier
-                                        .background(Color(0x22FFFFFF), RoundedCornerShape(16.dp))
-                                        .border(0.75.dp, Color(0x33FFFFFF), RoundedCornerShape(16.dp))
-                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                        .fillMaxWidth()
+                                        .padding(top = 100.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    val iconRes = if (isMonochrome) brand.iconMonoRes else brand.iconRes
-                                    Image(
-                                        painter = painterResource(id = iconRes),
-                                        contentDescription = brand.name,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = brand.name.uppercase(),
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.5.sp
-                                    )
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(
+                                            text = "No se encontraron títulos disponibles para ${brand.name}",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = Color.White
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "Verifica tu conexión a Internet o prueba a cambiar el filtro de formato.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Color(0xFF94A3B8)
+                                        )
+                                        Spacer(modifier = Modifier.height(24.dp))
+                                        Button(
+                                            onClick = { viewModel.loadBrandFeed(brandId, forceRefresh = true) },
+                                            colors = ButtonDefaults.colors(
+                                                containerColor = Color(0xFF1E222D),
+                                                focusedContainerColor = focusColor,
+                                                contentColor = Color.White,
+                                                focusedContentColor = focusContent
+                                            )
+                                        ) {
+                                            Text("Reintentar carga")
+                                        }
+                                    }
                                 }
                             }
-                        )
-                    }
+                        } else {
+                            // Platform Rows
+                            items(state.sections) { section ->
+                                MediaRow(
+                                    section = section,
+                                    onItemClick = { item -> onDetailMedia(item.id) },
+                                    onItemFocus = { item -> viewModel.setFocusedItem(item) }
+                                )
+                            }
+                        }
 
-                    // Hero Banner for focused item
-                    item {
-                        HeroBanner(
-                            item = state.focusedItem,
-                            onPlayClick = { item -> onPlayMedia(item.id) },
-                            onDetailClick = { item -> onDetailMedia(item.id) },
-                            accentColor = accentColorKey,
-                            buttonStyle = buttonStyleKey
-                        )
-                    }
-
-                    // Platform Rows
-                    items(state.sections) { section ->
-                        MediaRow(
-                            section = section,
-                            onItemClick = { item -> onDetailMedia(item.id) },
-                            onItemFocus = { item -> viewModel.setFocusedItem(item) }
-                        )
-                    }
-
-                    item {
-                        Spacer(modifier = Modifier.height(32.dp))
+                        item {
+                            Spacer(modifier = Modifier.height(32.dp))
+                        }
                     }
                 }
             }

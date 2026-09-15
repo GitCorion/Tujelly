@@ -20,11 +20,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class FavoriteFilter {
-    ALL,
-    MOVIES,
-    SERIES
-}
+typealias FavoriteFilter = com.example.tujelly.domain.model.MediaFormatFilter
 
 sealed interface FavoritesUiState {
     data object Loading : FavoritesUiState

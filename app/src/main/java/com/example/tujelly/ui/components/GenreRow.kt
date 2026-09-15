@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -28,7 +29,6 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.example.tujelly.ui.theme.TvPill
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -44,25 +44,54 @@ fun GenreRow(
             .fillMaxWidth()
             .padding(vertical = 10.dp)
     ) {
+        val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current
+        val accentKey = com.example.tujelly.ui.theme.LocalAccentColor.current
+        val accentColor = com.example.tujelly.ui.theme.TvAccent.getColor(accentKey)
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 48.dp, vertical = 6.dp)
         ) {
-            TvPill(
-                text = "GÉNEROS",
-                containerColor = Color(0x18FFFFFF),
-                textColor = Color(0xFFE2E8F0),
-                borderColor = Color(0x22FFFFFF)
-            )
+            if (!isMonochrome) {
+                Box(
+                    modifier = Modifier
+                        .width(3.5.dp)
+                        .height(18.dp)
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                listOf(
+                                    Color(0xFF00E5FF),
+                                    Color(0xFFA775F8)
+                                )
+                            ),
+                            shape = RoundedCornerShape(2.dp)
+                        )
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
 
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Text(
-                text = "Tus Géneros Favoritos",
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
+            if (isMonochrome) {
+                Text(
+                    text = "Tus Géneros Favoritos",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            } else {
+                Text(
+                    text = "Tus Géneros Favoritos",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            listOf(
+                                Color(0xFFFFFFFF),
+                                Color(0xFFE0F7FE),
+                                Color(0xFFA775F8).copy(alpha = 0.9f)
+                            )
+                        )
+                    ),
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
 
         LazyRow(
@@ -85,16 +114,20 @@ private fun GenreChip(
     genreName: String,
     onClick: () -> Unit
 ) {
+    val isMonochrome = com.example.tujelly.ui.theme.LocalIsMonochromeTheme.current
+    val accentKey = com.example.tujelly.ui.theme.LocalAccentColor.current
+    val accentColor = com.example.tujelly.ui.theme.TvAccent.getColor(accentKey)
+
     Surface(
         onClick = onClick,
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color(0x10FFFFFF),
-            focusedContainerColor = Color(0x28FFFFFF)
+            containerColor = if (isMonochrome) Color(0x10FFFFFF) else Color(0x1400A4DC),
+            focusedContainerColor = if (isMonochrome) Color(0x28FFFFFF) else accentColor.copy(alpha = 0.25f)
         ),
         border = ClickableSurfaceDefaults.border(
-            border = Border(border = BorderStroke(0.75.dp, Color(0x18FFFFFF))),
-            focusedBorder = Border(border = BorderStroke(2.dp, Color.White))
+            border = Border(border = BorderStroke(0.75.dp, if (isMonochrome) Color(0x18FFFFFF) else accentColor.copy(alpha = 0.25f))),
+            focusedBorder = Border(border = BorderStroke(2.dp, if (isMonochrome) Color.White else accentColor))
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f)
     ) {
@@ -104,7 +137,7 @@ private fun GenreChip(
         ) {
             Text(
                 text = genreName,
-                color = Color.White,
+                color = if (isMonochrome) Color.White else Color(0xFFF1F5F9),
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
                 letterSpacing = 0.5.sp

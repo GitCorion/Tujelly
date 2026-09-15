@@ -142,9 +142,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         if (movies.isNotEmpty()) {
             sections.add(
                 HomeSection(
-                    title = "Películas encontradas",
+                    title = "Películas",
                     items = movies.map { it.toMediaItem(baseUrl, token) },
-                    badge = "PELÍCULAS"
+                    badge = null
                 )
             )
         }
@@ -152,9 +152,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         if (series.isNotEmpty()) {
             sections.add(
                 HomeSection(
-                    title = "Series encontradas",
+                    title = "Series",
                     items = series.map { it.toMediaItem(baseUrl, token) },
-                    badge = "SERIES"
+                    badge = null
                 )
             )
         }
