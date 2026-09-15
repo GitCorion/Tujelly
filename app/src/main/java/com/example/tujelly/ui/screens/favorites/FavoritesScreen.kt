@@ -136,17 +136,18 @@ fun FavoritesScreen(
                         isMonochrome = isMonochrome
                     )
 
-                    // Sub-Header: Title & Filter Choice Buttons Row
-                    // Filtro de formato universal centrado, fino y elegante
-                    com.example.tujelly.ui.components.FormatFilterBar(
-                        selected = state.activeFilter,
-                        onSelect = { viewModel.setFilter(it) },
-                        accentColorKey = accentColorKey,
-                        buttonStyleKey = buttonStyleKey,
-                        isMonochrome = isMonochrome
-                    )
-
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        item(key = "favorites_format_filter_bar") {
+                            com.example.tujelly.ui.components.FormatFilterBar(
+                                selected = state.activeFilter,
+                                onSelect = { viewModel.setFilter(it) },
+                                accentColorKey = accentColorKey,
+                                buttonStyleKey = buttonStyleKey,
+                                isMonochrome = isMonochrome,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+
                         if (state.filteredItems.isEmpty()) {
                             item {
                                 Box(

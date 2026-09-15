@@ -90,7 +90,6 @@ fun HomeScreen(
     val isMonochrome by viewModel.isMonochrome.collectAsState()
     val buttonStyleKey by viewModel.buttonStyle.collectAsState()
     val selectedPlatforms by viewModel.selectedPlatforms.collectAsState()
-    val selectedFormat by viewModel.selectedFormat.collectAsState()
     val showTopIcons = buttonStyleKey != BUTTON_STYLE_TEXT_ONLY
     val showTopText = buttonStyleKey != BUTTON_STYLE_ICONS_ONLY
 
@@ -154,17 +153,6 @@ fun HomeScreen(
             syncProgress = syncProgress,
             localMediaCount = localMediaCount
         )
-
-        // Universal Format Filter Bar (Homogéneo, centrado, fino y elegante)
-        if (uiState is HomeUiState.Success) {
-            com.example.tujelly.ui.components.FormatFilterBar(
-                selected = selectedFormat,
-                onSelect = { viewModel.setFormat(it) },
-                accentColorKey = accentColorKey,
-                buttonStyleKey = buttonStyleKey,
-                isMonochrome = isMonochrome
-            )
-        }
 
 
         when (val state = uiState) {

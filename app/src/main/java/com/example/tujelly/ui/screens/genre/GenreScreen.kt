@@ -142,16 +142,18 @@ fun GenreScreen(
                         }
                     )
 
-                    // Filtro de formato centrado, fino y elegante
-                    com.example.tujelly.ui.components.FormatFilterBar(
-                        selected = state.format,
-                        onSelect = { viewModel.setFormat(it) },
-                        accentColorKey = accentColorKey,
-                        buttonStyleKey = buttonStyleKey,
-                        isMonochrome = isMonochrome
-                    )
-
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        item(key = "genre_format_filter_bar") {
+                            com.example.tujelly.ui.components.FormatFilterBar(
+                                selected = state.format,
+                                onSelect = { viewModel.setFormat(it) },
+                                accentColorKey = accentColorKey,
+                                buttonStyleKey = buttonStyleKey,
+                                isMonochrome = isMonochrome,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+
                         // Secciones de Género
                         items(state.sections) { section ->
                             MediaRow(

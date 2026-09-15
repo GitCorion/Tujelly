@@ -175,16 +175,18 @@ fun BrandScreen(
                         }
                     )
 
-                    // Filtro de formato centrado, fino y elegante
-                    com.example.tujelly.ui.components.FormatFilterBar(
-                        selected = state.format,
-                        onSelect = { viewModel.setFormat(it) },
-                        accentColorKey = accentColorKey,
-                        buttonStyleKey = buttonStyleKey,
-                        isMonochrome = isMonochrome
-                    )
-
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        item(key = "brand_format_filter_bar") {
+                            com.example.tujelly.ui.components.FormatFilterBar(
+                                selected = state.format,
+                                onSelect = { viewModel.setFormat(it) },
+                                accentColorKey = accentColorKey,
+                                buttonStyleKey = buttonStyleKey,
+                                isMonochrome = isMonochrome,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+
                         if (state.sections.isEmpty()) {
                             item {
                                 Box(
