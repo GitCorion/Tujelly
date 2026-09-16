@@ -153,7 +153,7 @@ fun MedusaScreen(
                 .padding(horizontal = 48.dp, vertical = 6.dp)
         ) {
             Text(
-                text = "NEBULOSA DE SENSACIONES",
+                text = "GRAN GALAXIA MEDUSA",
                 color = if (isMonochrome) Color(0x99FFFFFF) else Color(0x8000E5FF),
                 fontSize = 9.sp,
                 fontFamily = FontFamily.SansSerif,
@@ -170,7 +170,7 @@ fun MedusaScreen(
             ) {
                 if (uiState.activeChain.isEmpty()) {
                     Text(
-                        text = "Navega con la cruceta (D-Pad) y pulsa [OK] para conectar sensaciones",
+                        text = "Conecta temáticas afines hacia el Sol Central para descubrir qué ver",
                         color = Color(0x99FFFFFF),
                         fontSize = 12.5.sp,
                         fontFamily = FontFamily.SansSerif
@@ -270,68 +270,6 @@ fun MedusaScreen(
                         }
                     }
                 }
-
-                if (uiState.activeChain.isNotEmpty()) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(start = 12.dp)
-                    ) {
-                        Button(
-                            onClick = { viewModel.surpriseMe()?.let { onDetailMedia(it.id) } },
-                            colors = ButtonDefaults.colors(
-                                containerColor = if (isMonochrome) Color(0x18FFFFFF) else Color(0x2200E5FF),
-                                contentColor = if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF00E5FF),
-                                focusedContainerColor = if (isMonochrome) Color.White else Color(0xFF00E5FF),
-                                focusedContentColor = Color(0xFF05070B)
-                            ),
-                            shape = ButtonDefaults.shape(RoundedCornerShape(16.dp)),
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            Text(text = "Sorpréndeme", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = { viewModel.onBackPress() },
-                            colors = ButtonDefaults.colors(
-                                containerColor = Color(0x18FFFFFF),
-                                contentColor = Color(0xFFCBD5E1),
-                                focusedContainerColor = if (isMonochrome) Color.White else Color(0xFF00E5FF),
-                                focusedContentColor = Color(0xFF05070B)
-                            ),
-                            shape = ButtonDefaults.shape(RoundedCornerShape(16.dp)),
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            Text(text = "Deshacer", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        }
-
-                        Button(
-                            onClick = { viewModel.resetConstellation() },
-                            colors = ButtonDefaults.colors(
-                                containerColor = Color(0x18FFFFFF),
-                                contentColor = Color(0xFFCBD5E1),
-                                focusedContainerColor = if (isMonochrome) Color.White else Color(0xFF00E5FF),
-                                focusedContentColor = Color(0xFF05070B)
-                            ),
-                            shape = ButtonDefaults.shape(RoundedCornerShape(16.dp))
-                        ) {
-                            Text(text = "Reiniciar", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                } else {
-                    Button(
-                        onClick = { viewModel.surpriseMe()?.let { onDetailMedia(it.id) } },
-                        colors = ButtonDefaults.colors(
-                            containerColor = if (isMonochrome) Color(0x18FFFFFF) else Color(0x2200E5FF),
-                            contentColor = if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF00E5FF),
-                            focusedContainerColor = if (isMonochrome) Color.White else Color(0xFF00E5FF),
-                            focusedContentColor = Color(0xFF05070B)
-                        ),
-                        shape = ButtonDefaults.shape(RoundedCornerShape(16.dp)),
-                        modifier = Modifier.padding(start = 12.dp)
-                    ) {
-                        Text(text = "Sorpréndeme", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
             }
         }
 
@@ -400,37 +338,40 @@ fun MedusaScreen(
                             onNavigateHome()
                         }
                     },
+                    onResetConstellation = {
+                        viewModel.resetConstellation()
+                    },
                     onRequestFocusBottom = null,
                     onRequestFocusTop = {
                         topBarMedusaFocusRequester.requestFocus()
                     },
-                    compatibleNodeIds = uiState.compatibleNodeIds,
+                    compatibleNodeIds = uiState.visibleNodeIds ?: uiState.compatibleNodeIds,
                     focusRequester = canvasFocusRequester,
                     isMonochrome = isMonochrome,
                     particleScale = particleScale
                 )
 
                 // Barra inferior de atajos contextual según el nodo enfocado
-                val isFocusedOnPortal = uiState.focusedNode?.isPortal == true || uiState.focusedNodeId == PORTAL_NODE_ID
+                val isFocusedOnSun = uiState.focusedNode?.isSun == true || uiState.focusedNode?.isPortal == true ||
+                        uiState.focusedNodeId == SUN_CORE_ID || uiState.focusedNodeId == PORTAL_NODE_ID
                 val isFocusedAlreadyConnected = uiState.activeChain.any { it.id == uiState.focusedNodeId }
-                val isFocusedCompatible = uiState.compatibleNodeIds == null ||
-                        uiState.focusedNodeId == null ||
-                        isFocusedAlreadyConnected ||
-                        isFocusedOnPortal ||
-                        (uiState.compatibleNodeIds?.contains(uiState.focusedNodeId) == true)
 
                 val hudGuide = when {
-                    isFocusedOnPortal -> {
-                        "[OK] Abrir $formatNounPlural (${uiState.matchingMovies.size})  ·  [D-PAD] Moverse por la constelación  ·  [BACK] Deshacer"
+                    isFocusedOnSun -> {
+                        if (uiState.activeChain.isEmpty()) {
+                            "[D-PAD] Explorar constelaciones  ·  [BACK] Salir"
+                        } else {
+                            "[OK] Ver $formatNounPlural (${uiState.matchingMovies.size})  ·  [BACK] Deshacer  ·  [MANTENER BACK] Reiniciar"
+                        }
                     }
                     isFocusedAlreadyConnected -> {
-                        "[OK] Desconectar etiqueta  ·  [D-PAD] Explorar constelación  ·  [BACK] Deshacer"
+                        "[OK] Desconectar temática  ·  [BACK] Deshacer  ·  [MANTENER BACK] Reiniciar"
                     }
                     uiState.activeChain.isNotEmpty() -> {
-                        "[OK] Conectar a la constelación  ·  [D-PAD] Explorar constelación  ·  [BACK] Deshacer"
+                        "[OK] Conectar al Sol Central  ·  [BACK] Deshacer  ·  [MANTENER BACK] Reiniciar"
                     }
                     else -> {
-                        "[OK] Conectar sensación  ·  [D-PAD] Explorar constelación  ·  [BACK] Salir"
+                        "[OK] Conectar temática al Sol  ·  [D-PAD] Explorar constelaciones  ·  [BACK] Salir"
                     }
                 }
 
@@ -450,8 +391,14 @@ fun MedusaScreen(
                     Text(
                         text = hudGuide,
                         color = when {
-                            isFocusedOnPortal -> {
+                            isFocusedOnSun && uiState.activeChain.isNotEmpty() -> {
                                 if (isMonochrome) Color.White else Color(0xFF00E5FF)
+                            }
+                            isFocusedOnSun -> {
+                                Color(0xBBFFFFFF)
+                            }
+                            isFocusedAlreadyConnected -> {
+                                if (isMonochrome) Color.White else Color(0xFFC084FC)
                             }
                             else -> Color(0x9085A5C5)
                         },

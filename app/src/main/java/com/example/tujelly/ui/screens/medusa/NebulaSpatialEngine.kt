@@ -4,593 +4,554 @@ import androidx.compose.ui.geometry.Offset
 import com.example.tujelly.data.local.db.JellyfinMediaEntity
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.ln
 import kotlin.math.sin
 
 /**
- * Nodo en el espacio semántico continuo de la Nebulosa de Cine.
+ * Nodo en la Gran Galaxia Estelar de Medusa.
  */
 data class SpatialNebulaNode(
     val id: String,
     val label: String,
-    val category: String,
-    val worldX: Float, // Coordenada en el espacio continuo (0.0f - 1.0f o expandido)
-    val worldY: Float,
-    val minZoomVisible: Float = 0.6f, // Umbral LOD mínimo para mostrar texto
+    val rawTag: String = "",
+    val category: String = "General",
+    var worldX: Float, // Coordenada normalizada en el espacio (0.0f - 1.0f)
+    var worldY: Float,
+    val minZoomVisible: Float = 0.4f,
     val maxZoomVisible: Float = 10.0f,
     val movieCount: Int = 0,
-    val importance: Float = 1.0f, // 1.0f base, 1.5f etiquetas mayores
-    val keywords: List<String> = emptyList(),
-    val isPortal: Boolean = false
+    val importance: Float = 1.0f, // 1.0f estándar, >= 1.6f Supernovas (Top/Trending/Favoritos)
+    val isCaptain: Boolean = false, // Estrella Capitana rectora del sector (etiqueta visible en reposo)
+    val isPortal: Boolean = false, // Compatibilidad hacia atrás
+    val isSun: Boolean = false,    // Sol / Agujero Negro Central
+    val previewPosters: List<String> = emptyList(),
+    val keywords: List<String> = emptyList()
 )
 
-const val PORTAL_NODE_ID = "PORTAL_MOVIES"
+const val SUN_CORE_ID = "SUN_CORE"
+const val PORTAL_NODE_ID = SUN_CORE_ID
+
+val PILLAR_GENRES = listOf(
+    "ciencia ficcion",
+    "accion",
+    "comedia",
+    "drama",
+    "terror",
+    "suspense",
+    "aventura",
+    "fantasia",
+    "animacion",
+    "crimen",
+    "romance",
+    "familia",
+    "belica",
+    "misterio",
+    "documental"
+)
 
 /**
- * Filamento vectorial que conecta dos nodos de alta afinidad semántica.
+ * Filamento vectorial de gravedad y afinidad entre dos estrellas.
  */
 data class SpatialFilament(
     val fromNodeId: String,
     val toNodeId: String,
-    val affinity: Float = 1.0f
+    val affinity: Float = 1.0f,
+    val isActiveRay: Boolean = false // Rayo de energía activo conectado al Sol central
 )
 
 enum class DPadDirection { LEFT, RIGHT, UP, DOWN }
 
-/** Filtro de formato aplicado al descubrimiento de Medusa. */
 enum class MediaFormat { ALL, MOVIES, SERIES }
 
-/** Mínimo de resultados en intersección estricta antes de degradar a coincidencia mayoritaria. */
-private const val MIN_STRICT_MATCHES = 4
-
 /**
- * Motor Espacial Profesional para la Nebulosa de Descubrimiento:
- * 1. Genera un espacio semántico continuo a partir de los datos reales de la biblioteca.
- * 2. Mantiene un índice espacial para navegación D-Pad instantánea por proximidad angular.
- * 3. Gestiona niveles de detalle (LOD) dinámicos para mantener 60 fps en Android TV.
+ * Motor Espacial y Gravitacional definitivo de Medusa:
+ * - Engendra un firmamento denso de 100+ tags reales extraídos de 4 vectores:
+ *   1. Canon de TMDB (obras maestras presentes en el servidor).
+ *   2. Tendencias de TMDB (lo que es viral hoy y tienes en tu catálogo).
+ *   3. Historial del usuario (últimas obras vistas / en progreso).
+ *   4. Favoritos del usuario.
+ *   5. Catálogo general de Jellyfin.
+ * - Sol / Agujero Negro Central en (0.5, 0.5) donde convergen los rayos y se concentran las carátulas.
+ * - Lógica "AND" estricta pura (sin degradación 'OR').
+ * - Poda cósmica en vivo: los nodos que no tienen intersección desaparecen de la pantalla y del D-Pad.
  */
 class NebulaSpatialEngine {
 
     private val allNodes = mutableListOf<SpatialNebulaNode>()
     private val allFilaments = mutableListOf<SpatialFilament>()
     private val nodeById = mutableMapOf<String, SpatialNebulaNode>()
-    private var tokenizedCatalog: List<Pair<JellyfinMediaEntity, String>> = emptyList()
+
+    // Caché de entidades con sus tags normalizados en minúsculas para búsquedas ultra rápidas
+    private var tokenizedCatalog: List<Pair<JellyfinMediaEntity, Set<String>>> = emptyList()
+    private var baseFilaments: List<SpatialFilament> = emptyList()
 
     fun getAllNodes(): List<SpatialNebulaNode> = allNodes
     fun getAllFilaments(): List<SpatialFilament> = allFilaments
     fun getNode(id: String): SpatialNebulaNode? = nodeById[id]
 
     /**
-     * Construye la galaxia semántica a partir del catálogo de Jellyfin.
+     * Construye la Gran Galaxia a partir de la biblioteca completa y los 4 vectores inteligentes.
+     * Cero elementos fijos o cableados:
+     * - Las Estrellas Capitanas se eligen dinámicamente y rotan según sessionSeed.
+     * - Los satélites se agrupan en constelaciones alrededor de su Capitana por afinidad real.
+     * - Cuanto mayor es la afinidad (películas compartidas), más cerca de su Capitana se sitúa la estrella.
+     * - La orientación del firmamento rota orgánicamente con sessionSeed.
      */
-    fun buildUniverse(
+    fun buildDynamicUniverse(
         catalog: List<JellyfinMediaEntity>,
-        serverUrl: String,
-        accessToken: String
+        tmdbTopRated: List<JellyfinMediaEntity> = emptyList(),
+        tmdbTrending: List<JellyfinMediaEntity> = emptyList(),
+        recentWatched: List<JellyfinMediaEntity> = emptyList(),
+        favorites: List<JellyfinMediaEntity> = emptyList(),
+        serverUrl: String = "",
+        accessToken: String = "",
+        sessionSeed: Long = System.currentTimeMillis()
     ) {
         allNodes.clear()
         allFilaments.clear()
         nodeById.clear()
 
-        // Definición de los 10 grandes cúmulos temáticos del cine real con espaciado no solapado
-        val clusters = listOf(
-            ClusterTemplate(
-                name = "CRIMEN & CINE NEGRO",
-                category = "Crimen",
-                center = Offset(0.22f, 0.26f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Cine Negro", "Atraco al Banco", "Mafia & Clanes", "Corrupción Policial",
-                    "Falso Culpable", "Detectives Privados", "Juicios & Ley", "Venganza Callejera",
-                    // Anillo 2: Escenarios y arquetipos
-                    "Femme Fatale", "El Golpe Maestro", "Callejones Nocturnos", "Partida de Poker Clandestina",
-                    "Asesino Metódico", "Persecución de Coches", "Traidor en la Familia", "Caja Fuerte Inviolable",
-                    "Comisaría al Límite", "Testigo Protegido",
-                    // Anillo 3: Situaciones y atmósfera
-                    "Doble Juego", "El Capo Retirado", "Motín Carcelario", "Tráfico Portuario",
-                    "Voz en Off Cínica", "Sombras en el Asfalto", "Chantaje al Juez", "Crimen sin Resolver",
-                    "Fianza Denegada", "El Último Botín"
-                ),
-                keywords = listOf("crime", "noir", "mafia", "heist", "detective", "policial", "corrupción", "asesino", "crimen", "robo", "cárcel", "abogado")
-            ),
-            ClusterTemplate(
-                name = "DRAMA & SUPERACIÓN",
-                category = "Drama",
-                center = Offset(0.50f, 0.22f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Drama Familiar", "Superación Personal", "Amor Imposible", "Pérdida & Duelo",
-                    "Secretos del Pasado", "Amistad Incondicional", "Infancia & Madurez", "Historias Reales",
-                    // Anillo 2: Escenarios y arquetipos
-                    "Reencuentro tras Años", "Ruptura & Sanación", "El Maestro Inspirador", "Lucha Obrera",
-                    "Cartas de Amor Olvidadas", "Dilemas Morales", "Segunda Oportunidad", "Juventud Rebelde",
-                    "Vidas Cruzadas", "El Último Verano",
-                    // Anillo 3: Situaciones y atmósfera
-                    "Promesa Rota", "Cena Familiar Tensa", "El Regreso al Pueblo", "Confesión en el Lecho",
-                    "Enfermedad & Coraje", "Pueblo Natal Olvidado", "Diarios Íntimos", "Abuelos & Nietos",
-                    "Lágrimas en el Andén", "El Legado del Padre"
-                ),
-                keywords = listOf("drama", "family", "biography", "inspirational", "friendship", "romance", "amor", "superación", "vida", "emotiva", "melancolía")
-            ),
-            ClusterTemplate(
-                name = "AVENTURA & SUPERVIVENCIA",
-                category = "Aventura",
-                center = Offset(0.78f, 0.26f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Supervivencia Salvaje", "Naufragio en Alta Mar", "Alta Montaña & Nieve", "Caza del Tesoro",
-                    "Expedición a la Selva", "Piratas & Corsarios", "Aislamiento en el Desierto", "Exploradores sin Retorno",
-                    // Anillo 2: Escenarios y arquetipos
-                    "Cuevas Subterráneas", "Tempestad en el Océano", "El Mapa Perdido", "Templo Olvidado",
-                    "Ruta de la Seda", "Globo Aerostático", "Frontera Salvaje", "Aeronave Caída",
-                    "Safari Inexplorado", "Hielos del Ártico",
-                    // Anillo 3: Situaciones y atmósfera
-                    "Brújula Rota", "Mochila sin Agua", "La Trampa de Arenas", "Faro en el Acantilado",
-                    "Fiebre del Oro", "Navegantes de Época", "El Valle Oculto", "El Salto al Vacío",
-                    "Tribus Desconocidas", "Refugio en la Tormenta"
-                ),
-                keywords = listOf("adventure", "survival", "ocean", "mountain", "jungle", "treasure", "pirate", "isla", "selva", "náufrago", "tesoro", "expedición")
-            ),
-            ClusterTemplate(
-                name = "MISTERIO & CONSPIRACIÓN",
-                category = "Misterio",
-                center = Offset(0.20f, 0.49f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Secretos de Estado", "Desaparición Misteriosa", "Pueblo con Secretos", "Crimen de Habitación Cerrada",
-                    "Conspiración en la Sombra", "El Testigo Silenciado", "La Doble Vida", "Identidad Robada",
-                    // Anillo 2: Escenarios y arquetipos
-                    "Mensajes Cifrados", "Cintas Prohibidas", "El Diario del Muerto", "Pistas en la Oscuridad",
-                    "Secta Secreta", "Forense Meticuloso", "Llamada Anónima", "El Manuscrito Perdido",
-                    "Sótano Clausurado", "La Coartada Perfecta",
-                    // Anillo 3: Situaciones y atmósfera
-                    "Retrato con Doble Fondo", "Sociedad Secreta", "El Espía Retirado", "Niebla en el Lago",
-                    "El Mensajero Asesinado", "Archivo Confidencial", "La Llave Oxidada", "Voces en la Frecuencia",
-                    "El Testamento Oculto", "El Pasadizo Secreto"
-                ),
-                keywords = listOf("mystery", "conspiracy", "secret", "investigation", "misterio", "conspiración", "desaparición", "sospechoso", "enigma", "oculto")
-            ),
-            ClusterTemplate(
-                name = "ANIMACIÓN & MARAVILLA",
-                category = "Animación",
-                center = Offset(0.50f, 0.48f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Clásicos Dibujados", "Aventuras Familiares", "Anime Maestro", "Fábulas con Corazón",
-                    "Mundos Flotantes", "Amistades Inolvidables", "Criaturas del Bosque", "Viajes Fantásticos",
-                    // Anillo 2: Escenarios y arquetipos
-                    "Espíritus de la Naturaleza", "Compañero Animal Leal", "Volar entre Nubes", "La Tienda de Pociones",
-                    "El Tren Estelar", "Robots con Alma", "Magia Cotidiana", "Grandes Paisajes Pintados",
-                    "Transformaciones", "Canto y Música",
-                    // Anillo 3: Situaciones y atmósfera
-                    "Jardín Secreto", "Viento en las Colinas", "La Casa del Árbol", "El Relojero Mágico",
-                    "Criaturas del Mar Profundo", "Amigos del Cosmos", "El Hechizo Roto", "Aventura en Miniatura",
-                    "Bicicleta al Atardecer", "El Dragón Domado"
-                ),
-                keywords = listOf("animation", "anime", "family", "kids", "animación", "dibujos", "ghibli", "infantil", "pixar", "dibujo")
-            ),
-            ClusterTemplate(
-                name = "BÉLICO & HISTORIA",
-                category = "Bélica",
-                center = Offset(0.80f, 0.49f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Trincheras & Fango", "Tripulación de Submarino", "Guerra Fría & Espías", "Resistencia Civil",
-                    "Batallas Navales", "Aviación & Ases", "Segunda Guerra Mundial", "El Frente Oriental",
-                    // Anillo 2: Escenarios y arquetipos
-                    "Misión de Rescate Táctica", "El Francotirador Oculto", "Búnker Asediado", "Desembarco en la Playa",
-                    "Convoy de Suministros", "El General en el Mapa", "Prisioneros de Guerra", "La Gran Evasión",
-                    "Mensaje por Radio", "El Regreso a Casa",
-                    // Anillo 3: Situaciones y atmósfera
-                    "Nieve en el Asedio", "Duelo de Blindados", "Radar en la Niebla", "Última Carta al Frente",
-                    "Periscopio en Alerta", "El Puesto de Guardia", "Héroes Olvidados", "El Médico de Campaña",
-                    "Armisticio al Amanecer", "Ruinas de la Ciudad"
-                ),
-                keywords = listOf("war", "history", "military", "submarine", "wwii", "guerra", "batalla", "bélico", "resistencia", "soldado", "trinchera")
-            ),
-            ClusterTemplate(
-                name = "TERROR & SUSPENSE",
-                category = "Terror",
-                center = Offset(0.22f, 0.72f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Casas Encantadas", "Posesiones & Demonios", "Terror Psicológico", "Monstruos Ocultos",
-                    "Niebla & Aislamiento", "Brujería & Sectas", "Slasher Clásico", "Paranoia en la Nieve",
-                    // Anillo 2: Escenarios y arquetipos
-                    "Llamada a Medianoche", "Criaturas del Abismo", "Pesadillas Reales", "Maldición Familiar",
-                    "El Asilo Abandonado", "Muñecos Siniestros", "Pacto en el Cruce", "El Bosque Maldito",
-                    "Ruidos en el Desván", "El Huésped Siniestro",
-                    // Anillo 3: Situaciones y atmósfera
-                    "Espejo Maldito", "Grabación Oculta", "Pasos en el Pasillo", "El Pozo del Jardín",
-                    "La Niebla Roja", "La Llave Prohibida", "Cementerio en la Colina", "Sombra en la Ventana",
-                    "La Puerta que Cruje", "Gritos en el Sótano"
-                ),
-                keywords = listOf("horror", "terror", "ghost", "demon", "exorcism", "witch", "monster", "slasher", "haunted", "siniestro", "miedo", "pesadilla")
-            ),
-            ClusterTemplate(
-                name = "COMEDIA & SÁTIRA",
-                category = "Comedia",
-                center = Offset(0.50f, 0.72f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Comedia Romántica", "Sátira Mordaz", "Humor Negro", "Comedia de Amigos",
-                    "Enredos Familiares", "Viaje Desastroso", "Timadores Torpes", "Parodia Brillante",
-                    // Anillo 2: Escenarios y arquetipos
-                    "La Gran Fiesta Caótica", "Cena de Compromiso Tensa", "Comedia Absurda", "Humor Inteligente",
-                    "Boda Catastrófica", "Identidad Equivocada", "Vacaciones Accidentadas", "Amor en la Oficina",
-                    "Compañeros de Piso", "Venganza Divertida",
-                    // Anillo 3: Situaciones y atmósfera
-                    "El Testamento Loco", "Disfraces Imposibles", "El Camarero Torpe", "Casting Desastroso",
-                    "La Casa en Obras", "El Rival Inesperado", "Terapia de Grupo", "El Regalo Equivocado",
-                    "La Mascota Rebelde", "Malentendido Gigante"
-                ),
-                keywords = listOf("comedy", "satire", "comedia", "humor", "rom-com", "parody", "enredo", "gracioso", "risa", "divertido")
-            ),
-            ClusterTemplate(
-                name = "WESTERN & FORAJIDOS",
-                category = "Western",
-                center = Offset(0.78f, 0.72f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Duelo al Mediodía", "Cazarrecompensas", "Forajidos en Fuga", "Venganza en el Cañón",
-                    "El Sheriff Solitario", "El Tren Asaltado", "Cantinas & Saloons", "Pueblos sin Ley",
-                    // Anillo 2: Escenarios y arquetipos
-                    "Tiroteo en la Frontera", "El Último Forajido", "Desierto Implacable", "Oro en el Río",
-                    "Diligencia Asediada", "El Jugador de Cartas", "Rancho en Llamas", "Justicia en la Horca",
-                    "El Forastero Misterioso", "Pistolero Cansado",
-                    // Anillo 3: Situaciones y atmósfera
-                    "Espuelas de Plata", "Emboscada en el Paso", "Caballo Fiel", "El Juez del Territorio",
-                    "Tierra de Nadie", "Cicatrices del Pasado", "Bala de Plata", "El Viejo Fuerte",
-                    "Atardecer en el Cañón", "El Duelo de Miradas"
-                ),
-                keywords = listOf("western", "frontier", "outlaw", "sheriff", "bounty", "duelo", "pistolero", "vaquero", "desierto", "forajido")
-            ),
-            ClusterTemplate(
-                name = "FANTASÍA & MITOLOGÍA",
-                category = "Fantasía",
-                center = Offset(0.68f, 0.60f),
-                radius = 0.10f,
-                macroTags = listOf(
-                    // Anillo 1: Tropos centrales
-                    "Reinos Medievales", "Dragones & Fuego", "Cuentos de Hadas", "Magos & Hechizos",
-                    "Mitología Antigua", "Espadas & Honor", "Viajes a Tierras Mágicas", "Criaturas Legendarias",
-                    // Anillo 2: Escenarios y arquetipos
-                    "La Última Batalla", "Castillos Olvidados", "Maldición del Rey", "Folclore Oscuro",
-                    "El Libro de Conjuros", "El Bosque Encantado", "El Anillo de Poder", "El Caballero Errante",
-                    "El Oráculo Ciego", "Puerta a Otra Dimensión",
-                    // Anillo 3: Situaciones y atmósfera
-                    "Espada en la Roca", "El Alquimista Solitario", "Ninfas del Manantial", "Ruinas de los Antiguos",
-                    "Torre del Hechicero", "El Amuleto Brillante", "Gigantes de Piedra", "La Corona Robada",
-                    "El Laberinto Sin Fin", "Pacto con el Destino"
-                ),
-                keywords = listOf("fantasy", "magic", "dragon", "kingdom", "medieval", "fairy-tale", "mythology", "fantasía", "magia", "hadas", "brujo", "hechizo")
-            )
-        )
-
-        // Optimización de alto rendimiento: pre-procesar texto normalizado una sola vez
-        val tokenized = catalog.map { entity ->
-            val raw = "${entity.genres ?: ""} ${entity.tags ?: ""} ${entity.title} ${entity.originalTitle ?: ""} ${entity.overview ?: ""}"
-            val text = normalizeForSearch(raw)
-            Pair(entity, text)
+        // 1. Tokenización y normalización canónica de todo el catálogo (tags + géneros unificados)
+        tokenizedCatalog = catalog.map { entity ->
+            val tagsSet = extractCanonicalTags(entity)
+            Pair(entity, tagsSet)
         }
-        tokenizedCatalog = tokenized
 
-        // 1. GENERAR NODOS DE ETIQUETAS Y MICRO-ETIQUETAS (280+ etiquetas simultáneas)
-        clusters.forEachIndexed { clusterIdx, cluster ->
-            val clusterMatches = tokenized.filter { (_, text) ->
-                cluster.keywords.any { text.contains(it) }
+        if (tokenizedCatalog.isEmpty()) {
+            createEmptyUniverse()
+            return
+        }
+
+        // 2. Extraer tags de los 4 vectores canónicos
+        val canonTags = tmdbTopRated.flatMap { extractCanonicalTags(it) }.toSet()
+        val trendingTags = tmdbTrending.flatMap { extractCanonicalTags(it) }.toSet()
+        val recentTags = recentWatched.flatMap { extractCanonicalTags(it) }.toSet()
+        val favTags = favorites.flatMap { extractCanonicalTags(it) }.toSet()
+
+        // 3. Conteo y puntuación de relevancia para cada tag canónico del catálogo
+        val tagCounts = mutableMapOf<String, Int>()
+        for ((_, tags) in tokenizedCatalog) {
+            for (tag in tags) {
+                tagCounts[tag] = (tagCounts[tag] ?: 0) + 1
             }
-            val clusterCount = clusterMatches.size
+        }
 
-            // Nodo central del cúmulo (macro-foco)
-            val clusterCenterNode = SpatialNebulaNode(
-                id = "CLUSTER_${clusterIdx}",
-                label = cluster.name,
-                category = cluster.category,
-                worldX = cluster.center.x,
-                worldY = cluster.center.y,
-                minZoomVisible = 0.5f,
-                maxZoomVisible = 4.0f,
-                importance = 1.45f,
-                movieCount = clusterCount,
-                keywords = cluster.keywords
+        // Filtrar tags con masa crítica (al menos 2 obras en tu servidor) y no en lista negra
+        val maxAllowedFrequency = (catalog.size * 0.70f).toInt().coerceAtLeast(15)
+        val validTags = tagCounts.filter { (tag, count) ->
+            count >= 2 && count <= maxAllowedFrequency && tag.length >= 3 && !isBlacklistedTag(tag)
+        }
+
+        if (validTags.isEmpty()) {
+            createEmptyUniverse()
+            return
+        }
+
+        // Puntuación gravitacional para clasificar Supernovas vs Estrellas estándar
+        val scoredTags = validTags.map { (tag, count) ->
+            var score = count.toFloat() + ln(count.toFloat() + 1f) * 2f
+            if (favTags.contains(tag)) score += 8f
+            if (trendingTags.contains(tag)) score += 6f
+            if (canonTags.contains(tag)) score += 5f
+            if (recentTags.contains(tag)) score += 4f
+            Triple(tag, count, score)
+        }.sortedByDescending { it.third }
+
+        // Deduplicación estricta por nombre de visualización: garantiza CERO repetidos en pantalla
+        val seenDisplayNames = mutableSetOf<String>()
+        val deduplicatedUniverseTags = mutableListOf<Triple<String, Int, Float>>()
+        for (triple in scoredTags) {
+            val (canonicalKey, _, _) = triple
+            val displayName = TagTranslations.getDisplayName(canonicalKey)
+            val normalizedDisplay = TagTranslations.stripAccents(displayName).lowercase(Locale.ROOT)
+            if (seenDisplayNames.add(normalizedDisplay)) {
+                deduplicatedUniverseTags.add(triple)
+                if (deduplicatedUniverseTags.size >= 80) break
+            }
+        }
+        val universeTags = deduplicatedUniverseTags
+
+        // 4. Selección Dinámica y Rotativa de Estrellas Capitanas
+        // REGLA FUNDAMENTAL: Solo los géneros pilares cinematográficos pueden ser Capitanas (NUNCA tags de nicho como LGBTQ+, Biográfico, Western, Amistad, Asesinato, etc.).
+        val pillarCandidates = universeTags.filter { it.first in PILLAR_GENRES }
+        val captainCandidatePool = if (pillarCandidates.size >= 4) {
+            pillarCandidates
+        } else {
+            // Si hay pocos pilares presentes en la biblioteca (ej. catálogo pequeño de test),
+            // complementar con tags de alta masa crítica que no sean de nicho
+            pillarCandidates + universeTags.filter { it.first !in PILLAR_GENRES && !isNicheNonCaptainTag(it.first) }
+        }
+
+        val targetCaptainCount = when {
+            captainCandidatePool.size >= 8 -> 7
+            captainCandidatePool.size >= 6 -> 6
+            captainCandidatePool.size >= 4 -> 4
+            captainCandidatePool.size >= 2 -> 2
+            else -> captainCandidatePool.size
+        }
+
+        val rotationShift = (abs(sessionSeed) % captainCandidatePool.size.coerceAtLeast(1)).toInt()
+        val rotatedPool = captainCandidatePool.indices.map { idx ->
+            captainCandidatePool[(idx + rotationShift) % captainCandidatePool.size]
+        }
+
+        // Selección diversa: evitar que dos capitanas sean subgéneros hiper-solapados
+        val selectedCaptains = mutableListOf<Triple<String, Int, Float>>()
+        for (candidate in rotatedPool) {
+            if (selectedCaptains.size >= targetCaptainCount) break
+            val (candTag, _, _) = candidate
+
+            val isTooOverlapping = selectedCaptains.any { (prevTag, _, _) ->
+                val shared = tokenizedCatalog.count { (_, tags) -> tags.contains(candTag) && tags.contains(prevTag) }
+                val minCount = minOf(tagCounts[candTag] ?: 1, tagCounts[prevTag] ?: 1)
+                (shared.toFloat() / minCount.toFloat()) > 0.45f
+            }
+
+            if (!isTooOverlapping) {
+                selectedCaptains.add(candidate)
+            }
+        }
+
+        // Rellenar si el filtro de solapamiento descartó demasiados
+        if (selectedCaptains.size < targetCaptainCount) {
+            for (candidate in rotatedPool) {
+                if (selectedCaptains.size >= targetCaptainCount) break
+                if (selectedCaptains.none { it.first == candidate.first }) {
+                    selectedCaptains.add(candidate)
+                }
+            }
+        }
+
+        val captainTagsSet = selectedCaptains.map { it.first }.toSet()
+        val remainingTags = universeTags.filter { it.first !in captainTagsSet }
+
+        // 5. Agrupación por Afinidad Equilibrada (Balanceo de Carga por Sector)
+        // Ninguna Capitana puede acaparar más de 6 satélites, garantizando un firmamento 360° perfectamente homogéneo
+        val maxSatellitesPerCaptain = 6
+        val satellitesPerCaptain = selectedCaptains.associate { it.first to mutableListOf<Pair<Triple<String, Int, Float>, Int>>() }
+
+        for (satTriple in remainingTags) {
+            val (satTag, _, _) = satTriple
+            val affinities = selectedCaptains.map { capTriple ->
+                val capTag = capTriple.first
+                val shared = tokenizedCatalog.count { (_, tags) -> tags.contains(satTag) && tags.contains(capTag) }
+                Pair(capTag, shared)
+            }.sortedByDescending { it.second }
+
+            var assigned = false
+            for ((capTag, shared) in affinities) {
+                val currentList = satellitesPerCaptain[capTag] ?: continue
+                if (currentList.size < maxSatellitesPerCaptain && shared > 0) {
+                    currentList.add(Pair(satTriple, shared))
+                    assigned = true
+                    break
+                }
+            }
+
+            if (!assigned) {
+                val leastLoadedCaptain = satellitesPerCaptain.entries
+                    .filter { it.value.size < maxSatellitesPerCaptain }
+                    .minByOrNull { it.value.size }
+                if (leastLoadedCaptain != null) {
+                    val shared = tokenizedCatalog.count { (_, tags) -> tags.contains(satTag) && tags.contains(leastLoadedCaptain.key) }
+                    leastLoadedCaptain.value.add(Pair(satTriple, shared.coerceAtLeast(0)))
+                }
+            }
+        }
+
+        // 6. Posicionamiento en el Espacio:
+        // - Las Capitanas orbitan en un anillo elíptico equilibrado alrededor del Sol Central
+        // - Los satélites se expanden en abanico RADIAL HACIA AFUERA del Sol Central
+        // - Retracción suave de bordes: jamás se empuja un nodo hacia la pared de la pantalla
+        val baseRotationAngle = ((abs(sessionSeed) % 360) * (PI / 180.0)).toFloat()
+        val numCaptains = selectedCaptains.size
+        var nodeCounter = 0
+        val createdTagNodes = mutableListOf<SpatialNebulaNode>()
+        val generatedFilaments = mutableListOf<SpatialFilament>()
+
+        val capOrbitRadiusX = 0.28f
+        val capOrbitRadiusY = 0.23f
+        val minX = 0.08f
+        val maxX = 0.92f
+        val minY = 0.10f
+        val maxY = 0.90f
+
+        selectedCaptains.forEachIndexed { capIdx, capTriple ->
+            val (rawTag, count, score) = capTriple
+            val capAngle = baseRotationAngle + (capIdx.toFloat() / numCaptains.toFloat()) * (2 * PI).toFloat()
+
+            // Coordenadas elípticas de la Capitana (aspect ratio 16:9 TV)
+            val capX = (0.50f + cos(capAngle) * capOrbitRadiusX).coerceIn(0.20f, 0.80f)
+            val capY = (0.50f + sin(capAngle) * capOrbitRadiusY).coerceIn(0.20f, 0.80f)
+
+            val displayName = TagTranslations.getDisplayName(rawTag)
+            val captainNode = SpatialNebulaNode(
+                id = "NODE_${nodeCounter++}",
+                label = displayName,
+                rawTag = rawTag,
+                category = displayName,
+                worldX = capX,
+                worldY = capY,
+                minZoomVisible = 0.30f,
+                movieCount = count,
+                importance = 2.4f,
+                isCaptain = true,
+                keywords = listOf(rawTag, displayName.lowercase()),
+                isSun = false,
+                isPortal = false
             )
-            addNode(clusterCenterNode)
+            addNode(captainNode)
+            createdTagNodes.add(captainNode)
 
-            // Distribución armónica en 3 anillos concéntricos
-            val createdTagNodes = mutableListOf<SpatialNebulaNode>()
-            val numTags = cluster.macroTags.size
+            // Posicionar satélites ordenados por afinidad decreciente
+            val satsInCluster = satellitesPerCaptain[rawTag]?.sortedByDescending { it.second } ?: emptyList()
+            val maxAffinityInCluster = satsInCluster.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
+            val mCount = satsInCluster.size
 
-            cluster.macroTags.forEachIndexed { tagIdx, tagLabel ->
-                val (tierRadiusMult, minZoom, importance) = when {
-                    tagIdx < 8 -> Triple(0.48f, 0.65f, 1.20f)  // Anillo 1: Tropos centrales
-                    tagIdx < 18 -> Triple(0.82f, 1.15f, 1.00f) // Anillo 2: Escenarios y motivos
-                    else -> Triple(1.15f, 1.75f, 0.85f)        // Anillo 3: Micro-detalles y situaciones
-                }
+            // Ángulo hacia afuera del Sol Central
+            val outwardAngle = atan2(capY - 0.50f, capX - 0.50f)
 
-                val ringIndex = when {
-                    tagIdx < 8 -> tagIdx
-                    tagIdx < 18 -> tagIdx - 8
-                    else -> tagIdx - 18
-                }
-                val ringSize = when {
-                    tagIdx < 8 -> 8
-                    tagIdx < 18 -> 10
-                    else -> numTags - 18
-                }
+            satsInCluster.forEachIndexed { satIdx, (sTriple, sharedCount) ->
+                val (satRawTag, satCount, satScore) = sTriple
+                val satDisplayName = TagTranslations.getDisplayName(satRawTag)
 
-                val angleOffset = when {
-                    tagIdx < 8 -> 0f
-                    tagIdx < 18 -> 0.35f
-                    else -> 0.70f
-                }
+                val normalizedAffinity = (sharedCount.toFloat() / maxAffinityInCluster.toFloat()).coerceIn(0.10f, 1.0f)
 
-                val angle = (ringIndex.toFloat() / ringSize.toFloat()) * (2 * PI).toFloat() + angleOffset
-                val dist = cluster.radius * tierRadiusMult
-                val posX = (cluster.center.x + cos(angle) * dist).coerceIn(0.04f, 0.96f)
-                val posY = (cluster.center.y + sin(angle) * (dist * 0.9f)).coerceIn(0.06f, 0.94f)
+                // Dos niveles radiales escalonados para que respiren visualmente
+                val isInnerTier = (satIdx % 2 == 0)
+                val baseDist = if (isInnerTier) 0.075f else 0.120f
+                val satDist = baseDist * (1.10f - 0.20f * normalizedAffinity)
 
-                val tagKeywords = generateTagKeywords(tagLabel, cluster)
-                val tagCount = clusterMatches.count { (_, text) -> tagKeywords.any { text.contains(it) } }
+                // Abanico angular hacia afuera (evita crowding hacia el centro)
+                val fanArc = 1.25f // ~72 grados
+                val angleOffset = if (mCount > 1) {
+                    ((satIdx.toFloat() / (mCount - 1).toFloat()) - 0.5f) * fanArc
+                } else 0f
+                val satAngle = outwardAngle + angleOffset
 
-                val tagNode = SpatialNebulaNode(
-                    id = "TAG_${clusterIdx}_$tagIdx",
-                    label = tagLabel,
-                    category = cluster.category,
-                    worldX = posX,
-                    worldY = posY,
-                    minZoomVisible = minZoom,
-                    maxZoomVisible = 8.0f,
-                    importance = importance,
-                    movieCount = tagCount,
-                    keywords = tagKeywords
+                var rawSatX = capX + cos(satAngle) * satDist * 1.25f
+                var rawSatY = capY + sin(satAngle) * satDist * 0.88f
+
+                // Retracción de frontera: si se sale del margen seguro, se escala el radio hacia la Capitana
+                var edgeScale = 1.0f
+                if (rawSatX > maxX && rawSatX != capX) edgeScale = minOf(edgeScale, (maxX - capX) / (rawSatX - capX))
+                if (rawSatX < minX && rawSatX != capX) edgeScale = minOf(edgeScale, (minX - capX) / (rawSatX - capX))
+                if (rawSatY > maxY && rawSatY != capY) edgeScale = minOf(edgeScale, (maxY - capY) / (rawSatY - capY))
+                if (rawSatY < minY && rawSatY != capY) edgeScale = minOf(edgeScale, (minY - capY) / (rawSatY - capY))
+                edgeScale = edgeScale.coerceIn(0.40f, 1.0f)
+
+                val satX = (capX + (rawSatX - capX) * edgeScale).coerceIn(minX, maxX)
+                val satY = (capY + (rawSatY - capY) * edgeScale).coerceIn(minY, maxY)
+
+                val satNode = SpatialNebulaNode(
+                    id = "NODE_${nodeCounter++}",
+                    label = satDisplayName,
+                    rawTag = satRawTag,
+                    category = displayName,
+                    worldX = satX,
+                    worldY = satY,
+                    minZoomVisible = 0.55f,
+                    movieCount = satCount,
+                    importance = if (satScore >= 14f) 1.75f else 1.0f,
+                    isCaptain = false,
+                    keywords = listOf(satRawTag, satDisplayName.lowercase()),
+                    isSun = false,
+                    isPortal = false
                 )
-                addNode(tagNode)
-                createdTagNodes.add(tagNode)
+                addNode(satNode)
+                createdTagNodes.add(satNode)
 
-                // Filamento entre el centro del cúmulo y las etiquetas del primer anillo
-                if (tagIdx < 8) {
-                    allFilaments.add(SpatialFilament(clusterCenterNode.id, tagNode.id, 0.9f))
-                } else if (tagIdx < 18) {
-                    // Filamento desde una etiqueta del anillo 1 a la del anillo 2
-                    val parentTagIdx = tagIdx % 8
-                    allFilaments.add(SpatialFilament("TAG_${clusterIdx}_$parentTagIdx", tagNode.id, 0.7f))
-                } else {
-                    // Filamento desde una etiqueta del anillo 2 a la del anillo 3
-                    val parentTagIdx = 8 + (tagIdx % 10)
-                    allFilaments.add(SpatialFilament("TAG_${clusterIdx}_$parentTagIdx", tagNode.id, 0.5f))
+                // Filamento directo entre el satélite y su Capitana
+                val filamentAffinity = (0.4f + 0.6f * normalizedAffinity).coerceIn(0.4f, 1.0f)
+                generatedFilaments.add(
+                    SpatialFilament(
+                        fromNodeId = satNode.id,
+                        toNodeId = captainNode.id,
+                        affinity = filamentAffinity
+                    )
+                )
+            }
+        }
+
+        // 7. Relajación de Fuerzas Físicas Simétricas (Anti-Solapamiento sin estampida contra los bordes)
+        val satellitesOnly = createdTagNodes.filter { !it.isCaptain }
+        val captainsOnly = createdTagNodes.filter { it.isCaptain }
+
+        repeat(4) {
+            for (a in satellitesOnly.indices) {
+                val nodeA = satellitesOnly[a]
+                for (b in a + 1 until satellitesOnly.size) {
+                    val nodeB = satellitesOnly[b]
+                    val dx = (nodeB.worldX - nodeA.worldX) * 1.6f
+                    val dy = nodeB.worldY - nodeA.worldY
+                    val dist = hypot(dx, dy)
+                    val minDist = 0.052f
+                    if (dist < minDist && dist > 0.0005f) {
+                        val overlap = (minDist - dist) * 0.5f
+                        val nx = (dx / dist) * overlap * 0.5f
+                        val ny = (dy / dist) * overlap * 0.5f
+                        nodeA.worldX = (nodeA.worldX - nx).coerceIn(minX, maxX)
+                        nodeA.worldY = (nodeA.worldY - ny).coerceIn(minY, maxY)
+                        nodeB.worldX = (nodeB.worldX + nx).coerceIn(minX, maxX)
+                        nodeB.worldY = (nodeB.worldY + ny).coerceIn(minY, maxY)
+                    }
+                }
+
+                // Repulsión contra las Capitanas
+                for (cap in captainsOnly) {
+                    val dx = (nodeA.worldX - cap.worldX) * 1.6f
+                    val dy = nodeA.worldY - cap.worldY
+                    val dist = hypot(dx, dy)
+                    val minCapDist = 0.056f
+                    if (dist < minCapDist && dist > 0.0005f) {
+                        val push = (minCapDist - dist)
+                        nodeA.worldX = (nodeA.worldX + (dx / dist) * push * 0.6f).coerceIn(minX, maxX)
+                        nodeA.worldY = (nodeA.worldY + (dy / dist) * push * 0.6f).coerceIn(minY, maxY)
+                    }
+                }
+
+                // Zona de seguridad del Sol Central (radio 0.18f)
+                val distSun = hypot((nodeA.worldX - 0.50f) * 1.3f, nodeA.worldY - 0.50f)
+                if (distSun < 0.185f && distSun > 0.0005f) {
+                    val push = (0.185f - distSun)
+                    nodeA.worldX = (nodeA.worldX + ((nodeA.worldX - 0.50f) / distSun) * push).coerceIn(minX, maxX)
+                    nodeA.worldY = (nodeA.worldY + ((nodeA.worldY - 0.50f) / distSun) * push).coerceIn(minY, maxY)
                 }
             }
+        }
 
-            // Filamentos anulares entre vecinos del mismo anillo
-            for (i in 0 until 8) {
-                allFilaments.add(SpatialFilament("TAG_${clusterIdx}_$i", "TAG_${clusterIdx}_${(i + 1) % 8}", 0.4f))
+        // 8. Filamentos del Anillo de Constelaciones (Conecta Capitanas en una diadema estelar limpia)
+        if (selectedCaptains.size >= 3) {
+            for (i in selectedCaptains.indices) {
+                val capA = createdTagNodes.first { it.rawTag == selectedCaptains[i].first }
+                val nextIdx = (i + 1) % selectedCaptains.size
+                val capB = createdTagNodes.first { it.rawTag == selectedCaptains[nextIdx].first }
+                generatedFilaments.add(
+                    SpatialFilament(
+                        fromNodeId = capA.id,
+                        toNodeId = capB.id,
+                        affinity = 0.35f
+                    )
+                )
             }
         }
 
-        // Filamentos interestelares tenues entre cúmulos adyacentes
-        allFilaments.add(SpatialFilament("CLUSTER_0", "CLUSTER_3", 0.45f)) // Crimen - Misterio
-        allFilaments.add(SpatialFilament("CLUSTER_0", "CLUSTER_1", 0.45f)) // Crimen - Drama
-        allFilaments.add(SpatialFilament("CLUSTER_1", "CLUSTER_2", 0.45f)) // Drama - Aventura
-        allFilaments.add(SpatialFilament("CLUSTER_2", "CLUSTER_5", 0.45f)) // Aventura - Bélica
-        allFilaments.add(SpatialFilament("CLUSTER_3", "CLUSTER_6", 0.45f)) // Misterio - Terror
-        allFilaments.add(SpatialFilament("CLUSTER_4", "CLUSTER_9", 0.45f)) // Animación - Fantasía
-        allFilaments.add(SpatialFilament("CLUSTER_5", "CLUSTER_8", 0.45f)) // Bélica - Western
-        allFilaments.add(SpatialFilament("CLUSTER_6", "CLUSTER_7", 0.45f)) // Terror - Comedia
-        allFilaments.add(SpatialFilament("CLUSTER_7", "CLUSTER_8", 0.45f)) // Comedia - Western
-    }
+        baseFilaments = generatedFilaments
+        allFilaments.addAll(generatedFilaments)
 
-    /**
-     * Normaliza cadenas para búsqueda de alta tolerancia semántica (sin acentos, minúsculas).
-     */
-    private fun normalizeForSearch(text: String): String {
-        val lower = text.lowercase()
-        val unaccented = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD)
-            .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
-        return "$lower $unaccented"
-    }
-
-    /**
-     * Genera un conjunto rico de palabras clave semánticas, lemas y sinónimos para una etiqueta.
-     */
-    private fun generateTagKeywords(tagLabel: String, cluster: ClusterTemplate): List<String> {
-        val result = mutableSetOf<String>()
-        val lower = tagLabel.lowercase().trim()
-        result.add(lower)
-
-        // Diccionario semántico de alta precisión para tropos y motivos clave
-        val tropeSynonyms = mapOf(
-            "historias reales" to listOf("historia real", "hechos reales", "true story", "based on", "biography", "biografía", "biopic", "documentary", "documental", "vida real", "historia"),
-            "drama familiar" to listOf("drama", "familia", "familiar", "family", "padres", "hijos", "padre", "madre", "relaciones familiares", "hogar"),
-            "superación personal" to listOf("superación", "superacion", "inspirational", "overcoming", "lucha", "esfuerzo", "esperanza", "motivational"),
-            "amor imposible" to listOf("romance", "amor", "love", "desamor", "romántica", "romantico", "pasión"),
-            "pérdida & duelo" to listOf("duelo", "pérdida", "perdida", "muerte", "luto", "tragedia", "grief", "loss", "fallecimiento"),
-            "secretos del pasado" to listOf("secreto", "pasado", "revelación", "misterio", "secret", "verdad", "truth"),
-            "amistad incondicional" to listOf("amistad", "amigo", "amigos", "friendship", "friend", "lealtad", "compañerismo"),
-            "infancia & madurez" to listOf("infancia", "niño", "niñez", "madurez", "coming of age", "crecimiento", "youth", "adolescencia"),
-            "cine negro" to listOf("noir", "cine negro", "detective", "policial", "crimen", "investigación"),
-            "atraco al banco" to listOf("atraco", "heist", "robo", "banco", "ladrón", "bank"),
-            "mafia & clanes" to listOf("mafia", "gangster", "clan", "mob", "crimen organizado", "cartel"),
-            "corrupción policial" to listOf("corrupción", "policía", "policial", "police", "cop"),
-            "falso culpable" to listOf("falso culpable", "inocente", "conspiración", "trampa", "framed"),
-            "detectives privados" to listOf("detective", "investigador", "investigación", "private investigator"),
-            "juicios & ley" to listOf("juicio", "abogado", "tribunal", "ley", "legal", "court", "lawyer", "trial"),
-            "venganza callejera" to listOf("venganza", "revenge", "justicia", "calle"),
-            "clásicos dibujados" to listOf("dibujos", "animación", "animation", "clásico", "classic", "disney"),
-            "aventuras familiares" to listOf("familia", "aventura", "family", "kids", "infantil", "children"),
-            "anime maestro" to listOf("anime", "animación", "manga", "japón", "japan"),
-            "fábulas con corazón" to listOf("fábula", "cuento", "moraleja", "corazón", "emotivo"),
-            "mundos flotantes" to listOf("fantasía", "flotante", "mundo", "isla", "cielo"),
-            "amistades inolvidables" to listOf("amistad", "amigo", "lealtad", "amigos", "friendship"),
-            "criaturas del bosque" to listOf("criatura", "bosque", "animal", "espíritu", "naturaleza"),
-            "viajes fantásticos" to listOf("viaje", "fantástico", "aventura", "journey", "mundo"),
-            "trincheras & fango" to listOf("trinchera", "guerra", "bélico", "soldado", "wwi", "batalla"),
-            "tripulación de submarino" to listOf("submarino", "submarine", "torpedo", "sonar", "naval"),
-            "guerra fría & espías" to listOf("guerra fría", "espía", "espías", "spy", "kgb", "cia", "cold war"),
-            "resistencia civil" to listOf("resistencia", "ocupación", "partisanos", "rebeldes", "lucha"),
-            "batallas navales" to listOf("naval", "barco", "flota", "acorazado", "mar", "armada"),
-            "aviación & ases" to listOf("aviación", "avión", "piloto", "combate aéreo", "fighter"),
-            "segunda guerra mundial" to listOf("segunda guerra", "wwii", "ww2", "nazi", "aliados", "holocausto"),
-            "el frente oriental" to listOf("frente oriental", "stalingrado", "rusia", "soviético"),
-            "casas encantadas" to listOf("casa encantada", "haunted", "fantasma", "mansión", "espíritu"),
-            "posesiones & demonios" to listOf("posesión", "demonio", "exorcismo", "exorcist", "diablo"),
-            "terror psicológico" to listOf("terror psicológico", "psicológico", "paranoia", "locura", "mente"),
-            "monstruos ocultos" to listOf("monstruo", "criatura", "bestia", "monster", "pesadilla"),
-            "niebla & aislamiento" to listOf("niebla", "aislamiento", "aislado", "atrapados"),
-            "brujería & sectas" to listOf("brujería", "bruja", "secta", "culto", "witch", "ritual"),
-            "slasher clásico" to listOf("slasher", "asesino", "cuchillo", "máscara", "psicópata"),
-            "paranoia en la nieve" to listOf("nieve", "ártico", "frío", "paranoia", "aislados"),
-            "comedia romántica" to listOf("comedia romántica", "rom-com", "romance", "amor", "comedia"),
-            "sátira mordaz" to listOf("sátira", "parodia", "ironía", "crítica", "satire"),
-            "humor negro" to listOf("humor negro", "sarcasmo", "ácido", "macabro", "black comedy"),
-            "comedia de amigos" to listOf("amigos", "compañeros", "buddy", "desmadre", "fiesta"),
-            "enredos familiares" to listOf("familia", "enredo", "caos", "comedia familiar"),
-            "viaje desastroso" to listOf("viaje", "carretera", "vacaciones", "desastre", "road trip"),
-            "timadores torpes" to listOf("estafa", "timo", "ladrones", "torpes", "chapuza"),
-            "parodia brillante" to listOf("parodia", "absurdo", "burla", "spoof"),
-            "duelo al mediodía" to listOf("duelo", "western", "pistolero", "tiroteo", "revolver"),
-            "cazarrecompensas" to listOf("cazarrecompensas", "recompensa", "bounty hunter", "forajido"),
-            "forajidos en fuga" to listOf("forajido", "fuga", "huida", "perseguido", "bandido"),
-            "venganza en el cañón" to listOf("venganza", "cañón", "desierto", "pistola"),
-            "el sheriff solitario" to listOf("sheriff", "comisario", "ley", "pueblo", "estrella"),
-            "el tren asaltado" to listOf("tren", "asalto", "locomotora", "vía"),
-            "cantinas & saloons" to listOf("saloon", "cantina", "bar", "póquer", "whisky"),
-            "pueblos sin ley" to listOf("sin ley", "frontera", "pueblo", "bandidos"),
-            "reinos medievales" to listOf("medieval", "reino", "rey", "castillo", "corona", "trono"),
-            "dragones & fuego" to listOf("dragón", "dragon", "dragones", "fuego", "bestia"),
-            "cuentos de hadas" to listOf("cuento de hadas", "hadas", "fairy", "princesa", "encantado"),
-            "magos & hechizos" to listOf("mago", "hechizo", "brujo", "magia", "conjuro", "wizard"),
-            "mitología antigua" to listOf("mitología", "dioses", "grecia", "olimpo", "leyenda", "mito"),
-            "espadas & honor" to listOf("espada", "honor", "caballero", "duelo", "guerrero"),
-            "viajes a tierras mágicas" to listOf("tierra mágica", "otra dimensión", "portal", "fantasía", "mundo mágico"),
-            "criaturas legendarias" to listOf("criatura", "legendario", "monstruo fantástico", "bestia mítica"),
-            "supervivencia salvaje" to listOf("supervivencia", "survival", "salvaje", "naturaleza", "aislado"),
-            "naufragio en alta mar" to listOf("naufragio", "náufrago", "mar", "océano", "balsa", "isla desierta"),
-            "alta montaña & nieve" to listOf("montaña", "nieve", "escalada", "alpinismo", "everest", "cumbre"),
-            "caza del tesoro" to listOf("tesoro", "mapa del tesoro", "oro", "búsqueda", "arqueología"),
-            "expedición a la selva" to listOf("selva", "jungla", "expedición", "amazonas", "exploración"),
-            "piratas & corsarios" to listOf("pirata", "piratas", "corsario", "barco pirata", "tesoro pirata"),
-            "aislamiento en el desierto" to listOf("desierto", "arena", "sed", "aislado", "caravana"),
-            "exploradores sin retorno" to listOf("explorador", "expedición perdida", "tierra ignota", "aventura"),
-            "secretos de estado" to listOf("secreto de estado", "gobierno", "conspiración", "presidente", "agencia"),
-            "desaparición misteriosa" to listOf("desaparición", "desaparecido", "desaparecida", "búsqueda", "rastro"),
-            "pueblo con secretos" to listOf("pueblo", "comunidad", "secretos", "sospechosos", "cerrado"),
-            "crimen de habitación cerrada" to listOf("habitación cerrada", "asesinato misterioso", "enigma", "coartada"),
-            "conspiración en la sombra" to listOf("conspiración", "complot", "en la sombra", "gobierno en la sombra"),
-            "el testigo silenciado" to listOf("testigo", "silenciado", "amenaza", "asesinato", "protección"),
-            "la doble vida" to listOf("doble vida", "secreto", "identidad oculta", "engaño"),
-            "identidad robada" to listOf("identidad", "suplantación", "falso", "amnesia", "quién soy")
+        // 8. Instanciar el Sol Central (SUN_CORE_ID) en (0.5, 0.5)
+        updateSunNode(
+            chain = emptyList(),
+            movieCount = 0,
+            previewPosters = emptyList(),
+            format = MediaFormat.ALL
         )
+    }
 
-        tropeSynonyms[lower]?.let { result.addAll(it) }
+    /**
+     * Actualiza el Sol Central con el estado de la cadena y las películas descubiertas.
+     */
+    fun updateSunNode(
+        chain: List<SpatialNebulaNode>,
+        movieCount: Int,
+        previewPosters: List<String> = emptyList(),
+        format: MediaFormat = MediaFormat.ALL
+    ) {
+        allNodes.removeAll { it.id == SUN_CORE_ID }
+        nodeById.remove(SUN_CORE_ID)
+        allFilaments.clear()
+        allFilaments.addAll(baseFilaments)
 
-        // Tokenización morfológica y lemas para cualquier etiqueta (incluyendo anillos 2 y 3)
-        val stopWords = setOf("el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "en", "al", "y", "e", "o", "u", "a", "con", "por", "para", "tras", "sin", "sobre", "the", "a", "an", "and", "of", "in", "on", "at", "to", "for", "with")
-        val tokens = lower.split(Regex("[^\\p{L}0-9]+")).filter { it.length >= 3 && it !in stopWords }
-
-        for (token in tokens) {
-            result.add(token)
-            val unaccented = java.text.Normalizer.normalize(token, java.text.Normalizer.Form.NFD)
-                .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
-            if (unaccented != token) result.add(unaccented)
-
-            if (token.endsWith("es") && token.length > 4) {
-                result.add(token.dropLast(2))
-            } else if (token.endsWith("s") && token.length > 3) {
-                result.add(token.dropLast(1))
-            }
-
-            if (token == "familiar" || token == "familiares") {
-                result.add("familia")
-                result.add("family")
-            }
-            if (token == "reales" || token == "real") {
-                result.add("hechos reales")
-                result.add("historia real")
-                result.add("true story")
-                result.add("biography")
-                result.add("biografia")
-            }
+        val sunLabel = when {
+            chain.isEmpty() -> "SOL CENTRAL"
+            else -> "✦ $movieCount ${formatNoun(format).uppercase()}"
         }
 
-        // Incorporar categoría del cúmulo como señal secundaria
-        result.add(cluster.category.lowercase())
+        val sunNode = SpatialNebulaNode(
+            id = SUN_CORE_ID,
+            label = sunLabel,
+            category = "Sol Gravitacional",
+            worldX = 0.50f,
+            worldY = 0.50f,
+            minZoomVisible = 0.2f,
+            maxZoomVisible = 20.0f,
+            movieCount = movieCount,
+            importance = 3.5f,
+            isSun = true,
+            isPortal = true, // Permite compatibilidad con código existente
+            previewPosters = previewPosters
+        )
+        addNode(sunNode)
 
-        return result.toList()
+        // Trazar rayos de luz activos desde cada nodo de la cadena hacia el Sol Central
+        chain.forEach { chainedNode ->
+            allFilaments.add(
+                SpatialFilament(
+                    fromNodeId = chainedNode.id,
+                    toNodeId = SUN_CORE_ID,
+                    affinity = 2.5f,
+                    isActiveRay = true
+                )
+            )
+        }
     }
 
     /**
-     * Comprueba si un nodo candidato puede conectarse a la cadena activa.
-     * Solo es válido si existe al menos 1 película real en el catálogo que satisfaga
-     * la intersección completa de todas las etiquetas de la cadena más el candidato.
+     * Poda Cósmica en Vivo:
+     * Calcula qué estrellas sobreviven según la intersección ESTRICTA "AND" de la cadena activa.
+     * Cualquier nodo con 0 películas en común con la cadena desaparece de la pantalla.
      */
-    fun canExtendChain(currentChain: List<SpatialNebulaNode>, candidate: SpatialNebulaNode): Boolean {
-        if (candidate.isPortal || candidate.id == PORTAL_NODE_ID) return true
-        if (currentChain.isEmpty()) return true
-        if (currentChain.any { it.id == candidate.id }) return false
-        val compatibleIds = getCompatibleNodeIds(currentChain)
-        return candidate.id in compatibleIds
-    }
-
-    /**
-     * Calcula los IDs de todos los nodos del firmamento que tienen al menos una película
-     * en común con la intersección de la cadena activa actual.
-     */
-    fun getCompatibleNodeIds(currentChain: List<SpatialNebulaNode>): Set<String> {
-        if (currentChain.isEmpty()) {
+    fun getVisibleNodeIds(
+        chain: List<SpatialNebulaNode>,
+        format: MediaFormat = MediaFormat.ALL
+    ): Set<String> {
+        if (chain.isEmpty()) {
             return allNodes.map { it.id }.toSet()
         }
 
-        val chainKeywords = currentChain.map { node ->
-            node.keywords.map { it.lowercase().trim() }.filter { it.isNotEmpty() }
-        }
+        val surviving = mutableSetOf<String>()
+        surviving.add(SUN_CORE_ID)
+        chain.forEach { surviving.add(it.id) }
 
-        val catalog = if (tokenizedCatalog.isNotEmpty()) tokenizedCatalog else return emptySet()
+        val chainRawTags = chain.map { it.rawTag.lowercase() }
+        val catalogForFormat = tokenizedCatalog.filter { (entity, _) -> entity.matchesFormat(format) }
 
-        // Obras que satisfacen TODAS las etiquetas de la cadena activa
-        val matchingMovies = catalog.filter { (_, text) ->
-            chainKeywords.all { kws -> kws.any { kw -> text.contains(kw) } }
+        // 1. Obras que satisfacen TODOS los tags de la cadena activa (AND estricto)
+        val matchingMovies = catalogForFormat.filter { (_, tags) ->
+            chainRawTags.all { chainTag -> tags.contains(chainTag) }
         }
 
         if (matchingMovies.isEmpty()) {
-            return emptySet()
+            return surviving
         }
 
-        // Nodos del firmamento que tienen al menos una película en común con las ya filtradas
-        val compatible = mutableSetOf<String>()
+        // 2. Unión de todos los tags que coexisten en las obras supervivientes (O(M) una sola vez)
+        val survivingTagsUnion = HashSet<String>()
+        for ((_, tags) in matchingMovies) {
+            survivingTagsUnion.addAll(tags)
+        }
+
+        // 3. Verificación O(1) por nodo (en vez de O(N*M))
         for (node in allNodes) {
-            if (node.isPortal || node.id == PORTAL_NODE_ID) continue
-            val kws = node.keywords.map { it.lowercase().trim() }.filter { it.isNotEmpty() }
-            if (kws.isEmpty()) continue
-
-            val hasOverlap = matchingMovies.any { (_, text) ->
-                kws.any { kw -> text.contains(kw) }
-            }
-            if (hasOverlap) {
-                compatible.add(node.id)
+            if (node.isSun || node.id in surviving) continue
+            val raw = node.rawTag.lowercase()
+            if (survivingTagsUnion.contains(raw)) {
+                surviving.add(node.id)
             }
         }
-        return compatible
+
+        return surviving
     }
 
     /**
-     * Filtra y califica títulos de la biblioteca que coinciden con la cadena de etiquetas conectadas.
-     * Intenta primero la intersección estricta (todas las etiquetas). Si no reúne suficientes
-     * resultados, degrada con elegancia a los títulos que coinciden con la mayoría de etiquetas,
-     * de modo que el portal nunca quede vacío de forma prematura.
+     * Filtra obras aplicando estrictamente "AND" (todas las etiquetas deben coincidir).
+     * Cero degradación, cero lógica 'OR'.
      */
     fun getMatchingMoviesForChain(
         chain: List<SpatialNebulaNode>,
@@ -599,120 +560,90 @@ class NebulaSpatialEngine {
         accessToken: String,
         format: MediaFormat = MediaFormat.ALL
     ): List<MediaItem> {
-        if (catalog.isEmpty() || chain.isEmpty()) return emptyList()
+        if (chain.isEmpty()) return emptyList()
 
-        // Lista de conjuntos de palabras clave para cada etiqueta en la cadena
-        val chainKeywords = chain.map { node ->
-            node.keywords.map { it.lowercase().trim() }.filter { it.isNotEmpty() }
-        }
+        val chainTags = chain.map { it.rawTag.lowercase() }
 
-        val targetCatalog = (if (tokenizedCatalog.isNotEmpty()) tokenizedCatalog else {
-            catalog.map { entity ->
-                val raw = "${entity.genres ?: ""} ${entity.tags ?: ""} ${entity.title} ${entity.originalTitle ?: ""} ${entity.overview ?: ""}"
-                Pair(entity, normalizeForSearch(raw))
-            }
-        }).filter { (entity, _) -> entity.matchesFormat(format) }
-
-        // Puntuación por coincidencia parcial
-        val scored = targetCatalog.mapNotNull { (entity, text) ->
-            val matchedTags = chainKeywords.count { kws -> kws.any { kw -> text.contains(kw) } }
-            if (matchedTags == 0) return@mapNotNull null
-            val totalHits = chainKeywords.sumOf { kws -> kws.count { kw -> text.contains(kw) } }
-            val rating = entity.communityRating ?: 0f
-            val score = 1000f + (totalHits.coerceAtMost(20) * 5f) + (rating * 3f)
-            ScoredEntity(entity, matchedTags, score)
-        }
-
-        // 1. Intersección estricta: satisface TODAS las etiquetas de la cadena
-        val strict = scored.filter { it.matchedTags == chain.size }
-        val chosen = if (strict.size >= MIN_STRICT_MATCHES) {
-            strict
+        // Utilizar tokenizedCatalog precalculado en O(1) por obra en lugar de re-tokenizar miles de entidades en el hilo principal
+        val sourceCatalog = if (tokenizedCatalog.isNotEmpty()) {
+            tokenizedCatalog.filter { (entity, _) -> entity.matchesFormat(format) }
         } else {
-            // 2. Degradación: coincidir con la mayoría de etiquetas; si aún no hay, con al menos una
-            val majorityThreshold = (chain.size - 1).coerceAtLeast(1)
-            scored.filter { it.matchedTags >= majorityThreshold }.ifEmpty { scored }
+            catalog.filter { it.matchesFormat(format) }.map { Pair(it, extractCanonicalTags(it)) }
         }
 
-        val finalEntities = chosen
-            .sortedWith(compareByDescending<ScoredEntity> { it.matchedTags }.thenByDescending { it.score })
-            .take(30)
-            .map { it.entity }
+        val strictMatches = sourceCatalog.filter { (_, entityTags) ->
+            chainTags.all { cTag -> entityTags.contains(cTag) }
+        }.map { it.first }
 
-        return finalEntities.map { it.toMediaItem(serverUrl, accessToken) }
+        return strictMatches
+            .sortedWith(
+                compareByDescending<JellyfinMediaEntity> { !it.isPlayed }
+                    .thenByDescending { it.communityRating ?: 0f }
+                    .thenByDescending { it.productionYear ?: 0 }
+            )
+            .take(40)
+            .map { it.toMediaItem(serverUrl, accessToken) }
     }
 
     /**
-     * Elige una obra aleatoria bien valorada y no vista para el momento "no sé qué ver".
-     * Respeta el filtro de formato activo.
+     * Valida si un nodo puede ser conectado a la cadena activa.
      */
-    fun pickSurprise(
-        catalog: List<JellyfinMediaEntity>,
-        serverUrl: String,
-        accessToken: String,
+    fun canExtendChain(
+        currentChain: List<SpatialNebulaNode>,
+        candidate: SpatialNebulaNode,
         format: MediaFormat = MediaFormat.ALL
-    ): MediaItem? {
-        val formatted = catalog.filter { it.matchesFormat(format) }
-        if (formatted.isEmpty()) return null
-
-        val unwatchedGood = formatted.filter { !it.isPlayed && (it.communityRating ?: 0f) >= 6.5f }
-        val pool = unwatchedGood.ifEmpty { formatted.filter { (it.communityRating ?: 0f) >= 6.5f } }
-            .ifEmpty { formatted }
-        return pool.randomOrNull()?.toMediaItem(serverUrl, accessToken)
+    ): Boolean {
+        if (candidate.isSun || candidate.id == SUN_CORE_ID) return true
+        if (currentChain.any { it.id == candidate.id }) return false
+        val visibleIds = getVisibleNodeIds(currentChain, format)
+        return candidate.id in visibleIds
     }
 
-    private data class ScoredEntity(
-        val entity: JellyfinMediaEntity,
-        val matchedTags: Int,
-        val score: Float
-    )
+    /**
+     * Navegación D-Pad orientada al firmamento podado y al Sol Central.
+     * Solo navega a nodos visibles y permite saltar al Sol desde cualquier ángulo.
+     */
+    fun findNextNeighbor(
+        currentId: String,
+        direction: DPadDirection,
+        currentZoom: Float,
+        activeChain: List<SpatialNebulaNode> = emptyList(),
+        format: MediaFormat = MediaFormat.ALL
+    ): SpatialNebulaNode? {
+        val current = nodeById[currentId] ?: return allNodes.firstOrNull { it.id == SUN_CORE_ID }
+        val visibleIds = getVisibleNodeIds(activeChain, format)
 
-    private fun JellyfinMediaEntity.matchesFormat(format: MediaFormat): Boolean = when (format) {
-        MediaFormat.ALL -> true
-        MediaFormat.MOVIES -> type.equals("Movie", ignoreCase = true)
-        MediaFormat.SERIES -> type.equals("Series", ignoreCase = true)
-    }
+        // Candidatos válidos: solo nodos supervivientes de la poda
+        val candidates = allNodes.filter { it.id in visibleIds && it.id != current.id }
+        if (candidates.isEmpty()) return allNodes.firstOrNull { it.id == SUN_CORE_ID }
 
-    private fun formatNoun(format: MediaFormat): String = when (format) {
-        MediaFormat.ALL -> "TÍTULOS"
-        MediaFormat.MOVIES -> "PELÍCULAS"
-        MediaFormat.SERIES -> "SERIES"
-    }
+        val cx = current.worldX
+        val cy = current.worldY
 
-    fun updatePortalNode(chain: List<SpatialNebulaNode>, movieCount: Int, format: MediaFormat = MediaFormat.ALL) {
-        allNodes.removeAll { it.id == PORTAL_NODE_ID }
-        nodeById.remove(PORTAL_NODE_ID)
-        allFilaments.removeAll { it.fromNodeId == PORTAL_NODE_ID || it.toNodeId == PORTAL_NODE_ID }
+        val scored = candidates.mapNotNull { target ->
+            val dx = target.worldX - cx
+            val dy = target.worldY - cy
 
-        // Si no hay etiquetas seleccionadas o no hay películas, no generar el portal
-        if (chain.isEmpty() || movieCount <= 0) {
-            return
+            val isValidDirection = when (direction) {
+                DPadDirection.LEFT -> dx < -0.012f
+                DPadDirection.RIGHT -> dx > 0.012f
+                DPadDirection.UP -> dy < -0.012f
+                DPadDirection.DOWN -> dy > 0.012f
+            }
+
+            if (isValidDirection) {
+                val distance = hypot(dx, dy)
+                val anglePenalty = when (direction) {
+                    DPadDirection.LEFT, DPadDirection.RIGHT -> abs(dy) * 1.6f
+                    DPadDirection.UP, DPadDirection.DOWN -> abs(dx) * 1.6f
+                }
+                // Si el objetivo es el Sol Central, otorgar una fuerte atracción magnética
+                val sunBonus = if (target.isSun || target.id == SUN_CORE_ID) -0.09f else 0f
+                Pair(target, distance + anglePenalty + sunBonus)
+            } else null
         }
 
-        val lastNode = chain.last()
-        // Proyectar el portal hacia el espacio despejado exterior para evitar colisión con etiquetas del cúmulo
-        val outwardX = if (lastNode.worldX >= 0.50f) 0.065f else -0.065f
-        val outwardY = if (lastNode.worldY >= 0.50f) 0.045f else -0.045f
-        val targetX = (lastNode.worldX + outwardX).coerceIn(0.08f, 0.92f)
-        val targetY = (lastNode.worldY + outwardY).coerceIn(0.12f, 0.86f)
-        val portalPos = Offset(targetX, targetY)
-
-        val portalNode = SpatialNebulaNode(
-            id = PORTAL_NODE_ID,
-            label = "✦ VER $movieCount ${formatNoun(format)}",
-            category = "Portal",
-            worldX = portalPos.x,
-            worldY = portalPos.y,
-            minZoomVisible = 0.4f,
-            maxZoomVisible = 20.0f,
-            movieCount = movieCount,
-            importance = 3.0f,
-            isPortal = true
-        )
-        addNode(portalNode)
-
-        chain.forEach { node ->
-            allFilaments.add(SpatialFilament(node.id, PORTAL_NODE_ID, 2.0f))
-        }
+        return scored.minByOrNull { it.second }?.first
     }
 
     private fun addNode(node: SpatialNebulaNode) {
@@ -721,130 +652,178 @@ class NebulaSpatialEngine {
     }
 
     /**
-     * Calcula la posición concentrada de un nodo según la atracción gravitacional de la cadena activa.
-     * Los nodos compatibles se atraen físicamente hacia el centro focal de la selección.
+     * Descompone géneros compuestos de TMDB (especialmente de Series de TV) en sus
+     * géneros atómicos correspondientes para evitar etiquetas redundantes/duplicadas
+     * como "Ciencia Ficción y Fantasía" coexistiendo con "Ciencia Ficción" y "Fantasía".
      */
-    fun getEffectiveNodePosition(
-        node: SpatialNebulaNode,
-        activeChain: List<SpatialNebulaNode>,
-        compatibleNodeIds: Set<String>?
-    ): Offset {
-        if (activeChain.isEmpty() || compatibleNodeIds == null) {
-            return Offset(node.worldX, node.worldY)
+    private fun decomposeCompositeGenre(raw: String): List<String> {
+        val clean = raw.trim().lowercase(Locale.ROOT)
+        val unaccented = TagTranslations.stripAccents(clean)
+        return when {
+            (unaccented.contains("sci-fi") || unaccented.contains("scifi") ||
+             unaccented.contains("science fiction") || unaccented.contains("ciencia ficcion")) &&
+            (unaccented.contains("fantasy") || unaccented.contains("fantasia")) -> {
+                listOf("ciencia ficcion", "fantasia")
+            }
+            (unaccented.contains("action") || unaccented.contains("accion")) &&
+            (unaccented.contains("adventure") || unaccented.contains("aventura")) -> {
+                listOf("accion", "aventura")
+            }
+            (unaccented.contains("war") || unaccented.contains("guerra") || unaccented.contains("belica")) &&
+            (unaccented.contains("politics") || unaccented.contains("politica")) -> {
+                listOf("belica", "politica")
+            }
+            else -> listOf(clean)
         }
-        if (node.isPortal || node.id == PORTAL_NODE_ID || activeChain.any { it.id == node.id }) {
-            return Offset(node.worldX, node.worldY)
-        }
-        if (!compatibleNodeIds.contains(node.id)) {
-            return Offset(node.worldX, node.worldY)
-        }
-
-        val focalX = activeChain.map { it.worldX }.average().toFloat()
-        val focalY = activeChain.map { it.worldY }.average().toFloat()
-
-        val attractionFactor = (0.35f + (activeChain.size - 1) * 0.15f).coerceAtMost(0.65f)
-        val effX = node.worldX + (focalX - node.worldX) * attractionFactor
-        val effY = node.worldY + (focalY - node.worldY) * attractionFactor
-
-        return Offset(effX, effY)
     }
 
     /**
-     * Algoritmo de Índice Espacial para D-Pad:
-     * Encuentra el nodo más idóneo en el cono angular de la dirección pulsada,
-     * priorizando proximidad y castigando desviaciones perpendiculares.
+     * Extrae las temáticas canónicas de una obra, resolviendo sinónimos y traducciones
+     * (inglés y español) a su etiqueta canónica única en español.
+     * Ejemplo: "Animation", "animación", "animacion" -> "animacion"
+     * "Family", "familia" -> "familia"
+     * "Crime", "crimen" -> "crimen"
      */
-    fun findNextNeighbor(
-        currentId: String,
-        direction: DPadDirection,
-        currentZoom: Float,
-        activeChain: List<SpatialNebulaNode> = emptyList(),
-        compatibleNodeIds: Set<String>? = null
-    ): SpatialNebulaNode? {
-        val current = nodeById[currentId] ?: return allNodes.firstOrNull()
-
-        // Si hay una cadena activa, limitar el foco D-Pad EXCLUSIVAMENTE a nodos compatibles o el portal
-        var candidateNodes = if (activeChain.isNotEmpty() && compatibleNodeIds != null) {
-            allNodes.filter { node ->
-                node.id == PORTAL_NODE_ID || node.isPortal ||
-                        activeChain.any { it.id == node.id } ||
-                        compatibleNodeIds.contains(node.id)
-            }
-        } else {
-            allNodes
-        }
-
-        if (candidateNodes.isEmpty()) {
-            candidateNodes = allNodes
-        }
-
-        var candidates = candidateNodes.filter { node ->
-            node.id != current.id && (node.isPortal || currentZoom >= (node.minZoomVisible * 0.65f) || node.importance >= 1.0f)
-        }
-        if (candidates.isEmpty()) {
-            candidates = candidateNodes.filter { it.id != current.id }
-        }
-
-        val currentPos = getEffectiveNodePosition(current, activeChain, compatibleNodeIds)
-
-        fun scoreCandidates(list: List<SpatialNebulaNode>): List<Pair<SpatialNebulaNode, Float>> {
-            return list.mapNotNull { target ->
-                val targetPos = getEffectiveNodePosition(target, activeChain, compatibleNodeIds)
-                val dx = targetPos.x - currentPos.x
-                val dy = targetPos.y - currentPos.y
-
-                val isValidDirection = when (direction) {
-                    DPadDirection.LEFT -> dx < -0.005f
-                    DPadDirection.RIGHT -> dx > 0.005f
-                    DPadDirection.UP -> dy < -0.005f
-                    DPadDirection.DOWN -> dy > 0.005f
+    private fun extractCanonicalTags(entity: JellyfinMediaEntity): Set<String> {
+        val rawTokens = mutableSetOf<String>()
+        entity.tags?.split(",")?.forEach { t ->
+            val clean = t.trim().lowercase(Locale.ROOT)
+            if (clean.length >= 3) {
+                for (decomposed in decomposeCompositeGenre(clean)) {
+                    if (!isBlacklistedTag(decomposed)) {
+                        rawTokens.add(decomposed)
+                    }
                 }
-
-                if (isValidDirection) {
-                    val distance = hypot(dx, dy)
-                    val anglePenalty = when (direction) {
-                        DPadDirection.LEFT, DPadDirection.RIGHT -> abs(dy) * 1.8f
-                        DPadDirection.UP, DPadDirection.DOWN -> abs(dx) * 1.8f
+            }
+        }
+        entity.genres?.split(",")?.forEach { g ->
+            val clean = g.trim().lowercase(Locale.ROOT)
+            if (clean.length >= 3) {
+                for (decomposed in decomposeCompositeGenre(clean)) {
+                    if (!isBlacklistedTag(decomposed)) {
+                        rawTokens.add(decomposed)
                     }
-                    val isConnected = allFilaments.any { 
-                        (it.fromNodeId == current.id && it.toNodeId == target.id) ||
-                        (it.toNodeId == current.id && it.fromNodeId == target.id)
-                    }
-                    val bonus = when {
-                        target.isPortal -> -0.08f // Gran atracción magnética hacia el portal de películas
-                        isConnected -> -0.04f
-                        else -> 0f
-                    }
-                    Pair(target, (distance + anglePenalty + bonus).coerceAtLeast(0.001f))
-                } else null
+                }
             }
         }
 
-        var scored = scoreCandidates(candidates)
-        if (scored.isEmpty()) {
-            scored = scoreCandidates(candidateNodes.filter { it.id != current.id })
+        val canonicalSet = mutableSetOf<String>()
+        for (raw in rawTokens) {
+            if (isValidGalaxyTag(raw)) {
+                val displayName = TagTranslations.getDisplayName(raw)
+                val canonicalKey = TagTranslations.stripAccents(displayName).lowercase(Locale.ROOT)
+                if (!isBlacklistedTag(canonicalKey)) {
+                    canonicalSet.add(canonicalKey)
+                }
+            }
         }
-
-        return scored.minByOrNull { it.second }?.first
+        return canonicalSet
     }
 
-    private fun countMatches(catalog: List<JellyfinMediaEntity>, keywords: List<String>): Int {
-        return catalog.count { matchesAny(it, keywords) }
+    private fun isValidGalaxyTag(tag: String): Boolean {
+        val clean = tag.lowercase().trim()
+        if (clean.length < 3) return false
+        if (isBlacklistedTag(clean)) return false
+        if (TagTranslations.hasTranslation(clean)) return true
+        if (TagTranslations.isSpanishText(clean)) return true
+        return false
     }
 
-    private fun matchesAny(entity: JellyfinMediaEntity, keywords: List<String>): Boolean {
-        val text = "${entity.genres ?: ""} ${entity.tags ?: ""} ${entity.title} ${entity.overview ?: ""}".lowercase()
-        return keywords.any { kw -> text.contains(kw.lowercase()) }
+    private fun isBlacklistedTag(tag: String): Boolean {
+        val lower = tag.lowercase().trim()
+        val unaccented = TagTranslations.stripAccents(lower)
+
+        // Géneros compuestos redundantes de TMDB (se descomponen en sus partes atómicas)
+        if ((unaccented.contains("ciencia ficcion") || unaccented.contains("sci-fi") || unaccented.contains("scifi") || unaccented.contains("science fiction")) &&
+            (unaccented.contains("fantasia") || unaccented.contains("fantasy"))) return true
+
+        if ((unaccented.contains("accion") || unaccented.contains("action")) &&
+            (unaccented.contains("aventura") || unaccented.contains("adventure"))) return true
+
+        if ((unaccented.contains("guerra") || unaccented.contains("belica") || unaccented.contains("war")) &&
+            (unaccented.contains("politica") || unaccented.contains("politics"))) return true
+
+        // Metadata técnica de scrapers
+        if (lower.contains("creditsstinger") ||
+            lower.contains("aftercredits") ||
+            lower.contains("duringcredits") ||
+            lower.contains("short film") ||
+            lower.contains("feature length") ||
+            lower.contains("stand-alone") ||
+            lower.contains("special") ||
+            lower.contains("remake") ||
+            lower.contains("reboot") ||
+            lower.contains("sequel") ||
+            lower.contains("prequel") ||
+            lower.contains("spin-off") ||
+            lower.contains("live action") ||
+            lower.contains("director") ||
+            lower.contains("protagonist") ||
+            lower.contains("based on") ||
+            lower.contains("play or musical") ||
+            lower.contains("miniseries") ||
+            lower.contains("anthology") ||
+            lower.contains("pelicula de tv") ||
+            lower.contains("película de tv") ||
+            lower.contains("pelicula para tv") ||
+            lower.contains("película para tv") ||
+            lower.contains("tv movie") ||
+            lower.contains("telefilme") ||
+            lower.contains("made for tv")
+        ) return true
+
+        // Contenido explícito / sensible no deseado en constelación
+        if (lower in setOf("rape", "suicide", "nudity", "sexual abuse", "gore", "violence", "pedophilia", "incest")) return true
+
+        // Frases genéricas de relaciones familiares de TMDB
+        if (lower.contains("relationship") || lower == "loss of loved one" || lower.contains("death")) return true
+
+        // Países y ciudades que no son géneros
+        if (lower in setOf(
+            "germany", "england", "great britain", "united kingdom", "uk", "usa", "united states",
+            "france", "canada", "mexico", "japan", "spain", "italy", "australia",
+            "los angeles", "new york", "chicago", "paris", "london", "tokyo", "berlin",
+            "aleman", "alemania", "francia", "inglaterra", "estados unidos", "japon"
+        )) return true
+
+        return false
     }
 
-    private data class ClusterTemplate(
-        val name: String,
-        val category: String,
-        val center: Offset,
-        val radius: Float,
-        val macroTags: List<String>,
-        val keywords: List<String>
-    )
+    private fun createEmptyUniverse() {
+        val sunNode = SpatialNebulaNode(
+            id = SUN_CORE_ID,
+            label = "SOL CENTRAL",
+            worldX = 0.5f,
+            worldY = 0.5f,
+            isSun = true,
+            isPortal = true
+        )
+        addNode(sunNode)
+    }
+
+    private fun isNicheNonCaptainTag(tag: String): Boolean {
+        val lower = tag.lowercase(Locale.ROOT)
+        return lower in setOf(
+            "lgbtq+", "lgbt", "tematica lgbtq+", "biografico", "biografia",
+            "western", "amistad", "asesinato", "musica", "deportes", "navidad",
+            "instituto", "colegio", "universidad", "viajes en el tiempo",
+            "pueblo pequeno", "trauma", "secuestro", "infidelidad", "hospital",
+            "abogados", "perros y mascotas", "shounen", "sitcom", "humor"
+        )
+    }
+
+    private fun JellyfinMediaEntity.matchesFormat(format: MediaFormat): Boolean = when (format) {
+        MediaFormat.ALL -> true
+        MediaFormat.MOVIES -> type.equals("Movie", ignoreCase = true)
+        MediaFormat.SERIES -> type.equals("Series", ignoreCase = true)
+    }
+
+    private fun formatNoun(format: MediaFormat): String = when (format) {
+        MediaFormat.ALL -> "títulos"
+        MediaFormat.MOVIES -> "películas"
+        MediaFormat.SERIES -> "series"
+    }
+
 
     private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String): MediaItem {
         val posterUrl = if (!primaryImageTag.isNullOrEmpty() && baseUrl.isNotBlank()) {

@@ -17,6 +17,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -43,17 +46,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 
 /**
- * Lienzo de Constelación Semántica Continua para TV:
- * - Dibuja cientos de etiquetas cinematográficas interconectadas como una nebulosa interestelar.
- * - Conecta etiquetas sucesivas en un sendero luminoso estelar.
- * - Cámara suave que mantiene centrada la etiqueta activa en la pantalla.
- * - Nivel de Detalle (LOD) dinámico optimizado para 60 FPS en Android TV.
+ * Lienzo de la Gran Galaxia Medusa para TV:
+ * - Dibuja cientos de estrellas (tags reales de la biblioteca).
+ * - Sol / Agujero Negro Central en (0.5, 0.5) con rayos gravitacionales hacia las etiquetas conectadas.
+ * - Poda cósmica en vivo: los nodos sin intersección "AND" desaparecen de la pantalla.
+ * - Supernovas luminosas para los tags de los 4 vectores (TMDB Top, Trending, Favoritos, Recientes).
+ * - Navegación D-Pad suave optimizada para 60 FPS en Android TV.
  */
 @Composable
 fun ConstellationCanvas(
@@ -69,6 +76,7 @@ fun ConstellationCanvas(
     onPlayPressed: () -> Unit,
     onNodeClicked: (String) -> Unit,
     onZoomOut: () -> Unit,
+    onResetConstellation: (() -> Unit)? = null,
     onRequestFocusBottom: (() -> Unit)? = null,
     onRequestFocusTop: (() -> Unit)? = null,
     compatibleNodeIds: Set<String>? = null,
@@ -101,7 +109,7 @@ fun ConstellationCanvas(
         label = "starlightPulse"
     )
 
-    // Cámara espacial continua: amortiguación cinematográfica
+    // Cámara espacial continua amortiguada para TV
     val cameraX = remember { Animatable(targetCameraX) }
     val cameraY = remember { Animatable(targetCameraY) }
     val cameraZoom = remember { Animatable(targetZoom) }
@@ -120,12 +128,39 @@ fun ConstellationCanvas(
         focusRequester.requestFocus()
     }
 
+    val coroutineScope = rememberCoroutineScope()
+    var backJob by remember { mutableStateOf<Job?>(null) }
+    var backLongPressTriggered by remember { mutableStateOf(false) }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .focusRequester(focusRequester)
             .focusable()
             .onKeyEvent { keyEvent ->
+                if (keyEvent.key == Key.Back || keyEvent.key == Key.Escape) {
+                    if (keyEvent.type == KeyEventType.KeyDown) {
+                        if (backJob == null && !backLongPressTriggered) {
+                            backJob = coroutineScope.launch {
+                                delay(500)
+                                backLongPressTriggered = true
+                                onResetConstellation?.invoke()
+                            }
+                        }
+                        return@onKeyEvent true
+                    } else if (keyEvent.type == KeyEventType.KeyUp) {
+                        backJob?.cancel()
+                        backJob = null
+                        if (backLongPressTriggered) {
+                            backLongPressTriggered = false
+                        } else {
+                            onZoomOut()
+                        }
+                        return@onKeyEvent true
+                    }
+                    return@onKeyEvent false
+                }
+
                 if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
 
                 when (keyEvent.key) {
@@ -167,10 +202,6 @@ fun ConstellationCanvas(
                         onPlayPressed()
                         true
                     }
-                    Key.Back, Key.Escape -> {
-                        onZoomOut()
-                        true
-                    }
                     else -> false
                 }
             }
@@ -182,18 +213,15 @@ fun ConstellationCanvas(
                     val curCamX = cameraX.value
                     val curCamY = cameraY.value
 
-                    val clicked = nodes.minByOrNull { node ->
-                        val sx = w * 0.5f + (node.worldX - curCamX) * w * curZoom
-                        val sy = h * 0.5f + (node.worldY - curCamY) * h * curZoom
-                        hypot(sx - tapOffset.x, sy - tapOffset.y)
+                    val clicked = nodes.firstOrNull { node ->
+                        if (compatibleNodeIds != null && node.id !in compatibleNodeIds) return@firstOrNull false
+                        val effPos = getNodeWorldPos(node, activeChain, compatibleNodeIds)
+                        val p = projectToScreen(effPos.x, effPos.y, w, h, curCamX, curCamY, curZoom)
+                        val clickRadius = if (node.isSun || node.id == SUN_CORE_ID) 50.dp.toPx() else 28.dp.toPx()
+                        hypot(tapOffset.x - p.x, tapOffset.y - p.y) <= clickRadius
                     }
-
                     if (clicked != null) {
-                        val sx = w * 0.5f + (clicked.worldX - curCamX) * w * curZoom
-                        val sy = h * 0.5f + (clicked.worldY - curCamY) * h * curZoom
-                        if (hypot(sx - tapOffset.x, sy - tapOffset.y) <= 50.dp.toPx()) {
-                            onNodeClicked(clicked.id)
-                        }
+                        onNodeClicked(clicked.id)
                     }
                 }
             }
@@ -211,11 +239,10 @@ fun ConstellationCanvas(
             // =========================================================================
             drawRect(color = Color(0xFF05070B))
 
-            val driftX = sin(cosmicDrift) * 25.dp.toPx()
-            val driftY = cos(cosmicDrift * 0.8f) * 18.dp.toPx()
+            val driftX = sin(cosmicDrift) * 22.dp.toPx()
+            val driftY = cos(cosmicDrift * 0.8f) * 16.dp.toPx()
 
             if (isMonochrome) {
-                // Velo plateado etéreo / niebla estelar blanca
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(Color(0x0EFFFFFF), Color(0x04CBD5E1), Color.Transparent),
@@ -225,8 +252,6 @@ fun ConstellationCanvas(
                     radius = w * 0.60f,
                     center = Offset(w * 0.30f + driftX, h * 0.35f + driftY)
                 )
-
-                // Velo grafito / slate profundo
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(Color(0x15334155), Color(0x061E293B), Color.Transparent),
@@ -237,8 +262,7 @@ fun ConstellationCanvas(
                     center = Offset(w * 0.75f - driftX, h * 0.60f - driftY)
                 )
             } else {
-                // Tema Original TuJelly (Bioluminiscente neón a juego con el logo)
-                // Velo violeta / púrpura neón
+                // Velo violeta / púrpura cósmico
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(Color(0x187C3AED), Color(0x074C1D95), Color.Transparent),
@@ -248,7 +272,6 @@ fun ConstellationCanvas(
                     radius = w * 0.60f,
                     center = Offset(w * 0.30f + driftX, h * 0.35f + driftY)
                 )
-
                 // Velo cian eléctrico
                 drawCircle(
                     brush = Brush.radialGradient(
@@ -259,25 +282,29 @@ fun ConstellationCanvas(
                     radius = w * 0.60f,
                     center = Offset(w * 0.75f - driftX, h * 0.60f - driftY)
                 )
-
-                // Velo índigo / azul noche
+                // Velo central cálido alrededor del Sol
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color(0x121E1B4B), Color.Transparent),
-                        center = Offset(w * 0.50f + driftX * 0.7f, h * 0.75f - driftY * 0.7f),
-                        radius = w * 0.45f
+                        colors = listOf(Color(0x14F59E0B), Color(0x087C3AED), Color.Transparent),
+                        center = Offset(w * 0.50f + driftX * 0.5f, h * 0.50f + driftY * 0.5f),
+                        radius = w * 0.40f
                     ),
-                    radius = w * 0.45f,
-                    center = Offset(w * 0.50f + driftX * 0.7f, h * 0.75f - driftY * 0.7f)
+                    radius = w * 0.40f,
+                    center = Offset(w * 0.50f + driftX * 0.5f, h * 0.50f + driftY * 0.5f)
                 )
             }
 
             val nodeMap = nodes.associateBy { it.id }
 
             // =========================================================================
-            // 2. FILAMENTOS SEMÁNTICOS AMBIENTALES Y LÍNEAS AL PORTAL
+            // 2. FILAMENTOS SEMÁNTICOS Y RAYOS ENERGÉTICOS HACIA EL SOL CENTRAL
             // =========================================================================
             filaments.forEach { filament ->
+                // Poda de filamentos: Si alguno de los dos extremos no sobrevive a la poda, omitir
+                if (compatibleNodeIds != null && (filament.fromNodeId !in compatibleNodeIds || filament.toNodeId !in compatibleNodeIds)) {
+                    return@forEach
+                }
+
                 val from = nodeMap[filament.fromNodeId]
                 val to = nodeMap[filament.toNodeId]
 
@@ -288,35 +315,61 @@ fun ConstellationCanvas(
                     val p2 = projectToScreen(pos2.x, pos2.y, w, h, curCamX, curCamY, curZoom)
 
                     if (isLineInViewport(p1, p2, w, h)) {
-                        val isPortalFilament = from.isPortal || to.isPortal || filament.fromNodeId == PORTAL_NODE_ID || filament.toNodeId == PORTAL_NODE_ID
-                        val isConnectedToFocus = from.id == focusedNodeId || to.id == focusedNodeId
+                        val isSunRay = from.isSun || to.isSun || filament.isActiveRay ||
+                                filament.fromNodeId == SUN_CORE_ID || filament.toNodeId == SUN_CORE_ID
 
-                        if (isPortalFilament) {
-                            // Filamento de haz energético hacia el portal de películas
-                            val portalGlow = if (isMonochrome) Color(0x35FFFFFF) else Color(0x40C084FC)
-                            val portalPulse = if (isMonochrome) Color(0xCCFFFFFF) else Color(0xCCE9D5FF)
+                        if (isSunRay) {
+                            // Rayo de energía pulsante que fluye desde el tag hacia el Sol Central
+                            val rayGlow = if (isMonochrome) Color(0x50FFFFFF) else Color(0x6000E5FF)
+                            val rayCore = if (isMonochrome) Color.White else Color(0xFFE0F7FA)
 
                             drawLine(
-                                color = portalGlow,
+                                color = rayGlow,
                                 start = p1,
                                 end = p2,
-                                strokeWidth = 3.5.dp.toPx(),
+                                strokeWidth = 4.0.dp.toPx(),
                                 cap = StrokeCap.Round
                             )
                             drawLine(
-                                color = portalPulse.copy(alpha = 0.75f * starlightPulse),
+                                color = rayCore.copy(alpha = 0.85f * starlightPulse),
                                 start = p1,
                                 end = p2,
-                                strokeWidth = 1.4.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx()), phase = cosmicDrift * 15f),
+                                strokeWidth = 1.6.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(
+                                    floatArrayOf(10.dp.toPx(), 6.dp.toPx()),
+                                    phase = -cosmicDrift * 20f // Flujo animado hacia el Sol
+                                ),
                                 cap = StrokeCap.Round
+                            )
+
+                            // Paquete de plasma/fotones cósmicos que viaja hacia el Sol
+                            val (starPos, sunPos) = if (to.isSun || to.id == SUN_CORE_ID) Pair(p1, p2) else Pair(p2, p1)
+                            val photonProgress = ((cosmicDrift * 0.85f) % 1.0f).let { if (it < 0f) it + 1f else it }
+                            val photonX = starPos.x + (sunPos.x - starPos.x) * photonProgress
+                            val photonY = starPos.y + (sunPos.y - starPos.y) * photonProgress
+                            val photonCenter = Offset(photonX, photonY)
+                            val photonRadius = 5.5.dp.toPx()
+
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        Color.White,
+                                        if (isMonochrome) Color(0x70FFFFFF) else Color(0x9000E5FF),
+                                        Color.Transparent
+                                    ),
+                                    center = photonCenter,
+                                    radius = photonRadius
+                                ),
+                                radius = photonRadius,
+                                center = photonCenter
                             )
                         } else {
-                            val stroke = if (isConnectedToFocus) 1.0.dp.toPx() else 0.5.dp.toPx()
+                            val isConnectedToFocus = from.id == focusedNodeId || to.id == focusedNodeId
+                            val stroke = if (isConnectedToFocus) 1.2.dp.toPx() else 0.6.dp.toPx()
                             val color = if (isConnectedToFocus) {
-                                if (isMonochrome) Color(0x55FFFFFF) else Color(0x5500E5FF)
+                                if (isMonochrome) Color(0x65FFFFFF) else Color(0x6500E5FF)
                             } else {
-                                if (isMonochrome) Color(0x10FFFFFF) else Color(0x1294A3B8)
+                                if (isMonochrome) Color(0x15FFFFFF) else Color(0x1894A3B8)
                             }
 
                             drawLine(
@@ -332,7 +385,7 @@ fun ConstellationCanvas(
             }
 
             // =========================================================================
-            // 3. CAMINO DE LA CONSTELACIÓN ACTIVA (Etiquetas que el usuario ha conectado)
+            // 3. CAMINO DE LA CONSTELACIÓN ACTIVA (Cadena conectada)
             // =========================================================================
             if (activeChain.size >= 2) {
                 for (i in 0 until activeChain.size - 1) {
@@ -345,55 +398,35 @@ fun ConstellationCanvas(
                     val p2 = projectToScreen(pos2.x, pos2.y, w, h, curCamX, curCamY, curZoom)
 
                     if (isLineInViewport(p1, p2, w, h)) {
-                        // Pase 1: Halo de resplandor exterior suave
                         drawLine(
-                            color = if (isMonochrome) Color(0x35FFFFFF) else Color(0x4000E5FF),
+                            color = if (isMonochrome) Color(0x40FFFFFF) else Color(0x50C084FC),
                             start = p1,
                             end = p2,
                             strokeWidth = 5.0.dp.toPx(),
                             cap = StrokeCap.Round
                         )
-                        // Pase 2: Cordón de luz estelar interior nítido
                         drawLine(
-                            color = if (isMonochrome) Color.White else Color(0xFFE0F7FA),
+                            color = if (isMonochrome) Color.White else Color(0xFFF3E8FF),
                             start = p1,
                             end = p2,
-                            strokeWidth = 1.6.dp.toPx(),
+                            strokeWidth = 1.8.dp.toPx(),
                             cap = StrokeCap.Round
                         )
                     }
                 }
             }
 
-            // Vista previa de conexión: cordón punteado desde el último nodo conectado al enfocado
-            val focusedNode = nodeMap[focusedNodeId]
-            if (activeChain.isNotEmpty() && focusedNode != null && !focusedNode.isPortal && activeChain.none { it.id == focusedNode.id }) {
-                val lastConnected = activeChain.last()
-                val pos1 = getNodeWorldPos(lastConnected, activeChain, compatibleNodeIds)
-                val pos2 = getNodeWorldPos(focusedNode, activeChain, compatibleNodeIds)
-                val p1 = projectToScreen(pos1.x, pos1.y, w, h, curCamX, curCamY, curZoom)
-                val p2 = projectToScreen(pos2.x, pos2.y, w, h, curCamX, curCamY, curZoom)
-
-                if (isLineInViewport(p1, p2, w, h)) {
-                    drawLine(
-                        color = (if (isMonochrome) Color(0x77FFFFFF) else Color(0x7700E5FF)).copy(alpha = 0.5f * starlightPulse),
-                        start = p1,
-                        end = p2,
-                        strokeWidth = 1.2.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
-                        cap = StrokeCap.Round
-                    )
-                }
-            }
-
             // =========================================================================
-            // 4. RENDERIZADO DE NODOS POR CAPAS Z-INDEX ("VENIR AL FRENTE SIN MIEDO")
+            // 4. RENDERIZADO DE NODOS CON PODA CÓSMICA EN VIVO
             // =========================================================================
             val pad = 140.dp.toPx()
             val chainMap = activeChain.mapIndexed { idx, n -> n.id to (idx + 1) }.toMap()
 
-            // 1. Calcular posiciones en pantalla de todos los nodos en el viewport (con atracción gravitacional de nodos compatibles)
+            // Poda estricta: Los nodos con 0 coincidencias NO se añaden a la lista de dibujado
             val visibleNodesWithPos = nodes.mapNotNull { node ->
+                if (compatibleNodeIds != null && node.id !in compatibleNodeIds) {
+                    return@mapNotNull null
+                }
                 val effPos = getNodeWorldPos(node, activeChain, compatibleNodeIds)
                 val p = projectToScreen(effPos.x, effPos.y, w, h, curCamX, curCamY, curZoom)
                 if (p.x >= -pad && p.x <= w + pad && p.y >= -pad && p.y <= h + pad) {
@@ -404,30 +437,33 @@ fun ConstellationCanvas(
             val focusedPair = visibleNodesWithPos.firstOrNull { it.first.id == focusedNodeId }
             val focusedScreenPos = focusedPair?.second
 
-            // 2. Partición estricta por capas Z-Index:
-            // Capa 1: Nodos secundarios de fondo (no conectados ni enfocados)
-            // Capa 2: Nodos de la cadena activa (conectados, excepto el enfocado)
-            // Capa 3: Nodo Portal (si no está enfocado)
-            // Capa 4 (TOP ABSOLUTO): NODO ENFOCADO
+            // Partición por capas Z-Index:
+            // Capa 1: Nodos secundarios de fondo (sobrevivientes de la poda)
+            // Capa 2: Nodos de la cadena activa
+            // Capa 3: Sol Central (si no está enfocado)
+            // Capa 4: NODO ENFOCADO (Máxima prioridad en primer plano)
+            val isSunId = { id: String -> id == SUN_CORE_ID }
+            val isSunNode = { n: SpatialNebulaNode -> n.isSun || isSunId(n.id) }
+
             val backgroundNodes = visibleNodesWithPos.filter { (node, _) ->
-                node.id != focusedNodeId && chainMap[node.id] == null && !node.isPortal && node.id != PORTAL_NODE_ID
+                node.id != focusedNodeId && chainMap[node.id] == null && !isSunNode(node)
             }
             val connectedNodes = visibleNodesWithPos.filter { (node, _) ->
-                node.id != focusedNodeId && chainMap[node.id] != null && !node.isPortal && node.id != PORTAL_NODE_ID
+                node.id != focusedNodeId && chainMap[node.id] != null && !isSunNode(node)
             }
-            val portalNode = visibleNodesWithPos.firstOrNull { (node, _) ->
-                (node.isPortal || node.id == PORTAL_NODE_ID) && node.id != focusedNodeId
+            val sunNodePair = visibleNodesWithPos.firstOrNull { (node, _) ->
+                isSunNode(node) && node.id != focusedNodeId
             }
 
-            val portalScreenPos = portalNode?.second ?: if (focusedPair?.first?.isPortal == true || focusedPair?.first?.id == PORTAL_NODE_ID) focusedPair?.second else null
+            val sunScreenPos = sunNodePair?.second ?: if (focusedPair != null && isSunNode(focusedPair.first)) focusedPair.second else null
 
-            // Capa 1: Nodos de fondo (con desvanecimiento de etiquetas cercanas al foco o al portal para no ensuciar)
-            backgroundNodes.forEach { (node, p) ->
+            // Capa 1: Nodos Satélites de fondo (orbes estelares sin caja rectangular)
+            val satellites = backgroundNodes.filter { !it.first.isCaptain }
+            satellites.forEach { (node, p) ->
                 val isNearFocused = focusedScreenPos != null &&
-                        hypot(p.x - focusedScreenPos.x, p.y - focusedScreenPos.y) < 85.dp.toPx()
-                val isNearPortal = portalScreenPos != null &&
-                        hypot(p.x - portalScreenPos.x, p.y - portalScreenPos.y) < 130.dp.toPx()
-                val isCompatible = (compatibleNodeIds == null || node.id in compatibleNodeIds) && node.movieCount > 0
+                        hypot(p.x - focusedScreenPos.x, p.y - focusedScreenPos.y) < 70.dp.toPx()
+                val isNearSun = sunScreenPos != null &&
+                        hypot(p.x - sunScreenPos.x, p.y - sunScreenPos.y) < 95.dp.toPx()
 
                 drawTagNode(
                     node = node,
@@ -438,13 +474,34 @@ fun ConstellationCanvas(
                     starlightPulse = starlightPulse,
                     textMeasurer = textMeasurer,
                     isMonochrome = isMonochrome,
-                    suppressLabel = isNearFocused || isNearPortal,
-                    isCompatible = isCompatible,
+                    suppressLabel = isNearFocused || isNearSun,
                     particleScale = particleScale
                 )
             }
 
-            // Capa 2: Nodos conectados en la constelación activa
+            // Capa 2: Estrellas Capitanas de fondo (faros rectores de cada sector)
+            val captains = backgroundNodes.filter { it.first.isCaptain }
+            captains.forEach { (node, p) ->
+                val isNearFocused = focusedScreenPos != null &&
+                        hypot(p.x - focusedScreenPos.x, p.y - focusedScreenPos.y) < 70.dp.toPx()
+                val isNearSun = sunScreenPos != null &&
+                        hypot(p.x - sunScreenPos.x, p.y - sunScreenPos.y) < 95.dp.toPx()
+
+                drawTagNode(
+                    node = node,
+                    screenPos = p,
+                    currentZoom = curZoom,
+                    isFocused = false,
+                    chainOrder = null,
+                    starlightPulse = starlightPulse,
+                    textMeasurer = textMeasurer,
+                    isMonochrome = isMonochrome,
+                    suppressLabel = isNearFocused || isNearSun,
+                    particleScale = particleScale
+                )
+            }
+
+            // Capa 3: Nodos conectados
             connectedNodes.forEach { (node, p) ->
                 drawTagNode(
                     node = node,
@@ -456,17 +513,15 @@ fun ConstellationCanvas(
                     textMeasurer = textMeasurer,
                     isMonochrome = isMonochrome,
                     suppressLabel = false,
-                    isCompatible = true,
                     particleScale = particleScale
                 )
             }
 
-            // Capa 3: Nodo Portal si no está enfocado
-            if (portalNode != null) {
-                drawPortalNode(
-                    node = portalNode.first,
-                    screenPos = portalNode.second,
-                    currentZoom = curZoom,
+            // Capa 4: Sol Central si no está enfocado
+            if (sunNodePair != null) {
+                drawSunCoreNode(
+                    node = sunNodePair.first,
+                    screenPos = sunNodePair.second,
                     isFocused = false,
                     cosmicRotation = cosmicDrift,
                     starlightPulse = starlightPulse,
@@ -475,14 +530,13 @@ fun ConstellationCanvas(
                 )
             }
 
-            // Capa 4: NODO ENFOCADO (MÁXIMA PRIORIDAD - DIBUJADO ENCIMA DE TODO)
+            // Capa 4: NODO ENFOCADO (En primer plano absoluto)
             if (focusedPair != null) {
                 val (fNode, fPos) = focusedPair
-                if (fNode.isPortal || fNode.id == PORTAL_NODE_ID) {
-                    drawPortalNode(
+                if (isSunNode(fNode)) {
+                    drawSunCoreNode(
                         node = fNode,
                         screenPos = fPos,
-                        currentZoom = curZoom,
                         isFocused = true,
                         cosmicRotation = cosmicDrift,
                         starlightPulse = starlightPulse,
@@ -490,7 +544,6 @@ fun ConstellationCanvas(
                         isMonochrome = isMonochrome
                     )
                 } else {
-                    val isCompatible = (compatibleNodeIds == null || fNode.id in compatibleNodeIds) && fNode.movieCount > 0
                     drawTagNode(
                         node = fNode,
                         screenPos = fPos,
@@ -501,7 +554,6 @@ fun ConstellationCanvas(
                         textMeasurer = textMeasurer,
                         isMonochrome = isMonochrome,
                         suppressLabel = false,
-                        isCompatible = isCompatible,
                         particleScale = particleScale
                     )
                 }
@@ -511,136 +563,93 @@ fun ConstellationCanvas(
 }
 
 /**
- * Renderizado refinado de una etiqueta cinematográfica ("Trabajo Fino").
+ * Renderizado de una Estrella / Tag en el firmamento.
+ * Soporta Supernovas (nodos de alta relevancia provenientes del TMDB Top/Trending/Favoritos).
  */
 private fun DrawScope.drawTagNode(
     node: SpatialNebulaNode,
     screenPos: Offset,
     currentZoom: Float,
     isFocused: Boolean,
-    chainOrder: Int?, // 1, 2, 3... si está conectada en la constelación
+    chainOrder: Int?,
     starlightPulse: Float,
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
     isMonochrome: Boolean = false,
     suppressLabel: Boolean = false,
-    isCompatible: Boolean = true,
     particleScale: Float = 1.0f
 ) {
     val isConnected = chainOrder != null
-    val isClusterCenter = node.id.startsWith("CLUSTER_")
+    val isCaptain = node.isCaptain
+    val showBadge = isFocused || isConnected || isCaptain
     val categoryColor = getCategoryColor(node.category, isMonochrome)
 
-    // Regla de oro de Nivel de Detalle (LOD):
-    // Los nodos conectados y el enfocado SIEMPRE son visibles con su texto y máxima claridad
-    val isVisibleLOD = when {
-        isFocused || isConnected -> true
-        isClusterCenter -> currentZoom < 1.75f
-        node.importance >= 1.15f -> currentZoom >= 1.40f // Tropos anillo 1 florecen al conectar o acercarse
-        node.importance >= 0.95f -> currentZoom >= 2.15f // Motivos anillo 2 florecen en zoom profundo
-        else -> currentZoom >= 2.95f                     // Micro-detalles anillo 3
-    }
+    // =========================================================================
+    // CASO 1: ESTRELLAS SATÉLITE EN REPOSO (Luz celestial pura sin caja)
+    // =========================================================================
+    if (!showBadge) {
+        val isSupernova = node.importance >= 1.6f
+        val starRadius = (if (isSupernova) 3.6.dp else 2.5.dp).toPx()
+        val haloRadius = (if (isSupernova) 12.dp else 7.dp).toPx()
 
-    if (!isVisibleLOD) {
-        // En modo ahorro / gama baja (particleScale < 0.5f), omitir el renderizado del polvo cósmico lejano para reducir fill-rate
-        if (particleScale < 0.5f) return
-
-        // En lejanía: partícula estelar tenue ("polvo cósmico que abrume")
-        val distantAlpha = if (isCompatible) 0.30f else 0.08f
+        // Halo suave sutil
         drawCircle(
-            color = categoryColor.copy(alpha = distantAlpha),
-            radius = 1.6.dp.toPx(),
+            brush = Brush.radialGradient(
+                colors = listOf(categoryColor.copy(alpha = 0.35f * starlightPulse), Color.Transparent),
+                center = screenPos,
+                radius = haloRadius
+            ),
+            radius = haloRadius,
             center = screenPos
         )
-        return
-    }
 
-    // 1. Núcleo Estelar
-    val starRadius = when {
-        isFocused -> 5.5.dp.toPx()
-        isConnected -> 5.0.dp.toPx()
-        !isCompatible -> 1.8.dp.toPx()
-        isClusterCenter -> 4.5.dp.toPx()
-        node.importance >= 1.15f -> 3.2.dp.toPx()
-        else -> 2.2.dp.toPx()
-    }
+        // Núcleo estelar
+        drawCircle(
+            color = Color.White.copy(alpha = 0.88f * starlightPulse),
+            radius = starRadius,
+            center = screenPos
+        )
 
-    // Resplandor y halo para nodo enfocado o conectado
-    if (isFocused) {
-        val haloColor = if (!isCompatible) {
-            if (isMonochrome) Color(0x20FFFFFF) else Color(0x28EF4444)
-        } else if (isMonochrome) {
-            Color(0x35FFFFFF)
-        } else {
-            Color(0x3500E5FF)
+        // Texto tenue flotante sin caja ni bordes, solo si no está suprimido
+        if (!suppressLabel && currentZoom >= 0.75f) {
+            val textLayout = textMeasurer.measure(
+                text = node.label,
+                style = TextStyle(
+                    color = Color(0x60FFFFFF),
+                    fontSize = 8.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Normal,
+                    letterSpacing = 0.3.sp
+                )
+            )
+            val tx = screenPos.x - textLayout.size.width / 2f
+            val ty = screenPos.y + starRadius + 2.dp.toPx()
+            drawText(textLayoutResult = textLayout, topLeft = Offset(tx, ty))
         }
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(haloColor, Color.Transparent),
-                center = screenPos,
-                radius = 28.dp.toPx()
-            ),
-            radius = 28.dp.toPx(),
-            center = screenPos
-        )
-    } else if (isConnected) {
-        val haloColor = if (isMonochrome) Color(0x25FFFFFF) else Color(0x35C084FC)
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(haloColor, Color.Transparent),
-                center = screenPos,
-                radius = 24.dp.toPx()
-            ),
-            radius = 24.dp.toPx(),
-            center = screenPos
-        )
-    }
-
-    // Punto central de luz
-    val coreColor = when {
-        isFocused && !isCompatible -> if (isMonochrome) Color.White else Color(0xFFEF4444)
-        isFocused -> if (isMonochrome) Color.White else Color(0xFF00E5FF)
-        isConnected -> if (isMonochrome) Color(0xFFE2E8F0) else Color(0xFFC084FC)
-        !isCompatible -> categoryColor.copy(alpha = 0.20f)
-        isClusterCenter -> if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFFB388FF)
-        else -> categoryColor
-    }
-
-    drawCircle(
-        color = coreColor,
-        radius = starRadius,
-        center = screenPos
-    )
-    if (isCompatible || isFocused || isConnected) {
-        drawCircle(
-            color = Color.White.copy(alpha = if (isFocused || isConnected) 0.95f else 0.70f),
-            radius = starRadius * 0.45f,
-            center = screenPos
-        )
-    }
-
-    // Si se suprime la etiqueta (por proximidad al nodo enfocado) y no es ni enfocado ni conectado, solo dibujamos la estrella
-    if (suppressLabel && !isFocused && !isConnected) {
         return
     }
 
-    // 2. Pastilla Tipográfica de la Etiqueta
-    val labelText = if (isConnected) "✦ $chainOrder. ${node.label}" else node.label
-    val textColor = when {
-        isFocused && !isCompatible -> if (isMonochrome) Color(0xFFE2E8F0) else Color(0xFFFCA5A5)
-        isFocused -> if (isMonochrome) Color.White else Color(0xFF00E5FF)
-        isConnected -> if (isMonochrome) Color.White else Color(0xFFF3E8FF)
-        !isCompatible -> Color(0x2EFFFFFF)
-        isClusterCenter -> if (isMonochrome) Color(0xFFF8FAFC) else Color(0xFFE9D5FF)
-        node.importance > 1.1f -> Color.White
-        else -> Color(0xDDFFFFFF)
+    // =========================================================================
+    // CASO 2: NODOS CON BADGE (Capitanas, Conectadas o Enfocada)
+    // =========================================================================
+    val labelText = when {
+        chainOrder != null -> "$chainOrder. ${node.label}"
+        isFocused -> node.label
+        isCaptain -> "✦ ${node.label}"
+        else -> node.label
     }
 
     val fontSize = when {
-        isFocused -> 13.sp
+        isFocused -> 12.sp
         isConnected -> 11.sp
-        isClusterCenter -> 10.5.sp
-        node.importance > 1.1f -> 9.5.sp
-        else -> 8.5.sp
+        isCaptain -> 10.sp
+        else -> 9.5.sp
+    }
+
+    val textColor = when {
+        isFocused -> if (isMonochrome) Color.White else Color(0xFF05070B)
+        isConnected -> if (isMonochrome) Color.White else Color(0xFFF3E8FF)
+        isCaptain -> if (isMonochrome) Color.White else Color(0xFFE0F2FE)
+        else -> Color.White
     }
 
     val textLayout = textMeasurer.measure(
@@ -649,102 +658,146 @@ private fun DrawScope.drawTagNode(
             color = textColor,
             fontSize = fontSize,
             fontFamily = FontFamily.SansSerif,
-            fontWeight = if (isFocused) FontWeight.ExtraBold else if (isConnected || isClusterCenter) FontWeight.Bold else FontWeight.Medium,
-            letterSpacing = if (isFocused) 1.2.sp else 0.6.sp
+            fontWeight = if (isFocused || isConnected || isCaptain) FontWeight.Bold else FontWeight.SemiBold,
+            letterSpacing = if (isFocused) 0.8.sp else 0.5.sp
         )
     )
 
-    val labelX = screenPos.x - textLayout.size.width / 2f
-    val labelY = screenPos.y + starRadius + (if (isFocused) 6.dp.toPx() else 3.dp.toPx())
-    val padX = if (isFocused) 11.dp.toPx() else 7.dp.toPx()
-    val padY = if (isFocused) 5.dp.toPx() else 3.dp.toPx()
+    val padX = if (isFocused) 13.dp.toPx() else 8.dp.toPx()
+    val padY = if (isFocused) 6.dp.toPx() else 3.5.dp.toPx()
+    val badgeW = textLayout.size.width + padX * 2
+    val badgeH = textLayout.size.height + padY * 2
 
-    // Para el nodo enfocado: dibujar placa de oclusión oscura previa ("venir al frente sin miedo")
+    // El badge está centrado exactamente en screenPos (elimina el punto desfasado arriba)
+    val badgeX = screenPos.x - badgeW / 2f
+    val badgeY = screenPos.y - badgeH / 2f
+
+    // Halo luminoso según estado
     if (isFocused) {
-        drawRoundRect(
-            color = Color(0xF8030508),
-            topLeft = Offset(labelX - padX - 4.dp.toPx(), labelY - padY - 2.dp.toPx()),
-            size = Size(textLayout.size.width + (padX + 4.dp.toPx()) * 2, textLayout.size.height + (padY + 2.dp.toPx()) * 2),
-            cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx()),
-            style = Fill
+        val haloR = badgeW * 0.70f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    if (isMonochrome) Color(0x60FFFFFF) else Color(0x7500E5FF),
+                    Color.Transparent
+                ),
+                center = screenPos,
+                radius = haloR
+            ),
+            radius = haloR,
+            center = screenPos
+        )
+
+        // Onda expansiva gravitacional de radar / sonar estelar
+        val waveT = ((starlightPulse * 1.4f) % 1.0f).let { if (it < 0f) it + 1f else it }
+        val waveR = badgeW * 0.55f + waveT * 26.dp.toPx()
+        val waveAlpha = (1.0f - waveT) * 0.45f
+        drawCircle(
+            color = (if (isMonochrome) Color.White else Color(0xFF00E5FF)).copy(alpha = waveAlpha),
+            radius = waveR,
+            center = screenPos,
+            style = Stroke(width = 1.4.dp.toPx())
+        )
+    } else if (isConnected) {
+        val haloR = badgeW * 0.60f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    if (isMonochrome) Color(0x40FFFFFF) else Color(0x50C084FC),
+                    Color.Transparent
+                ),
+                center = screenPos,
+                radius = haloR
+            ),
+            radius = haloR,
+            center = screenPos
+        )
+    } else if (isCaptain) {
+        val haloR = badgeW * 0.55f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    categoryColor.copy(alpha = 0.30f * starlightPulse),
+                    Color.Transparent
+                ),
+                center = screenPos,
+                radius = haloR
+            ),
+            radius = haloR,
+            center = screenPos
         )
     }
 
-    // Fondo de cápsula
+    // Oclusión oscura previa
+    drawRoundRect(
+        color = Color(0xF8030508),
+        topLeft = Offset(badgeX - 3.dp.toPx(), badgeY - 2.dp.toPx()),
+        size = Size(badgeW + 6.dp.toPx(), badgeH + 4.dp.toPx()),
+        cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx()),
+        style = Fill
+    )
+
+    // Cápsula principal
     val capsuleBg = when {
-        isFocused && !isCompatible -> if (isMonochrome) Color(0xFF1E293B) else Color(0xFF260D12)
-        isFocused -> if (isMonochrome) Color(0xFF1E293B) else Color(0xFF0A1220)
-        isConnected -> if (isMonochrome) Color(0xF00F172A) else Color(0xF01A0E2E)
-        !isCompatible -> Color(0x1805070B)
-        else -> Color(0xCC070B14)
+        isFocused -> if (isMonochrome) Color.White else Color(0xFF00E5FF)
+        isConnected -> if (isMonochrome) Color(0xF01E293B) else Color(0xF01A0E2E)
+        isCaptain -> if (isMonochrome) Color(0xD01E293B) else Color(0xD00A182E)
+        else -> Color(0xD008101C)
     }
 
     drawRoundRect(
         color = capsuleBg,
-        topLeft = Offset(labelX - padX, labelY - padY),
-        size = Size(textLayout.size.width + padX * 2, textLayout.size.height + padY * 2),
-        cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+        topLeft = Offset(badgeX, badgeY),
+        size = Size(badgeW, badgeH),
+        cornerRadius = CornerRadius(12.dp.toPx(), 12.dp.toPx()),
         style = Fill
     )
 
-    // Borde de cápsula
+    // Borde
     val borderColor = when {
-        isFocused && !isCompatible -> if (isMonochrome) Color(0x99FFFFFF) else Color(0xCCEF4444)
-        isFocused -> (if (isMonochrome) Color.White else Color(0xFF00E5FF))
-        isConnected -> (if (isMonochrome) Color(0xFFE2E8F0) else Color(0xFFC084FC)).copy(alpha = 0.85f)
-        !isCompatible -> Color(0x06FFFFFF)
-        else -> Color(0x20FFFFFF)
-    }
-    val borderWidth = when {
-        isFocused -> 2.2.dp.toPx()
-        isConnected -> 1.0.dp.toPx()
-        else -> 0.6.dp.toPx()
+        isFocused -> Color.White
+        isConnected -> if (isMonochrome) Color.White else Color(0xFFC084FC)
+        isCaptain -> if (isMonochrome) Color(0x90FFFFFF) else Color(0x9038BDF8)
+        else -> Color(0x40FFFFFF)
     }
 
     drawRoundRect(
         color = borderColor,
-        topLeft = Offset(labelX - padX, labelY - padY),
-        size = Size(textLayout.size.width + padX * 2, textLayout.size.height + padY * 2),
-        cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
-        style = Stroke(width = borderWidth)
+        topLeft = Offset(badgeX, badgeY),
+        size = Size(badgeW, badgeH),
+        cornerRadius = CornerRadius(12.dp.toPx(), 12.dp.toPx()),
+        style = Stroke(width = if (isFocused) 2.2.dp.toPx() else 1.0.dp.toPx())
     )
 
-    // Dibujar texto
+    // Texto de la temática
     drawText(
         textLayoutResult = textLayout,
-        topLeft = Offset(labelX, labelY)
+        topLeft = Offset(badgeX + padX, badgeY + padY)
     )
 
-    // Sub-etiqueta elegante de conteo si está enfocado
+    // Sub-etiqueta de obras disponibles al estar enfocado
     if (isFocused) {
-        val countText = if (isCompatible) "✦ ${node.movieCount} OBRAS DISPONIBLES" else "✕ SIN OBRAS COMPATIBLES"
+        val countText = "✦ ${node.movieCount} TÍTULOS"
         val countLayout = textMeasurer.measure(
             text = countText,
             style = TextStyle(
-                color = if (!isCompatible) {
-                    if (isMonochrome) Color(0xFFAAAAAA) else Color(0xFFF87171)
-                } else if (isMonochrome) {
-                    Color.White
-                } else {
-                    Color(0xFFC084FC)
-                },
-                fontSize = 8.sp,
+                color = if (isMonochrome) Color.White else Color(0xFF00E5FF),
+                fontSize = 8.5.sp,
                 fontFamily = FontFamily.SansSerif,
                 letterSpacing = 1.0.sp,
                 fontWeight = FontWeight.Bold
             )
         )
         val countX = screenPos.x - countLayout.size.width / 2f
-        val countY = labelY + textLayout.size.height + padY + 4.dp.toPx()
+        val countY = badgeY + badgeH + 4.dp.toPx()
 
         drawRoundRect(
-            color = Color(0xF205070B),
+            color = Color(0xF505070B),
             topLeft = Offset(countX - 6.dp.toPx(), countY - 2.dp.toPx()),
             size = Size(countLayout.size.width + 12.dp.toPx(), countLayout.size.height + 4.dp.toPx()),
             cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
             style = Fill
         )
-
         drawText(
             textLayoutResult = countLayout,
             topLeft = Offset(countX, countY)
@@ -753,75 +806,118 @@ private fun DrawScope.drawTagNode(
 }
 
 /**
- * Renderizado del Nodo Portal / Núcleo de Películas ("Obras Maestras").
- * Vórtice gravitatorio con halo multicapa, anillo orbital estelar y badge de acción TV.
+ * Renderizado del Sol / Agujero Negro Central (SUN_CORE_ID).
+ * Esfera gravitacional majestuosa con corona ardiente, partículas rotatorias y badge TV interactivo.
  */
-private fun DrawScope.drawPortalNode(
+private fun DrawScope.drawSunCoreNode(
     node: SpatialNebulaNode,
     screenPos: Offset,
-    currentZoom: Float,
     isFocused: Boolean,
     cosmicRotation: Float,
     starlightPulse: Float,
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
     isMonochrome: Boolean = false
 ) {
-    val coreRadius = (if (isFocused) 15.dp else 12.dp).toPx()
-    val haloRadius = (if (isFocused) 44.dp else 30.dp).toPx()
+    val coreRadius = (if (isFocused) 26.dp else 20.dp).toPx()
+    val haloRadius = (if (isFocused) 85.dp else 60.dp).toPx()
 
-    // 1. Resplandor exterior cósmico multicapa (Efecto Vórtice Gravitatorio)
-    val haloGlowPrimary = if (isMonochrome) {
-        if (isFocused) Color(0x60FFFFFF) else Color(0x35FFFFFF)
+    // 1. Resplandor exterior cósmico ardiente (Corona Solar / Disco de Acreción)
+    val coronaColors = if (isMonochrome) {
+        listOf(
+            if (isFocused) Color(0x75FFFFFF) else Color(0x40FFFFFF),
+            if (isFocused) Color(0x30CBD5E1) else Color(0x1864748B),
+            Color.Transparent
+        )
     } else {
-        if (isFocused) Color(0x6000E5FF) else Color(0x45B388FF)
-    }
-    val haloGlowSecondary = if (isMonochrome) {
-        if (isFocused) Color(0x20FFFFFF) else Color(0x15FFFFFF)
-    } else {
-        if (isFocused) Color(0x2000E5FF) else Color(0x207C3AED)
+        if (node.movieCount > 0) {
+            listOf(
+                if (isFocused) Color(0x9000E5FF) else Color(0x5500E5FF),
+                if (isFocused) Color(0x457C3AED) else Color(0x25C084FC),
+                Color.Transparent
+            )
+        } else {
+            listOf(
+                if (isFocused) Color(0x8500E5FF) else Color(0x50F59E0B),
+                if (isFocused) Color(0x407C3AED) else Color(0x25EF4444),
+                Color.Transparent
+            )
+        }
     }
 
+    val pulseScale = 0.95f + 0.10f * sin(cosmicRotation * 2.2f)
     drawCircle(
         brush = Brush.radialGradient(
-            colors = listOf(haloGlowPrimary, haloGlowSecondary, Color.Transparent),
+            colors = coronaColors,
             center = screenPos,
-            radius = haloRadius
+            radius = haloRadius * pulseScale
         ),
-        radius = haloRadius,
+        radius = haloRadius * pulseScale,
         center = screenPos
     )
 
-    // 2. Anillo orbital rotatorio punteado
-    val ringRadius = coreRadius * 1.55f
-    val ringColor = if (isMonochrome) {
+    // 2. Anillo orbital primario rotatorio punteado (Disco de Acreción Exterior)
+    val ringRadius1 = coreRadius * 1.65f
+    val ringColor1 = if (isMonochrome) {
         if (isFocused) Color.White else Color(0xFFE2E8F0)
     } else {
-        if (isFocused) Color(0xFF00E5FF) else Color(0xFFC084FC)
+        if (isFocused) Color(0xFF00E5FF) else (if (node.movieCount > 0) Color(0xFF38BDF8) else Color(0xFFFBBF24))
     }
     drawCircle(
-        color = ringColor.copy(alpha = 0.85f * starlightPulse),
-        radius = ringRadius,
+        color = ringColor1.copy(alpha = 0.88f * starlightPulse),
+        radius = ringRadius1,
         center = screenPos,
         style = Stroke(
-            width = (if (isFocused) 1.8.dp else 1.2.dp).toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 6.dp.toPx()), phase = cosmicRotation * 18f)
+            width = (if (isFocused) 2.4.dp else 1.5.dp).toPx(),
+            pathEffect = PathEffect.dashPathEffect(
+                floatArrayOf(13.dp.toPx(), 7.dp.toPx()),
+                phase = cosmicRotation * 22f
+            )
         )
     )
 
-    // 3. Núcleo estelar de energía
+    // 2b. Anillo orbital secundario contra-rotatorio (Disco de Acreción Interior)
+    val ringRadius2 = coreRadius * 1.30f
+    val ringColor2 = if (isMonochrome) {
+        Color(0x80FFFFFF)
+    } else {
+        if (isFocused) Color(0xFFC084FC) else Color(0xFFF59E0B)
+    }
+    drawCircle(
+        color = ringColor2.copy(alpha = 0.65f),
+        radius = ringRadius2,
+        center = screenPos,
+        style = Stroke(
+            width = 1.0.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(
+                floatArrayOf(5.dp.toPx(), 8.dp.toPx()),
+                phase = -cosmicRotation * 17f
+            )
+        )
+    )
+
+    // 3. Núcleo Estelar de Fusión
     val coreColors = if (isMonochrome) {
         listOf(
             Color.White,
-            if (isFocused) Color.White else Color(0xFFE2E8F0),
-            if (isFocused) Color(0xFFCBD5E1) else Color(0xFF64748B)
+            if (isFocused) Color.White else Color(0xFFCBD5E1),
+            if (isFocused) Color(0xFF94A3B8) else Color(0xFF334155)
         )
     } else {
-        listOf(
-            Color.White,
-            if (isFocused) Color(0xFF00E5FF) else Color(0xFFB388FF),
-            if (isFocused) Color(0xFF0288D1) else Color(0xFF6B21A8)
-        )
+        if (node.movieCount > 0) {
+            listOf(
+                Color.White,
+                if (isFocused) Color(0xFFE0F7FA) else Color(0xFF67E8F9),
+                if (isFocused) Color(0xFF00E5FF) else Color(0xFF0284C7)
+            )
+        } else {
+            listOf(
+                Color.White,
+                if (isFocused) Color(0xFF00E5FF) else Color(0xFFFDE68A),
+                if (isFocused) Color(0xFF0288D1) else Color(0xFFD97706)
+            )
+        }
     }
+
     drawCircle(
         brush = Brush.radialGradient(
             colors = coreColors,
@@ -832,31 +928,31 @@ private fun DrawScope.drawPortalNode(
         center = screenPos
     )
 
-    // 4. Cápsula / Badge de texto interactivo para TV
-    val labelText = if (isFocused) "${node.label}  ➔ [PULSA OK]" else node.label
+    // 4. Badge / Cápsula interactiva del Sol
+    val labelText = if (isFocused && node.movieCount > 0) "${node.label}  ➔ [PULSA OK]" else node.label
     val badgeTextColor = if (isMonochrome) {
-        if (isFocused) Color(0xFF0F172A) else Color.White
+        if (isFocused) Color(0xFF05070B) else Color.White
     } else {
-        if (isFocused) Color(0xFF05070B) else Color(0xFFF3E8FF)
+        if (isFocused) Color(0xFF05070B) else Color(0xFFFEF3C7)
     }
 
     val textLayout = textMeasurer.measure(
         text = labelText,
         style = TextStyle(
             color = badgeTextColor,
-            fontSize = if (isFocused) 12.sp else 10.5.sp,
+            fontSize = if (isFocused) 13.sp else 11.sp,
             fontFamily = FontFamily.SansSerif,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = if (isFocused) 1.2.sp else 0.8.sp
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = if (isFocused) 1.3.sp else 0.9.sp
         )
     )
 
     val labelX = screenPos.x - textLayout.size.width / 2f
-    val labelY = screenPos.y + ringRadius + (if (isFocused) 6.dp.toPx() else 4.dp.toPx())
-    val padX = 10.dp.toPx()
-    val padY = 4.dp.toPx()
+    val labelY = screenPos.y + ringRadius1 + (if (isFocused) 7.dp.toPx() else 5.dp.toPx())
+    val padX = 12.dp.toPx()
+    val padY = 5.dp.toPx()
 
-    // Placa de oclusión oscura previa para legibilidad 100% garantizada
+    // Oclusión oscura previa
     drawRoundRect(
         color = Color(0xF8030508),
         topLeft = Offset(labelX - padX - 4.dp.toPx(), labelY - padY - 2.dp.toPx()),
@@ -865,11 +961,10 @@ private fun DrawScope.drawPortalNode(
         style = Fill
     )
 
-    // Fondo del badge con contraste TV
     val badgeBgColor = if (isMonochrome) {
         if (isFocused) Color.White else Color(0xF01E293B)
     } else {
-        if (isFocused) Color(0xFF00E5FF) else Color(0xF01A0E2E)
+        if (isFocused) Color(0xFF00E5FF) else Color(0xF02A1A05)
     }
     drawRoundRect(
         color = badgeBgColor,
@@ -879,18 +974,17 @@ private fun DrawScope.drawPortalNode(
         style = Fill
     )
 
-    // Borde iluminado
     val badgeBorderColor = if (isMonochrome) {
         if (isFocused) Color.White else Color(0x60FFFFFF)
     } else {
-        if (isFocused) Color.White else Color(0xFFC084FC).copy(alpha = 0.85f)
+        if (isFocused) Color.White else Color(0xFFF59E0B).copy(alpha = 0.85f)
     }
     drawRoundRect(
         color = badgeBorderColor,
         topLeft = Offset(labelX - padX, labelY - padY),
         size = Size(textLayout.size.width + padX * 2, textLayout.size.height + padY * 2),
         cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx()),
-        style = Stroke(width = (if (isFocused) 1.6.dp else 1.0.dp).toPx())
+        style = Stroke(width = (if (isFocused) 2.0.dp else 1.2.dp).toPx())
     )
 
     drawText(
@@ -901,27 +995,22 @@ private fun DrawScope.drawPortalNode(
 
 private fun getCategoryColor(category: String, isMonochrome: Boolean = false): Color {
     if (isMonochrome) {
-        return when (category) {
-            "Crimen", "Misterio" -> Color(0xFFE2E8F0)
-            "Aventura" -> Color(0xFFFFFFFF)
-            "Terror", "Suspense" -> Color(0xFFCBD5E1)
-            "Drama", "Historia" -> Color(0xFFE2E8F0)
-            "Comedia" -> Color(0xFFFFFFFF)
-            "Bélica", "Western" -> Color(0xFF94A3B8)
-            "Fantasía", "Animación" -> Color(0xFFFFFFFF)
-            else -> Color(0xFFCBD5E1)
-        }
+        val monoPalette = listOf(Color(0xFFE2E8F0), Color(0xFFFFFFFF), Color(0xFFCBD5E1), Color(0xFF94A3B8))
+        return monoPalette[kotlin.math.abs(category.hashCode()) % monoPalette.size]
     }
-    return when (category) {
-        "Crimen", "Misterio" -> Color(0xFF818CF8) // Indigo
-        "Aventura" -> Color(0xFF2DD4BF)          // Teal / Cyan
-        "Terror", "Suspense" -> Color(0xFFF43F5E) // Rose
-        "Drama", "Historia" -> Color(0xFFCBD5E1)  // Silver
-        "Comedia" -> Color(0xFF38BDF8)           // Sky Cyan
-        "Bélica", "Western" -> Color(0xFFA78BFA)  // Violet
-        "Fantasía", "Animación" -> Color(0xFF00E5FF) // Electric Cyan
-        else -> Color(0xFF94A3B8)                // Muted Slate
-    }
+    val palette = listOf(
+        Color(0xFF00E5FF), // Electric Cyan
+        Color(0xFF818CF8), // Indigo
+        Color(0xFFF43F5E), // Rose / Crimson
+        Color(0xFF38BDF8), // Sky Blue
+        Color(0xFFA78BFA), // Violet
+        Color(0xFFFBBF24), // Amber Gold
+        Color(0xFF34D399), // Emerald
+        Color(0xFFFB7185), // Coral Red
+        Color(0xFFE879F9), // Fuchsia
+        Color(0xFF2DD4BF)  // Teal
+    )
+    return palette[kotlin.math.abs(category.hashCode()) % palette.size]
 }
 
 private fun getNodeWorldPos(
@@ -929,24 +1018,11 @@ private fun getNodeWorldPos(
     activeChain: List<SpatialNebulaNode>,
     compatibleNodeIds: Set<String>?
 ): Offset {
-    if (activeChain.isEmpty() || compatibleNodeIds == null) {
-        return Offset(node.worldX, node.worldY)
+    // Si es el Sol Central, su posición es el centro inmutable (0.5, 0.5)
+    if (node.isSun || node.id == SUN_CORE_ID) {
+        return Offset(0.50f, 0.50f)
     }
-    if (node.isPortal || node.id == PORTAL_NODE_ID || activeChain.any { it.id == node.id }) {
-        return Offset(node.worldX, node.worldY)
-    }
-    if (!compatibleNodeIds.contains(node.id)) {
-        return Offset(node.worldX, node.worldY)
-    }
-
-    val focalX = activeChain.map { it.worldX }.average().toFloat()
-    val focalY = activeChain.map { it.worldY }.average().toFloat()
-
-    val attractionFactor = (0.35f + (activeChain.size - 1) * 0.15f).coerceAtMost(0.65f)
-    val effX = node.worldX + (focalX - node.worldX) * attractionFactor
-    val effY = node.worldY + (focalY - node.worldY) * attractionFactor
-
-    return Offset(effX, effY)
+    return Offset(node.worldX, node.worldY)
 }
 
 private fun projectToScreen(
