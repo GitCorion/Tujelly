@@ -126,5 +126,40 @@ class SearchPredictiveEngineTest {
         assertEquals('I', KeyboardDirectionResolver.findNextKey('C', KeyboardDirectionResolver.Direction.DOWN, allChars))
         assertEquals(null, KeyboardDirectionResolver.findNextKey('C', KeyboardDirectionResolver.Direction.UP, allChars))
     }
+
+    @Test
+    fun testIndexedCatalogBuildsCorrectlyAndYieldsIdenticalResults() {
+        val indexed = SearchPredictiveEngine.IndexedCatalog.build(sampleCatalog)
+        assertEquals(sampleCatalog.size, indexed.titles.size)
+        assertTrue(indexed.allStartingChars.contains('B'))
+        assertTrue(indexed.allStartingChars.contains('A'))
+        assertTrue(indexed.allStartingChars.contains('S'))
+
+        // Verificar que con consulta vacía devuelve allStartingChars directamente
+        val nextEmpty = SearchPredictiveEngine.findValidNextCharacters("", indexed)
+        assertEquals(indexed.allStartingChars, nextEmpty)
+
+        // Verificar que con "BAT" produce las mismas letras que la lista directa
+        val nextBatDirect = SearchPredictiveEngine.findValidNextCharacters("BAT", sampleCatalog)
+        val nextBatIndexed = SearchPredictiveEngine.findValidNextCharacters("BAT", indexed)
+        assertEquals(nextBatDirect, nextBatIndexed)
+
+        // Verificar sugerencias idénticas
+        val sugDirect = SearchPredictiveEngine.generateAutocompleteSuggestions("spi", sampleCatalog, 3)
+        val sugIndexed = SearchPredictiveEngine.generateAutocompleteSuggestions("spi", indexed, 3)
+        assertEquals(sugDirect, sugIndexed)
+    }
+
+    @Test
+    fun testStaticFullGridDirectionsMatchCalculatedDirections() {
+        val allChars = KeyboardDirectionResolver.ALL_CHARS.toSet()
+        for (ch in KeyboardDirectionResolver.ALL_CHARS) {
+            for (dir in KeyboardDirectionResolver.Direction.values()) {
+                val staticResult = KeyboardDirectionResolver.STATIC_FULL_GRID_DIRECTIONS[ch to dir]
+                val resolverResult = KeyboardDirectionResolver.findNextKey(ch, dir, allChars)
+                assertEquals("Mismatch for char $ch in dir $dir", staticResult, resolverResult)
+            }
+        }
+    }
 }
 

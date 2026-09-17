@@ -124,21 +124,27 @@ fun TvIntegratedKeyboard(
         }
     }
 
-    // Destinos direccionales hacia arriba para botones de acción
-    val spaceUpTarget = KeyboardDirectionResolver.findNextLetterFromAction(
-        KeyboardDirectionResolver.ActionKey.SPACE.col,
-        activeChars
-    )?.let { keyFocusRequesters[it] } ?: FocusRequester.Default
+    // Destinos direccionales hacia arriba para botones de acción (memoizados)
+    val spaceUpTarget = remember(activeChars) {
+        KeyboardDirectionResolver.findNextLetterFromAction(
+            KeyboardDirectionResolver.ActionKey.SPACE.col,
+            activeChars
+        )?.let { keyFocusRequesters[it] } ?: FocusRequester.Default
+    }
 
-    val backspaceUpTarget = KeyboardDirectionResolver.findNextLetterFromAction(
-        KeyboardDirectionResolver.ActionKey.BACKSPACE.col,
-        activeChars
-    )?.let { keyFocusRequesters[it] } ?: FocusRequester.Default
+    val backspaceUpTarget = remember(activeChars) {
+        KeyboardDirectionResolver.findNextLetterFromAction(
+            KeyboardDirectionResolver.ActionKey.BACKSPACE.col,
+            activeChars
+        )?.let { keyFocusRequesters[it] } ?: FocusRequester.Default
+    }
 
-    val clearUpTarget = KeyboardDirectionResolver.findNextLetterFromAction(
-        KeyboardDirectionResolver.ActionKey.CLEAR.col,
-        activeChars
-    )?.let { keyFocusRequesters[it] } ?: FocusRequester.Default
+    val clearUpTarget = remember(activeChars) {
+        KeyboardDirectionResolver.findNextLetterFromAction(
+            KeyboardDirectionResolver.ActionKey.CLEAR.col,
+            activeChars
+        )?.let { keyFocusRequesters[it] } ?: FocusRequester.Default
+    }
 
     Column(
         modifier = modifier.width(320.dp),

@@ -11,6 +11,7 @@ import com.example.tujelly.data.repository.MediaRepository
 import com.example.tujelly.domain.model.HomeSection
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +21,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class SearchUiState(
     val query: String = "",
@@ -56,27 +59,42 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
-    private var catalogTitles: List<String> = emptyList()
+    private var indexedCatalog: SearchPredictiveEngine.IndexedCatalog = SearchPredictiveEngine.IndexedCatalog.EMPTY
     private var searchJob: Job? = null
+    private var predictiveJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            catalogTitles = mediaRepository.getAllLocalTitles()
+        viewModelScope.launch(Dispatchers.IO) {
+            val rawTitles = mediaRepository.getAllLocalTitles()
+            val indexed = withContext(Dispatchers.Default) {
+                SearchPredictiveEngine.IndexedCatalog.build(rawTitles)
+            }
+            indexedCatalog = indexed
             updatePredictiveState(_uiState.value.query)
         }
     }
 
     private fun updatePredictiveState(query: String) {
-        val nextChars = if (_uiState.value.isPredictiveActive) {
-            SearchPredictiveEngine.findValidNextCharacters(query, catalogTitles)
-        } else {
-            SearchPredictiveEngine.ALL_KEYBOARD_CHARS
+        predictiveJob?.cancel()
+        predictiveJob = viewModelScope.launch(Dispatchers.Default) {
+            val isPredictive = _uiState.value.isPredictiveActive
+            val nextChars = if (isPredictive) {
+                SearchPredictiveEngine.findValidNextCharacters(query, indexedCatalog)
+            } else {
+                SearchPredictiveEngine.ALL_KEYBOARD_CHARS
+            }
+            val suggestions = if (query.isNotBlank()) {
+                SearchPredictiveEngine.generateAutocompleteSuggestions(query, indexedCatalog, limit = 5)
+            } else {
+                emptyList()
+            }
+            _uiState.update { current ->
+                current.copy(
+                    validNextChars = nextChars,
+                    suggestions = suggestions
+                )
+            }
         }
-        val suggestions = SearchPredictiveEngine.generateAutocompleteSuggestions(query, catalogTitles, limit = 5)
-        _uiState.value = _uiState.value.copy(
-            validNextChars = nextChars,
-            suggestions = suggestions
-        )
     }
 
     fun appendChar(c: Char) {
@@ -102,36 +120,43 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     fun togglePredictive() {
         val newActive = !_uiState.value.isPredictiveActive
-        _uiState.value = _uiState.value.copy(isPredictiveActive = newActive)
+        _uiState.update { it.copy(isPredictiveActive = newActive) }
         updatePredictiveState(_uiState.value.query)
     }
 
     fun onQueryChange(newQuery: String) {
-        _uiState.value = _uiState.value.copy(query = newQuery)
+        _uiState.update { it.copy(query = newQuery) }
         updatePredictiveState(newQuery)
         searchJob?.cancel()
 
         if (newQuery.isBlank()) {
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                sections = emptyList(),
-                results = emptyList(),
-                totalHits = 0,
-                focusedItem = null,
-                statusMessage = null
-            )
+            predictiveJob?.cancel()
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    sections = emptyList(),
+                    results = emptyList(),
+                    totalHits = 0,
+                    focusedItem = null,
+                    statusMessage = null,
+                    suggestions = emptyList(),
+                    validNextChars = if (it.isPredictiveActive) indexedCatalog.allStartingChars else SearchPredictiveEngine.ALL_KEYBOARD_CHARS
+                )
+            }
             return
         }
 
         searchJob = viewModelScope.launch {
-            delay(150) // Small debounce for fast typing
+            delay(350) // Debounce adaptado a Android TV y Odroid N2+ para evitar ráfagas de I/O
             val queryClean = newQuery.trim()
             if (queryClean.isBlank()) return@launch
 
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
 
-            // 1. Capa 1: Búsqueda Local Instantánea en Room DB (0 ms)
-            val localResults = mediaRepository.searchLocalMedia(queryClean, limit = 50)
+            // 1. Capa 1: Búsqueda Local Instantánea en Room DB
+            val localResults = withContext(Dispatchers.IO) {
+                mediaRepository.searchLocalMedia(queryClean, limit = 50)
+            }
             updateUiWithResults(
                 results = localResults,
                 baseUrl = prefs.jellyfinServerUrl,
@@ -140,22 +165,22 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 isLoading = true
             )
 
-            // 2. Capa 2: Búsqueda Remota en Jellyfin (impulsada por Meilisearch en el servidor para tolerancia a erratas)
+            // 2. Capa 2: Búsqueda Remota en Jellyfin (tolerancia a erratas con Meilisearch)
             if (prefs.jellyfinServerUrl.isNotBlank() && prefs.jellyfinAccessToken.isNotBlank()) {
-                val remoteResults = mediaRepository.searchRemoteAndCache(
-                    serverUrl = prefs.jellyfinServerUrl,
-                    userId = prefs.jellyfinUserId,
-                    token = prefs.jellyfinAccessToken,
-                    query = queryClean,
-                    limit = 30
-                ).getOrDefault(emptyList())
+                val remoteResults = withContext(Dispatchers.IO) {
+                    mediaRepository.searchRemoteAndCache(
+                        serverUrl = prefs.jellyfinServerUrl,
+                        userId = prefs.jellyfinUserId,
+                        token = prefs.jellyfinAccessToken,
+                        query = queryClean,
+                        limit = 30
+                    ).getOrDefault(emptyList())
+                }
 
                 if (remoteResults.isNotEmpty()) {
                     // 3. Capa 3: Fusión Inteligente y Deduplicación
                     val combinedMap = LinkedHashMap<String, JellyfinMediaEntity>()
-                    // Damos prioridad a los resultados de Meilisearch/Servidor (relevancia y tolerancia a erratas)
                     remoteResults.forEach { combinedMap[it.id] = it }
-                    // Agregamos coincidencias locales adicionales
                     localResults.forEach { if (!combinedMap.containsKey(it.id)) combinedMap[it.id] = it }
 
                     val mergedResults = combinedMap.values.toList()
@@ -170,7 +195,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
 
-            // Si la búsqueda remota no devolvió más resultados o no había red, mostramos los locales sin spinner
+            // Si no hay resultados remotos o no hay red, mostramos los locales
             updateUiWithResults(
                 results = localResults,
                 baseUrl = prefs.jellyfinServerUrl,
@@ -228,18 +253,25 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             else -> null
         }
 
-        _uiState.value = _uiState.value.copy(
-            isLoading = isLoading,
-            sections = sections,
-            results = allMediaItems,
-            totalHits = totalHits,
-            focusedItem = newFocused,
-            statusMessage = statusMessage
-        )
+        _uiState.update { current ->
+            val newFocused = if (current.focusedItem != null && results.any { it.id == current.focusedItem.id }) {
+                current.focusedItem
+            } else {
+                allMediaItems.firstOrNull()
+            }
+            current.copy(
+                isLoading = isLoading,
+                sections = sections,
+                results = allMediaItems,
+                totalHits = totalHits,
+                focusedItem = newFocused,
+                statusMessage = statusMessage
+            )
+        }
     }
 
     fun setFocusedItem(item: MediaItem) {
-        _uiState.value = _uiState.value.copy(focusedItem = item)
+        _uiState.update { it.copy(focusedItem = item) }
     }
 
     private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String): MediaItem {

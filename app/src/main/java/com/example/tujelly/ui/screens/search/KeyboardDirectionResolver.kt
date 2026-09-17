@@ -29,6 +29,22 @@ object KeyboardDirectionResolver {
     }
 
     /**
+     * Tabla de direcciones estáticas precalculadas para el teclado completo 6x6.
+     * Permite navegación O(1) instantánea sin filtros ni cálculos en tiempo de renderizado.
+     */
+    val STATIC_FULL_GRID_DIRECTIONS: Map<Pair<Char, Direction>, Char> = buildMap {
+        for (r in KEYBOARD_ROWS.indices) {
+            for (c in KEYBOARD_ROWS[r].indices) {
+                val ch = KEYBOARD_ROWS[r][c]
+                if (c < KEYBOARD_ROWS[r].size - 1) put(ch to Direction.RIGHT, KEYBOARD_ROWS[r][c + 1])
+                if (c > 0) put(ch to Direction.LEFT, KEYBOARD_ROWS[r][c - 1])
+                if (r > 0) put(ch to Direction.UP, KEYBOARD_ROWS[r - 1][c])
+                if (r < KEYBOARD_ROWS.size - 1) put(ch to Direction.DOWN, KEYBOARD_ROWS[r + 1][c])
+            }
+        }
+    }
+
+    /**
      * Resuelve el carácter activo más cercano en la dirección dada respecto a [currentChar].
      * Retorna null si no hay caracteres activos en esa dirección (indicando salida del teclado).
      */
@@ -37,6 +53,11 @@ object KeyboardDirectionResolver {
         direction: Direction,
         activeChars: Set<Char>
     ): Char? {
+        // Optimización O(1) para teclado completo o modo Libre
+        if (activeChars.size >= ALL_CHARS.size) {
+            return STATIC_FULL_GRID_DIRECTIONS[currentChar to direction]
+        }
+
         val (r, c) = KEY_POSITIONS[currentChar] ?: return null
         return when (direction) {
             Direction.RIGHT -> {
