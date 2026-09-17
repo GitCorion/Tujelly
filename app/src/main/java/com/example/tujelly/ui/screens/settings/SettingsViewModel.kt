@@ -401,6 +401,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun disconnectJellyfin() {
+        jellyfinQuickConnectJob?.cancel()
+        viewModelScope.launch {
+            userPreferencesRepository.updateJellyfinConfig(
+                serverUrl = _uiState.value.serverUrl,
+                userId = "",
+                accessToken = "",
+                username = "",
+                password = ""
+            )
+            _uiState.value = _uiState.value.copy(
+                isJellyfinConnected = false,
+                username = "",
+                password = "",
+                serverName = null,
+                serverVersion = null,
+                isSuccess = false,
+                statusMessage = "Sesión de Jellyfin cerrada."
+            )
+        }
+    }
+
     fun disconnectTrakt() {
         traktPollJob?.cancel()
         viewModelScope.launch {
