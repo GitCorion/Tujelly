@@ -82,7 +82,7 @@ fun PlatformSelectionScreen(
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.ic_tujelly_header),
-                    contentDescription = "TuJelly",
+                    contentDescription = "Medusa",
                     modifier = Modifier.height(34.dp)
                 )
 

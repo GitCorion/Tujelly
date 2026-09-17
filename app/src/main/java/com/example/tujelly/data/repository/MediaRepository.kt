@@ -127,7 +127,7 @@ class MediaRepository(
             }
         }
     }
-    private fun buildJellyfinAuthHeader(clientName: String = "Tujelly", deviceId: String = "AndroidTV", version: String = "1.0.0", token: String = ""): String {
+    private fun buildJellyfinAuthHeader(clientName: String = "Medusa", deviceId: String = "AndroidTV", version: String = "1.0.0", token: String = ""): String {
         return "MediaBrowser Client=\"$clientName\", Device=\"AndroidTV\", DeviceId=\"$deviceId\", Version=\"$version\"" +
                 if (token.isNotEmpty()) ", Token=\"$token\"" else ""
     }

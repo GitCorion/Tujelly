@@ -1,4 +1,4 @@
-name: Build & Release Tujelly APK
+name: Build & Release Medusa APK
 
 on:
   push:
@@ -45,13 +45,15 @@ jobs:
       - name: Prepare APK Artifact
         run: |
           mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/Medusa.apk
           cp app/build/outputs/apk/release/app-release.apk dist/Tujelly.apk
 
       - name: Upload APK as Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Tujelly-APK
+          name: Medusa-APK
           path: |
+            dist/Medusa.apk
             dist/Tujelly.apk
 
       - name: Create GitHub Release (on tag or manual)
@@ -59,8 +61,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            dist/Medusa.apk
             dist/Tujelly.apk
-          name: Tujelly ${{ github.ref_name }}
+          name: Medusa ${{ github.ref_name }}
           generate_release_notes: true
           draft: false
           prerelease: false

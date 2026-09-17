@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Movie
@@ -117,7 +118,7 @@ fun TvTopBar(
             }
             Image(
                 painter = painterResource(id = headerLogo),
-                contentDescription = "TuJelly",
+                contentDescription = "Medusa",
                 modifier = Modifier.height(52.dp)
             )
         }
@@ -227,14 +228,14 @@ fun TvTopBar(
                 }
             }
 
-            // 2. Botón Medusa
-            val isMedusaActive = selectedTab == TvNavTab.MEDUSA
-            var isMedusaFocused by remember { mutableStateOf(false) }
+            // 2. Botón Descubrir
+            val isDiscoverActive = selectedTab == TvNavTab.MEDUSA
+            var isDiscoverFocused by remember { mutableStateOf(false) }
             Button(
                 onClick = onOpenMedusa,
                 modifier = Modifier
                     .then(if (medusaFocusRequester != null) Modifier.focusRequester(medusaFocusRequester) else Modifier)
-                    .onFocusChanged { isMedusaFocused = it.isFocused }
+                    .onFocusChanged { isDiscoverFocused = it.isFocused }
                     .onKeyEvent { keyEvent ->
                         if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionDown) {
                             if (onDownFromMedusa != null) {
@@ -244,13 +245,13 @@ fun TvTopBar(
                         } else false
                     },
                 colors = ButtonDefaults.colors(
-                    containerColor = if (isMedusaActive) (if (isMonochrome) Color(0x24FFFFFF) else focusColor.copy(alpha = 0.20f)) else Color(0x0AFFFFFF),
-                    contentColor = if (isMedusaActive) (if (isMonochrome) Color.White else focusColor) else (if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF94A3B8)),
+                    containerColor = if (isDiscoverActive) (if (isMonochrome) Color(0x24FFFFFF) else focusColor.copy(alpha = 0.20f)) else Color(0x0AFFFFFF),
+                    contentColor = if (isDiscoverActive) (if (isMonochrome) Color.White else focusColor) else (if (isMonochrome) Color(0xFFCBD5E1) else Color(0xFF94A3B8)),
                     focusedContainerColor = focusColor,
                     focusedContentColor = focusContent
                 ),
                 shape = ButtonDefaults.shape(shape = CircleShape),
-                border = if (isMedusaActive) {
+                border = if (isDiscoverActive) {
                     ButtonDefaults.border(
                         border = Border(
                             border = BorderStroke(1.dp, focusColor.copy(alpha = 0.6f)),
@@ -268,35 +269,17 @@ fun TvTopBar(
                     horizontalArrangement = Arrangement.Center
                 ) {
                     if (showTopIcons) {
-                        if (isMonochrome) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_jelly_symbol_mono),
-                                contentDescription = "Medusa",
-                                tint = if (isMedusaFocused) focusContent else if (isMedusaActive) Color.White else Color(0xFFCBD5E1),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        } else {
-                            if (isMedusaFocused) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.ic_jelly_symbol_mono_dark),
-                                    contentDescription = "Medusa",
-                                    colorFilter = ColorFilter.tint(focusContent),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            } else {
-                                Image(
-                                    painter = painterResource(id = R.drawable.ic_jelly_symbol),
-                                    contentDescription = "Medusa",
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.Explore,
+                            contentDescription = "Descubrir",
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                     if (showTopText) {
                         if (showTopIcons) Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Medusa",
-                            fontWeight = if (isMedusaActive) FontWeight.Bold else FontWeight.SemiBold,
+                            text = "Descubrir",
+                            fontWeight = if (isDiscoverActive) FontWeight.Bold else FontWeight.SemiBold,
                             fontSize = 13.sp,
                             maxLines = 1,
                             softWrap = false
