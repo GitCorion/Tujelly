@@ -22,6 +22,9 @@ object TagTranslations {
     private const val CACHE_FILE_NAME = "medusa_tags_cache.json"
 
     private val dynamicMap = ConcurrentHashMap<String, String>()
+    private val DIACRITICS_REGEX = Regex("\\p{InCombiningDiacriticalMarks}+")
+    private val stripAccentsCache = ConcurrentHashMap<String, String>()
+    private val displayNameCache = ConcurrentHashMap<String, String>()
 
     private val baseMap = mapOf(
         "action" to "Acción",
@@ -516,8 +519,14 @@ object TagTranslations {
     }
 
     fun stripAccents(str: String): String {
-        return java.text.Normalizer.normalize(str, java.text.Normalizer.Form.NFD)
-            .replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
+        if (str.isEmpty()) return ""
+        stripAccentsCache[str]?.let { return it }
+        val normalized = java.text.Normalizer.normalize(str, java.text.Normalizer.Form.NFD)
+        val result = DIACRITICS_REGEX.replace(normalized, "")
+        if (stripAccentsCache.size < 4096) {
+            stripAccentsCache[str] = result
+        }
+        return result
     }
 
     fun translate(tag: String): String? {
@@ -570,14 +579,21 @@ object TagTranslations {
 
     fun getDisplayName(tag: String): String {
         val clean = tag.trim().lowercase(Locale.ROOT)
+        if (clean.isEmpty()) return ""
+        displayNameCache[clean]?.let { return it }
         val translated = translate(clean)
-        if (translated != null) return translated
-
-        // Si es una palabra en español o limpia, formatear capitalizando
-        return clean.split("-", "_", " ")
-            .filter { it.isNotBlank() }
-            .joinToString(" ") { word ->
-                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
-            }
+        val result = if (translated != null) {
+            translated
+        } else {
+            clean.split("-", "_", " ")
+                .filter { it.isNotBlank() }
+                .joinToString(" ") { word ->
+                    word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
+                }
+        }
+        if (displayNameCache.size < 4096) {
+            displayNameCache[clean] = result
+        }
+        return result
     }
 }

@@ -12,6 +12,7 @@ import com.example.tujelly.data.repository.MediaRepository
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -53,6 +55,8 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
     private var lastRecentWatched: List<JellyfinMediaEntity> = emptyList()
     private var lastFavorites: List<JellyfinMediaEntity> = emptyList()
 
+    private var filterJob: Job? = null
+
     val accentColor: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
         .map { it.accentColor }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ACCENT_CYAN)
@@ -77,8 +81,9 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun loadData() {
+        filterJob?.cancel()
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.update { it.copy(isLoading = true) }
 
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             serverUrl = prefs.jellyfinServerUrl
@@ -92,7 +97,12 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             val recentWatched = rawCatalog.filter { it.isPlayed || it.playbackPositionTicks > 0 }
             val localTop = withContext(Dispatchers.IO) { runCatching { jellyfinDao.getTopRatedLocal(30) }.getOrDefault(emptyList()) }
 
-            withContext(Dispatchers.Default) {
+            lastFavorites = favorites
+            lastRecentWatched = recentWatched
+
+            val format = _uiState.value.format
+
+            val (initialTags, initialMovies) = withContext(Dispatchers.Default) {
                 matrixEngine.initialize(
                     catalog = rawCatalog,
                     tmdbTopRated = localTop,
@@ -100,20 +110,21 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
                     recentWatched = recentWatched,
                     favorites = favorites
                 )
+                val tags = matrixEngine.generateMosaicTags(emptyList(), format, targetCapacity = 20)
+                val movs = matrixEngine.getMatchingMovies(emptyList(), format, serverUrl, accessToken)
+                Pair(tags, movs)
             }
 
-            val format = _uiState.value.format
-            val initialTags = matrixEngine.generateMosaicTags(emptyList(), format, targetCapacity = 20)
-            val initialMovies = matrixEngine.getMatchingMovies(emptyList(), format, serverUrl, accessToken)
-
-            _uiState.value = _uiState.value.copy(
-                mosaicTags = initialTags,
-                matchingMovies = initialMovies,
-                selectedMovie = initialMovies.firstOrNull(),
-                activeChain = emptyList(),
-                totalCatalogCount = rawCatalog.size,
-                isLoading = false
-            )
+            _uiState.update { current ->
+                current.copy(
+                    mosaicTags = initialTags,
+                    matchingMovies = initialMovies,
+                    selectedMovie = initialMovies.firstOrNull(),
+                    activeChain = emptyList(),
+                    totalCatalogCount = rawCatalog.size,
+                    isLoading = false
+                )
+            }
 
             // Enriquecer en segundo plano con TMDB si hay conexión sin bloquear la UI
             val tmdbKey = prefs.tmdbApiKey.trim()
@@ -132,17 +143,50 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
                     if (matchedCanon.isNotEmpty() || matchedTrending.isNotEmpty()) {
                         lastTmdbCanon = matchedCanon
                         lastTmdbTrending = matchedTrending
-                        matrixEngine.initialize(
-                            catalog = rawCatalog,
-                            tmdbTopRated = matchedCanon.ifEmpty { localTop },
-                            tmdbTrending = matchedTrending.ifEmpty { localTop },
-                            recentWatched = recentWatched,
-                            favorites = favorites
-                        )
-                        val updatedTags = matrixEngine.generateMosaicTags(_uiState.value.activeChain, _uiState.value.format, targetCapacity = 20)
-                        _uiState.value = _uiState.value.copy(mosaicTags = updatedTags)
+                        val updatedTags = withContext(Dispatchers.Default) {
+                            matrixEngine.initialize(
+                                catalog = rawCatalog,
+                                tmdbTopRated = matchedCanon.ifEmpty { localTop },
+                                tmdbTrending = matchedTrending.ifEmpty { localTop },
+                                recentWatched = recentWatched,
+                                favorites = favorites
+                            )
+                            matrixEngine.generateMosaicTags(_uiState.value.activeChain, _uiState.value.format, targetCapacity = 20)
+                        }
+                        _uiState.update { it.copy(mosaicTags = updatedTags) }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Aplica el filtrado de forma reactiva y totalmente asíncrona en Dispatchers.Default:
+     * 1. Actualiza inmediatamente el estado de la cadena activa para que el mando TV responda a 60 FPS sin latencia.
+     * 2. Cancela cualquier cálculo en vuelo previo para evitar saturar la CPU en ráfagas de clicks.
+     * 3. Calcula en segundo plano las nuevas etiquetas supervivientes y las películas resultantes.
+     */
+    private fun applyFilter(
+        newChain: List<MedusaMosaicTag>,
+        format: MediaFormat,
+        updateChainImmediately: Boolean = true
+    ) {
+        if (updateChainImmediately) {
+            _uiState.update { it.copy(activeChain = newChain, format = format) }
+        }
+        filterJob?.cancel()
+        filterJob = viewModelScope.launch(Dispatchers.Default) {
+            val newTags = matrixEngine.generateMosaicTags(newChain, format, targetCapacity = 20)
+            val newMovies = matrixEngine.getMatchingMovies(newChain, format, serverUrl, accessToken)
+
+            _uiState.update { current ->
+                current.copy(
+                    activeChain = newChain,
+                    format = format,
+                    mosaicTags = newTags,
+                    matchingMovies = newMovies,
+                    selectedMovie = newMovies.firstOrNull()
+                )
             }
         }
     }
@@ -151,8 +195,6 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
      * Alterna la selección de una etiqueta en la Constelación de Medusa:
      * - Si la etiqueta ya estaba en la cadena activa: la desconecta junto con las posteriores.
      * - Si no estaba: la conecta como un filtro "AND" estricto.
-     * En ambos casos, las etiquetas incompatibles desaparecen instantáneamente y son reemplazadas
-     * por las mejores micro-etiquetas co-ocurrentes supervivientes.
      */
     fun toggleTag(tag: MedusaMosaicTag) {
         val currentChain = _uiState.value.activeChain.toMutableList()
@@ -162,117 +204,74 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             // Desconectar esta y las posteriores
             currentChain.take(index)
         } else {
-            // Añadir al árbol de sensaciones
+            // Añadir a la cadena de temáticas
             currentChain + tag.copy(isSelected = true)
         }
 
-        val format = _uiState.value.format
-        val newTags = matrixEngine.generateMosaicTags(newChain, format, targetCapacity = 20)
-        val newMovies = matrixEngine.getMatchingMovies(newChain, format, serverUrl, accessToken)
-
-        _uiState.value = _uiState.value.copy(
-            activeChain = newChain,
-            mosaicTags = newTags,
-            matchingMovies = newMovies,
-            selectedMovie = newMovies.firstOrNull()
-        )
+        applyFilter(newChain, _uiState.value.format)
     }
 
     fun removeTagFromChain(tag: MedusaMosaicTag) {
         val currentChain = _uiState.value.activeChain
         val newChain = currentChain.filterNot { it.rawTag.equals(tag.rawTag, ignoreCase = true) }
-
-        val format = _uiState.value.format
-        val newTags = matrixEngine.generateMosaicTags(newChain, format, targetCapacity = 20)
-        val newMovies = matrixEngine.getMatchingMovies(newChain, format, serverUrl, accessToken)
-
-        _uiState.value = _uiState.value.copy(
-            activeChain = newChain,
-            mosaicTags = newTags,
-            matchingMovies = newMovies,
-            selectedMovie = newMovies.firstOrNull()
-        )
+        applyFilter(newChain, _uiState.value.format)
     }
 
     fun resetChain() {
-        val format = _uiState.value.format
-        val newTags = matrixEngine.generateMosaicTags(emptyList(), format, targetCapacity = 20)
-        val newMovies = matrixEngine.getMatchingMovies(emptyList(), format, serverUrl, accessToken)
-
-        _uiState.value = _uiState.value.copy(
-            activeChain = emptyList(),
-            mosaicTags = newTags,
-            matchingMovies = newMovies,
-            showMoviesOverlay = false,
-            selectedMovie = newMovies.firstOrNull()
-        )
+        _uiState.update { it.copy(showMoviesOverlay = false) }
+        applyFilter(emptyList(), _uiState.value.format)
     }
 
     fun setFormat(format: MediaFormat) {
         if (_uiState.value.format == format) return
-        val chain = _uiState.value.activeChain
-        val newTags = matrixEngine.generateMosaicTags(chain, format, targetCapacity = 20)
-        val newMovies = matrixEngine.getMatchingMovies(chain, format, serverUrl, accessToken)
-
-        _uiState.value = _uiState.value.copy(
-            format = format,
-            mosaicTags = newTags,
-            matchingMovies = newMovies,
-            selectedMovie = newMovies.firstOrNull()
-        )
+        applyFilter(_uiState.value.activeChain, format)
     }
 
     fun onTagFocused(tag: MedusaMosaicTag) {
-        _uiState.value = _uiState.value.copy(focusedTag = tag)
+        _uiState.update { it.copy(focusedTag = tag) }
     }
 
     fun toggleMoviesOverlay() {
         if (_uiState.value.matchingMovies.isEmpty()) return
         val current = _uiState.value.showMoviesOverlay
-        _uiState.value = _uiState.value.copy(
-            showMoviesOverlay = !current,
-            selectedMovie = if (!current) _uiState.value.matchingMovies.firstOrNull() else null
-        )
+        _uiState.update {
+            it.copy(
+                showMoviesOverlay = !current,
+                selectedMovie = if (!current) it.matchingMovies.firstOrNull() else null
+            )
+        }
     }
 
     fun selectMovie(movie: MediaItem) {
-        _uiState.value = _uiState.value.copy(selectedMovie = movie)
+        _uiState.update { it.copy(selectedMovie = movie) }
     }
 
     fun dismissMovieSelection() {
-        _uiState.value = _uiState.value.copy(selectedMovie = null)
+        _uiState.update { it.copy(selectedMovie = null) }
     }
 
     /**
      * Tecla ATRÁS:
      * 1. Si está viendo la película seleccionada -> la deselecciona.
      * 2. Si el visor overlay está abierto -> lo cierra.
-     * 3. Si hay etiquetas activas conectadas -> desconecta la última (el mosaico se re-expande).
+     * 3. Si hay etiquetas activas conectadas -> desconecta la última (el mosaico se re-expande de forma asíncrona).
      * 4. Si la cadena está vacía -> devuelve false para volver al Home.
      */
     fun onBackPress(): Boolean {
         if (_uiState.value.selectedMovie != null) {
-            _uiState.value = _uiState.value.copy(selectedMovie = null)
+            _uiState.update { it.copy(selectedMovie = null) }
             return true
         }
 
         if (_uiState.value.showMoviesOverlay) {
-            _uiState.value = _uiState.value.copy(showMoviesOverlay = false)
+            _uiState.update { it.copy(showMoviesOverlay = false) }
             return true
         }
 
         val chain = _uiState.value.activeChain
         if (chain.isNotEmpty()) {
             val newChain = chain.dropLast(1)
-            val format = _uiState.value.format
-            val newTags = matrixEngine.generateMosaicTags(newChain, format)
-            val newMovies = matrixEngine.getMatchingMovies(newChain, format, serverUrl, accessToken)
-
-            _uiState.value = _uiState.value.copy(
-                activeChain = newChain,
-                mosaicTags = newTags,
-                matchingMovies = newMovies
-            )
+            applyFilter(newChain, _uiState.value.format)
             return true
         }
 

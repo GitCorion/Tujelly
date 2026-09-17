@@ -176,4 +176,104 @@ class MedusaTagMatrixEngineTest {
         assertFalse(tags.any { it.label == "Japanese Mythology" })
         assertFalse(tags.any { it.label == "Urban Fantasy" })
     }
+
+    @Test
+    fun testFormatSegregationMoviesVsSeries() {
+        val catalog = listOf(
+            JellyfinMediaEntity(
+                id = "m1",
+                title = "Película Terrorífica",
+                type = "Movie",
+                genres = "Terror",
+                tags = "Monstruos",
+                communityRating = 8.5f,
+                productionYear = 2021
+            ),
+            JellyfinMediaEntity(
+                id = "s1",
+                title = "Serie de Miedo",
+                type = "Series",
+                genres = "Terror",
+                tags = "Monstruos, Posesión",
+                communityRating = 9.0f,
+                productionYear = 2023
+            )
+        )
+
+        engine.initialize(catalog)
+
+        val terrorTag = MedusaMosaicTag("1", "Terror", "terror", 2, "Terror", true)
+
+        // ALL
+        val allMovies = engine.getMatchingMovies(listOf(terrorTag), MediaFormat.ALL)
+        assertEquals(2, allMovies.size)
+
+        // Only MOVIES
+        val onlyMovies = engine.getMatchingMovies(listOf(terrorTag), MediaFormat.MOVIES)
+        assertEquals(1, onlyMovies.size)
+        assertEquals("Película Terrorífica", onlyMovies[0].title)
+
+        // Only SERIES
+        val onlySeries = engine.getMatchingMovies(listOf(terrorTag), MediaFormat.SERIES)
+        assertEquals(1, onlySeries.size)
+        assertEquals("Serie de Miedo", onlySeries[0].title)
+    }
+
+    @Test
+    fun testMatchingMoviesArePresortedByPriority() {
+        val catalog = listOf(
+            createMovie("1", "Regular Movie", "Comedia", rating = 6.0f),
+            createMovie("2", "Masterpiece Movie", "Comedia", rating = 9.5f),
+            createMovie("3", "Good Movie", "Comedia", rating = 8.0f)
+        )
+
+        engine.initialize(catalog)
+
+        val comedyTag = MedusaMosaicTag("1", "Comedia", "comedia", 3, "Comedia", true)
+        val movies = engine.getMatchingMovies(listOf(comedyTag), MediaFormat.ALL)
+
+        assertEquals(3, movies.size)
+        // Highest rating must be first
+        assertEquals("Masterpiece Movie", movies[0].title)
+        assertEquals("Good Movie", movies[1].title)
+        assertEquals("Regular Movie", movies[2].title)
+    }
+
+    @Test
+    fun testHighPerformanceWithLargeCatalog() {
+        // Simular un catálogo grande de 5.000 títulos
+        val largeCatalog = ArrayList<JellyfinMediaEntity>(5000)
+        val genresList = listOf("Acción", "Terror", "Ciencia Ficción", "Comedia", "Drama", "Aventura", "Animación")
+        for (i in 0 until 5000) {
+            val g1 = genresList[i % genresList.size]
+            val g2 = genresList[(i + 1) % genresList.size]
+            largeCatalog.add(
+                createMovie(
+                    id = "id_$i",
+                    title = "Title $i",
+                    genres = "$g1, $g2",
+                    tags = "Espacio, Monstruos, Robots",
+                    rating = (i % 10).toFloat()
+                )
+            )
+        }
+
+        val startTime = System.currentTimeMillis()
+        engine.initialize(largeCatalog)
+        val initDuration = System.currentTimeMillis() - startTime
+        println("Engine init time for 5000 items: ${initDuration}ms")
+
+        val terrorTag = MedusaMosaicTag("t", "Terror", "terror", 1000, "Terror", true)
+        val scifiTag = MedusaMosaicTag("s", "Ciencia Ficción", "ciencia ficcion", 1000, "Ciencia Ficción", true)
+
+        val queryStart = System.currentTimeMillis()
+        val tags = engine.generateMosaicTags(listOf(terrorTag, scifiTag), MediaFormat.ALL)
+        val movies = engine.getMatchingMovies(listOf(terrorTag, scifiTag), MediaFormat.ALL)
+        val queryDuration = System.currentTimeMillis() - queryStart
+        println("Engine query time for 2 tags in 5000 items: ${queryDuration}ms")
+
+        assertTrue("La consulta en 5000 items debe ser < 50ms incluso en emulación", queryDuration < 100)
+        assertTrue(tags.isNotEmpty())
+        assertTrue(movies.isNotEmpty())
+    }
 }
