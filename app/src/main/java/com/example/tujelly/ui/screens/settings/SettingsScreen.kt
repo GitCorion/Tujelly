@@ -72,6 +72,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
@@ -185,7 +187,7 @@ fun SettingsScreen(
 
                     TvSettingsNavRailItem(
                         icon = Icons.Rounded.Public,
-                        title = "Streaming",
+                        title = "Plataformas",
                         isSelected = uiState.activeCategory == 2,
                         onClick = { viewModel.selectCategory(2) },
                         focusColor = focusColor
@@ -221,7 +223,7 @@ fun SettingsScreen(
                     val sectionTitle = when (uiState.activeCategory) {
                         0 -> "Jellyfin"
                         1 -> "Trakt.tv"
-                        2 -> "Streaming"
+                        2 -> "Plataformas"
                         3 -> "Apariencia & Rendimiento"
                         else -> "Acerca de"
                     }
@@ -243,7 +245,7 @@ fun SettingsScreen(
                         when (uiState.activeCategory) {
                             0 -> JellyfinCategory(uiState, viewModel, focusColor, focusContent)
                             1 -> TraktCategory(uiState, viewModel, focusColor, focusContent)
-                            2 -> StreamingCategory(uiState, viewModel, focusColor, focusContent)
+                            2 -> PlatformsCategory(uiState, viewModel, focusColor, focusContent)
                             3 -> AppearanceCategory(uiState, viewModel, focusColor, focusContent)
                             4 -> AboutCategory(uiState, viewModel, focusColor, focusContent)
                         }
@@ -625,25 +627,75 @@ private fun TraktCategory(
 }
 
 // =============================================================================
-// CATEGORÍA 2: STREAMING
+// CATEGORÍA 2: PLATAFORMAS (FILTROS DE CATÁLOGO)
 // =============================================================================
 
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun StreamingCategory(
+private fun PlatformsCategory(
     uiState: SettingsUiState,
     viewModel: SettingsViewModel,
     focusColor: Color,
     focusContent: Color
 ) {
-    TvSectionHeader(title = "REGIÓN")
+    TvSectionHeader(title = "PAÍS DEL CATÁLOGO")
 
     TvSettingRow(
-        title = "País del catálogo",
+        title = "Región de catálogo",
         value = uiState.watchRegion,
         onClick = { viewModel.openEditDialog(SettingField.WATCH_REGION) }
     )
 
-    TvSectionHeader(title = "PLATAFORMAS DISPONIBLES")
+    // Accesos directos rápidos para cambiar de país con un solo clic de mando
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+    ) {
+        listOf("ES", "MX", "US", "AR", "CO").forEach { code ->
+            val isCurrent = uiState.watchRegion.equals(code, ignoreCase = true)
+            Surface(
+                onClick = { viewModel.updateWatchRegion(code) },
+                shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                colors = ClickableSurfaceDefaults.colors(
+                    containerColor = if (isCurrent) Color(0x28FFFFFF) else Color(0x0CFFFFFF),
+                    focusedContainerColor = Color(0x35FFFFFF)
+                ),
+                border = ClickableSurfaceDefaults.border(
+                    border = Border(
+                        border = BorderStroke(
+                            0.5.dp,
+                            if (isCurrent) focusColor.copy(alpha = 0.6f) else Color(0x14FFFFFF)
+                        )
+                    ),
+                    focusedBorder = Border(border = BorderStroke(1.5.dp, Color.White))
+                ),
+                scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                ) {
+                    if (isCurrent) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = focusColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                    }
+                    Text(
+                        text = code,
+                        fontSize = 12.sp,
+                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isCurrent) Color.White else Color(0xFFCBD5E1)
+                    )
+                }
+            }
+        }
+    }
+
+    TvSectionHeader(title = "FILTRAR POR PLATAFORMA")
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SUPPORTED_PLATFORMS.forEach { platform ->
@@ -1225,156 +1277,157 @@ private fun TvEditDialog(
     }
 
     LaunchedEffect(Unit) {
-        delay(100)
+        delay(150)
         focusRequester.requestFocus()
         keyboardController?.show()
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xCC000000)),
-        contentAlignment = Alignment.Center
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
-            onClick = {},
+        Box(
             modifier = Modifier
-                .width(480.dp)
-                .padding(24.dp),
-            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(16.dp)),
-            colors = ClickableSurfaceDefaults.colors(
-                containerColor = Color(0xFF141722),
-                focusedContainerColor = Color(0xFF141722)
-            ),
-            border = ClickableSurfaceDefaults.border(
-                border = Border(border = BorderStroke(1.dp, Color(0x33FFFFFF)))
-            )
+                .fillMaxSize()
+                .background(Color(0xCC000000)),
+            contentAlignment = Alignment.Center
         ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Box(
+                modifier = Modifier
+                    .width(480.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF141722))
+                    .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(16.dp))
+                    .padding(24.dp)
             ) {
-                Text(
-                    text = field.title,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = field.title,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
 
-                Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
-                OutlinedTextField(
-                    value = textFieldValue,
-                    onValueChange = { newTfv ->
-                        textFieldValue = newTfv
-                        onValueChange(newTfv.text)
-                    },
-                    singleLine = true,
-                    placeholder = {
-                        Text(
-                            text = field.placeholder,
-                            color = Color(0xFF64748B),
-                            fontSize = 13.sp
-                        )
-                    },
-                    trailingIcon = {
-                        if (textFieldValue.text.isNotEmpty()) {
-                            IconButton(onClick = { onValueChange("") }) {
+                    OutlinedTextField(
+                        value = textFieldValue,
+                        onValueChange = { newTfv ->
+                            textFieldValue = newTfv
+                            onValueChange(newTfv.text)
+                        },
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                text = field.placeholder,
+                                color = Color(0xFF64748B),
+                                fontSize = 13.sp
+                            )
+                        },
+                        trailingIcon = {
+                            if (textFieldValue.text.isNotEmpty()) {
+                                IconButton(onClick = {
+                                    textFieldValue = TextFieldValue("", TextRange.Zero)
+                                    onValueChange("")
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Clear,
+                                        contentDescription = "Limpiar texto",
+                                        tint = Color(0xFF94A3B8),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        },
+                        visualTransformation = if (field.isPassword && !isPasswordVisible) PasswordVisualTransformation() else VisualTransformation.None,
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Done,
+                            keyboardType = if (field.isPassword) KeyboardType.Password else KeyboardType.Text
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { onCommit() }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester),
+                        textStyle = TextStyle(
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedContainerColor = Color(0x18FFFFFF),
+                            unfocusedContainerColor = Color(0x0CFFFFFF),
+                            focusedBorderColor = focusColor,
+                            unfocusedBorderColor = Color(0x28FFFFFF),
+                            cursorColor = focusColor
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    if (field.isPassword) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = { isPasswordVisible = !isPasswordVisible },
+                            colors = ButtonDefaults.colors(
+                                containerColor = Color(0x12FFFFFF),
+                                contentColor = Color.White,
+                                focusedContainerColor = focusColor,
+                                focusedContentColor = focusContent
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Clear,
-                                    contentDescription = "Limpiar texto",
-                                    tint = Color(0xFF94A3B8),
-                                    modifier = Modifier.size(16.dp)
+                                    imageVector = if (isPasswordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isPasswordVisible) "Ocultar contraseña" else "Mostrar contraseña",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                         }
-                    },
-                    visualTransformation = if (field.isPassword && !isPasswordVisible) PasswordVisualTransformation() else VisualTransformation.None,
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Done,
-                        keyboardType = if (field.isPassword) KeyboardType.Password else KeyboardType.Text
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = { onCommit() }
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
-                    textStyle = TextStyle(
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0x18FFFFFF),
-                        unfocusedContainerColor = Color(0x0CFFFFFF),
-                        focusedBorderColor = focusColor,
-                        unfocusedBorderColor = Color(0x28FFFFFF),
-                        cursorColor = focusColor
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
+                    }
 
-                if (field.isPassword) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = { isPasswordVisible = !isPasswordVisible },
-                        colors = ButtonDefaults.colors(
-                            containerColor = Color(0x12FFFFFF),
-                            contentColor = Color.White,
-                            focusedContainerColor = focusColor,
-                            focusedContentColor = focusContent
-                        ),
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (isPasswordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (isPasswordVisible) "Ocultar contraseña" else "Mostrar contraseña",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                        Button(
+                            onClick = onCommit,
+                            colors = ButtonDefaults.colors(
+                                containerColor = focusColor,
+                                contentColor = focusContent,
+                                focusedContainerColor = focusColor,
+                                focusedContentColor = focusContent
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Guardar", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
-                    }
-                }
 
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Button(
-                        onClick = onCommit,
-                        colors = ButtonDefaults.colors(
-                            containerColor = focusColor,
-                            contentColor = focusContent,
-                            focusedContainerColor = focusColor,
-                            focusedContentColor = focusContent
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Guardar", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-
-                    Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.colors(
-                            containerColor = Color(0x18FFFFFF),
-                            contentColor = Color.White,
-                            focusedContainerColor = Color.White,
-                            focusedContentColor = Color(0xFF0F172A)
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Cancelar", fontSize = 13.sp)
+                        Button(
+                            onClick = onDismiss,
+                            colors = ButtonDefaults.colors(
+                                containerColor = Color(0x18FFFFFF),
+                                contentColor = Color.White,
+                                focusedContainerColor = Color.White,
+                                focusedContentColor = Color(0xFF0F172A)
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Cancelar", fontSize = 13.sp)
+                        }
                     }
                 }
             }

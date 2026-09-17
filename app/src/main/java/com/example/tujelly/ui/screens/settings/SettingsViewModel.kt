@@ -390,6 +390,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _uiState.value = _uiState.value.copy(activeDialogField = null)
     }
 
+    fun updateWatchRegion(region: String) {
+        val clean = region.ifBlank { "ES" }.uppercase()
+        _uiState.value = _uiState.value.copy(watchRegion = clean)
+        viewModelScope.launch {
+            userPreferencesRepository.updateTmdbConfig(
+                apiKey = _uiState.value.tmdbApiKey,
+                region = clean
+            )
+        }
+    }
+
     fun dismissDialog() {
         _uiState.value = _uiState.value.copy(activeDialogField = null)
     }
