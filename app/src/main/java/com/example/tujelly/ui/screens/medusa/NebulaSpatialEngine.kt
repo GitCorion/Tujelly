@@ -812,47 +812,9 @@ class NebulaSpatialEngine {
         )
     }
 
-    private fun JellyfinMediaEntity.matchesFormat(format: MediaFormat): Boolean = when (format) {
-        MediaFormat.ALL -> true
-        MediaFormat.MOVIES -> type.equals("Movie", ignoreCase = true)
-        MediaFormat.SERIES -> type.equals("Series", ignoreCase = true)
-    }
-
     private fun formatNoun(format: MediaFormat): String = when (format) {
         MediaFormat.ALL -> "títulos"
         MediaFormat.MOVIES -> "películas"
         MediaFormat.SERIES -> "series"
-    }
-
-
-    private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String): MediaItem {
-        val posterUrl = if (!primaryImageTag.isNullOrEmpty() && baseUrl.isNotBlank()) {
-            val cleanBase = baseUrl.trimEnd('/')
-            "$cleanBase/Items/$id/Images/Primary?quality=90&fillWidth=400&fillHeight=600"
-        } else null
-
-        val backdropUrl = if (!backdropImageTag.isNullOrEmpty() && baseUrl.isNotBlank()) {
-            val cleanBase = baseUrl.trimEnd('/')
-            "$cleanBase/Items/$id/Images/Backdrop/0?quality=90&maxWidth=1920"
-        } else posterUrl
-
-        return MediaItem(
-            id = id,
-            title = title,
-            overview = overview,
-            type = type,
-            posterUrl = posterUrl,
-            backdropUrl = backdropUrl,
-            rating = communityRating,
-            year = productionYear,
-            source = MediaSource.JELLYFIN,
-            playbackPositionTicks = playbackPositionTicks,
-            isPlayed = isPlayed,
-            isFavorite = isFavorite,
-            totalEpisodes = totalItemCount,
-            playedEpisodes = if (unplayedItemCount != null && totalItemCount != null) {
-                (totalItemCount - unplayedItemCount).coerceAtLeast(0)
-            } else null
-        )
     }
 }

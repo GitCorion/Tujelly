@@ -2,16 +2,16 @@ package com.example.tujelly.ui.screens.medusa
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -23,13 +23,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
@@ -41,16 +39,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -58,21 +56,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.tv.material3.Button
-import androidx.tv.material3.ButtonDefaults
-import androidx.tv.material3.Border
-import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
-import kotlinx.coroutines.delay
-import com.example.tujelly.domain.model.MediaItem
+import com.example.tujelly.domain.model.MediaFormatFilter
+import com.example.tujelly.ui.components.FormatFilterBar
 import com.example.tujelly.ui.components.MediaCard
 import com.example.tujelly.ui.components.TvNavTab
 import com.example.tujelly.ui.components.TvTopBar
+import com.example.tujelly.ui.theme.LocalAccentColor
+import com.example.tujelly.ui.theme.LocalIsMonochromeTheme
+import com.example.tujelly.ui.theme.TvAccent
+import com.example.tujelly.ui.theme.TvRatingBadge
 
-@OptIn(ExperimentalTvMaterial3Api::class)
+@OptIn(ExperimentalTvMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun MedusaScreen(
     onNavigateHome: () -> Unit,
@@ -84,14 +81,15 @@ fun MedusaScreen(
     viewModel: MedusaViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val accentColorKey by viewModel.accentColor.collectAsState()
     val buttonStyleKey by viewModel.buttonStyle.collectAsState()
-    val isMonochrome by viewModel.isMonochrome.collectAsState()
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val userPrefsRepo = remember { com.example.tujelly.data.local.UserPreferencesRepository(context) }
-    val userPrefs by userPrefsRepo.userPreferencesFlow.collectAsState(initial = null)
-    val particleScale = remember(userPrefs) { userPrefs?.getEffectiveParticleScale(context) ?: 1.0f }
+    // Respetar estrictamente la temática adoptada en Ajustes (LocalIsMonochromeTheme y LocalAccentColor)
+    val isMonochromeByVm by viewModel.isMonochrome.collectAsState()
+    val isMonochrome = LocalIsMonochromeTheme.current || isMonochromeByVm
+    val accentColorKey = LocalAccentColor.current
+    val accentColor = remember(accentColorKey, isMonochrome) {
+        if (isMonochrome) Color.White else TvAccent.getColor(accentColorKey)
+    }
 
     val formatNounPlural = when (uiState.format) {
         MediaFormat.ALL -> "títulos"
@@ -100,420 +98,355 @@ fun MedusaScreen(
     }
 
     val topBarMedusaFocusRequester = remember { FocusRequester() }
-    val canvasFocusRequester = remember { FocusRequester() }
-    val moviesDrawerFocusRequester = remember { FocusRequester() }
+    val tagRailFocusRequester = remember { FocusRequester() }
 
-    // Al entrar a la pantalla, mantener enfocado el botón "Medusa" en el menú superior
+    var isFocusedOnMoviesRow by remember { mutableStateOf(false) }
+    var isFocusedOnTagRail by remember { mutableStateOf(false) }
+    var isFocusedOnActiveChain by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         topBarMedusaFocusRequester.requestFocus()
     }
 
-    // Manejo de la tecla ATRÁS (Back) compatible con mandos de 5 botones
+    // Manejo de la tecla ATRÁS (Back) para mando de TV
     BackHandler {
-        if (uiState.showMoviesOverlay) {
-            viewModel.toggleMoviesOverlay()
-            canvasFocusRequester.requestFocus()
+        if (isFocusedOnMoviesRow) {
+            isFocusedOnMoviesRow = false
+            isFocusedOnTagRail = true
+            try {
+                tagRailFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        } else if (isFocusedOnActiveChain) {
+            isFocusedOnActiveChain = false
+            isFocusedOnTagRail = true
+            try {
+                tagRailFocusRequester.requestFocus()
+            } catch (_: Exception) {}
         } else if (!viewModel.onBackPress()) {
             onNavigateHome()
         }
     }
 
-    Column(
+    // Candidatas que no están ya seleccionadas
+    val candidateTags = remember(uiState.mosaicTags) {
+        uiState.mosaicTags.filterNot { it.isSelected }
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF05070B))
     ) {
-        // =========================================================================
-        // 1. CABECERA UNIVERSAL DE NAVEGACIÓN (IDÉNTICA A HOME)
-        // =========================================================================
-        TvTopBar(
-            selectedTab = TvNavTab.MEDUSA,
-            onNavigateHome = onNavigateHome,
-            onOpenMedusa = { /* Ya en Medusa */ },
-            onOpenFavorites = onOpenFavorites,
-            onOpenSearch = onOpenSearch,
-            onOpenSettings = onOpenSettings,
-            accentColorKey = accentColorKey,
-            buttonStyleKey = buttonStyleKey,
-            isMonochrome = isMonochrome,
-            localMediaCount = uiState.totalCatalogCount,
-            medusaFocusRequester = topBarMedusaFocusRequester,
-            onDownFromMedusa = {
-                canvasFocusRequester.requestFocus()
-            }
-        )
-
-        // =========================================================================
-        // 2. SUB-CABECERA COMPACTA: RESUMEN DE LA CONSTELACIÓN DE SENSACIONES (BREADCRUMB)
-        // =========================================================================
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF05070B))
-                .padding(horizontal = 48.dp, vertical = 6.dp)
-        ) {
-            Text(
-                text = "GRAN GALAXIA MEDUSA",
-                color = if (isMonochrome) Color(0x99FFFFFF) else Color(0x8000E5FF),
-                fontSize = 9.sp,
-                fontFamily = FontFamily.SansSerif,
-                letterSpacing = 1.6.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (uiState.activeChain.isEmpty()) {
-                    Text(
-                        text = "Conecta temáticas afines hacia el Sol Central para descubrir qué ver",
-                        color = Color(0x99FFFFFF),
-                        fontSize = 12.5.sp,
-                        fontFamily = FontFamily.SansSerif
-                    )
-                } else {
-                    // Fila con scroll horizontal para soportar 4, 5 o más sensaciones sin desbordar ni recortar
-                    val breadcrumbScrollState = rememberScrollState()
-                    LaunchedEffect(uiState.activeChain.size) {
-                        breadcrumbScrollState.animateScrollTo(breadcrumbScrollState.maxValue)
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .horizontalScroll(breadcrumbScrollState),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        uiState.activeChain.forEachIndexed { index, node ->
-                            if (index > 0) {
-                                Text(
-                                    text = "➔",
-                                    color = if (isMonochrome) Color.White else Color(0xFF00E5FF),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(if (isMonochrome) Color(0xF01E293B) else Color(0xF01A0E2E))
-                                    .border(
-                                        0.8.dp,
-                                        if (isMonochrome) Color.White else Color(0xFFC084FC),
-                                        RoundedCornerShape(6.dp)
-                                    )
-                                    .padding(horizontal = 9.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = "${index + 1}. ${node.label}",
-                                    color = if (isMonochrome) Color.White else Color(0xFFF3E8FF),
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontFamily = FontFamily.SansSerif
-                                )
-                            }
-                        }
-
-                        // Píldora interactiva del nodo Portal al final de la cadena
-                        if (uiState.matchingMovies.isNotEmpty()) {
-                            Text(
-                                text = "➔",
-                                color = if (isMonochrome) Color.White else Color(0xFF00E5FF),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            val portalInteractionSource = remember { MutableInteractionSource() }
-                            val isPortalPillFocused by portalInteractionSource.collectIsFocusedAsState()
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(
-                                        if (isPortalPillFocused) {
-                                            if (isMonochrome) Color.White else Color(0xFF00E5FF)
-                                        } else {
-                                            if (isMonochrome) Color(0x35FFFFFF) else Color(0x3500E5FF)
-                                        }
-                                    )
-                                    .border(
-                                        1.dp,
-                                        if (isPortalPillFocused) Color.White else (if (isMonochrome) Color.White else Color(0xFF00E5FF)),
-                                        RoundedCornerShape(6.dp)
-                                    )
-                                    .clickable(
-                                        interactionSource = portalInteractionSource,
-                                        indication = null
-                                    ) { viewModel.toggleMoviesOverlay() }
-                                    .focusable(interactionSource = portalInteractionSource)
-                                    .onKeyEvent { keyEvent ->
-                                        if (keyEvent.type == KeyEventType.KeyDown &&
-                                            (keyEvent.key == Key.DirectionCenter || keyEvent.key == Key.Enter)
-                                        ) {
-                                            viewModel.toggleMoviesOverlay()
-                                            true
-                                        } else false
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = "✦ VER ${uiState.matchingMovies.size} ${formatNounPlural.uppercase()}",
-                                    color = if (isPortalPillFocused) Color(0xFF05070B) else (if (isMonochrome) Color.White else Color(0xFF00E5FF)),
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.SansSerif
-                                )
-                            }
-                        }
-                    }
-                }
+        // Fondo: Solo proyectar backdrop si el usuario ha seleccionado alguna temática
+        if (uiState.activeChain.isNotEmpty()) {
+            val backdropUrl = uiState.selectedMovie?.backdropUrl ?: uiState.matchingMovies.firstOrNull()?.backdropUrl
+            if (!backdropUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = backdropUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(0.18f)
+                )
             }
         }
 
-        // Filtro de formato universal centrado, fino y elegante
-        com.example.tujelly.ui.components.FormatFilterBar(
-            selected = when (uiState.format) {
-                MediaFormat.ALL -> com.example.tujelly.domain.model.MediaFormatFilter.ALL
-                MediaFormat.MOVIES -> com.example.tujelly.domain.model.MediaFormatFilter.MOVIES
-                MediaFormat.SERIES -> com.example.tujelly.domain.model.MediaFormatFilter.SERIES
-            },
-            onSelect = { filter ->
-                viewModel.setFormat(
-                    when (filter) {
-                        com.example.tujelly.domain.model.MediaFormatFilter.ALL -> MediaFormat.ALL
-                        com.example.tujelly.domain.model.MediaFormatFilter.MOVIES -> MediaFormat.MOVIES
-                        com.example.tujelly.domain.model.MediaFormatFilter.SERIES -> MediaFormat.SERIES
-                    }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            if (isMonochrome) Color(0x10FFFFFF) else accentColor.copy(alpha = 0.08f),
+                            Color(0xEE05070B),
+                            Color(0xFF05070B)
+                        ),
+                        radius = 1200f
+                    )
                 )
-            },
-            accentColorKey = accentColorKey,
-            buttonStyleKey = buttonStyleKey,
-            isMonochrome = isMonochrome
         )
 
-        if (uiState.isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(
-                    color = if (isMonochrome) Color.White else Color(0xFF00E5FF),
-                    strokeWidth = 1.5.dp,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-        } else {
+        Column(modifier = Modifier.fillMaxSize()) {
             // =========================================================================
-            // 3. LIENZO ESPACIAL DE LA CONSTELACIÓN A PANTALLA COMPLETA
+            // 1. CABECERA UNIVERSAL DE NAVEGACIÓN (TvTopBar)
             // =========================================================================
-            Box(
+            TvTopBar(
+                selectedTab = TvNavTab.MEDUSA,
+                onNavigateHome = onNavigateHome,
+                onOpenMedusa = { /* Ya en Medusa */ },
+                onOpenFavorites = onOpenFavorites,
+                onOpenSearch = onOpenSearch,
+                onOpenSettings = onOpenSettings,
+                accentColorKey = accentColorKey,
+                buttonStyleKey = buttonStyleKey,
+                isMonochrome = isMonochrome,
+                localMediaCount = uiState.totalCatalogCount,
+                medusaFocusRequester = topBarMedusaFocusRequester,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                ConstellationCanvas(
-                    nodes = uiState.nodes,
-                    filaments = uiState.filaments,
-                    focusedNodeId = uiState.focusedNodeId,
-                    activeChain = uiState.activeChain,
-                    targetCameraX = uiState.targetCameraX,
-                    targetCameraY = uiState.targetCameraY,
-                    targetZoom = uiState.targetZoom,
-                    onNavigateDirection = { direction ->
-                        viewModel.onNavigate(direction)
-                    },
-                    onSelectFocused = {
-                        viewModel.toggleConnectFocused()
-                    },
-                    onPlayPressed = {
-                        if (uiState.matchingMovies.isNotEmpty()) {
-                            viewModel.toggleMoviesOverlay()
+                    .onFocusChanged {
+                        if (it.hasFocus) {
+                            isFocusedOnTagRail = false
+                            isFocusedOnMoviesRow = false
                         }
-                    },
-                    onNodeClicked = { nodeId ->
-                        viewModel.onNodeClicked(nodeId)
-                    },
-                    onZoomOut = {
-                        if (!viewModel.onBackPress()) {
-                            onNavigateHome()
+                    }
+                    .focusProperties {
+                        onEnter = {
+                            if (isFocusedOnTagRail && requestedFocusDirection != androidx.compose.ui.focus.FocusDirection.Up) {
+                                tagRailFocusRequester
+                            } else {
+                                androidx.compose.ui.focus.FocusRequester.Default
+                            }
                         }
-                    },
-                    onResetConstellation = {
-                        viewModel.resetConstellation()
-                    },
-                    onRequestFocusBottom = null,
-                    onRequestFocusTop = {
-                        topBarMedusaFocusRequester.requestFocus()
-                    },
-                    compatibleNodeIds = uiState.visibleNodeIds ?: uiState.compatibleNodeIds,
-                    focusRequester = canvasFocusRequester,
-                    isMonochrome = isMonochrome,
-                    particleScale = particleScale
-                )
+                    }
+            )
 
-                // Barra inferior de atajos contextual según el nodo enfocado
-                val isFocusedOnSun = uiState.focusedNode?.isSun == true || uiState.focusedNode?.isPortal == true ||
-                        uiState.focusedNodeId == SUN_CORE_ID || uiState.focusedNodeId == PORTAL_NODE_ID
-                val isFocusedAlreadyConnected = uiState.activeChain.any { it.id == uiState.focusedNodeId }
-
-                val hudGuide = when {
-                    isFocusedOnSun -> {
-                        if (uiState.activeChain.isEmpty()) {
-                            "[D-PAD] Explorar constelaciones  ·  [BACK] Salir"
-                        } else {
-                            "[OK] Ver $formatNounPlural (${uiState.matchingMovies.size})  ·  [BACK] Deshacer  ·  [MANTENER BACK] Reiniciar"
+            // =========================================================================
+            // 2. FILTRO DE FORMATO (TODOS / PELÍCULAS / SERIES)
+            // =========================================================================
+            FormatFilterBar(
+                selected = when (uiState.format) {
+                    MediaFormat.ALL -> MediaFormatFilter.ALL
+                    MediaFormat.MOVIES -> MediaFormatFilter.MOVIES
+                    MediaFormat.SERIES -> MediaFormatFilter.SERIES
+                },
+                onSelect = { filter ->
+                    viewModel.setFormat(
+                        when (filter) {
+                            MediaFormatFilter.ALL -> MediaFormat.ALL
+                            MediaFormatFilter.MOVIES -> MediaFormat.MOVIES
+                            MediaFormatFilter.SERIES -> MediaFormat.SERIES
+                        }
+                    )
+                },
+                accentColorKey = accentColorKey,
+                buttonStyleKey = buttonStyleKey,
+                isMonochrome = isMonochrome,
+                modifier = Modifier
+                    .onFocusChanged {
+                        if (it.hasFocus) {
+                            isFocusedOnTagRail = false
+                            isFocusedOnMoviesRow = false
                         }
                     }
-                    isFocusedAlreadyConnected -> {
-                        "[OK] Desconectar temática  ·  [BACK] Deshacer  ·  [MANTENER BACK] Reiniciar"
+                    .focusProperties {
+                        onEnter = {
+                            if (isFocusedOnTagRail && requestedFocusDirection != androidx.compose.ui.focus.FocusDirection.Up) {
+                                tagRailFocusRequester
+                            } else {
+                                androidx.compose.ui.focus.FocusRequester.Default
+                            }
+                        }
                     }
-                    uiState.activeChain.isNotEmpty() -> {
-                        "[OK] Conectar al Sol Central  ·  [BACK] Deshacer  ·  [MANTENER BACK] Reiniciar"
+            )
+
+            if (uiState.isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        color = accentColor,
+                        strokeWidth = 1.5.dp,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // =========================================================================
+                // 3. ETIQUETAS ACTIVAS SELECCIONADAS (Navegables con mando TV para borrar)
+                // =========================================================================
+                if (uiState.activeChain.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 48.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        uiState.activeChain.forEach { tag ->
+                            SelectedTagBadge(
+                                tag = tag,
+                                onRemove = {
+                                    val remaining = uiState.activeChain.filterNot { it.id == tag.id }
+                                    viewModel.removeTagFromChain(tag)
+                                    if (remaining.isEmpty()) {
+                                        try {
+                                            tagRailFocusRequester.requestFocus()
+                                        } catch (_: Exception) {}
+                                    }
+                                },
+                                isMonochrome = isMonochrome,
+                                accentColor = accentColor,
+                                onFocusChange = { focused ->
+                                    if (focused) {
+                                        isFocusedOnActiveChain = true
+                                        isFocusedOnTagRail = false
+                                        isFocusedOnMoviesRow = false
+                                    } else {
+                                        isFocusedOnActiveChain = false
+                                    }
+                                }
+                            )
+                        }
                     }
-                    else -> {
-                        "[OK] Conectar temática al Sol  ·  [D-PAD] Explorar constelaciones  ·  [BACK] Salir"
-                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color(0xDD05070B), Color(0xF505070B))
-                            )
-                        )
-                        .padding(horizontal = 48.dp, vertical = 7.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = hudGuide,
-                        color = when {
-                            isFocusedOnSun && uiState.activeChain.isNotEmpty() -> {
-                                if (isMonochrome) Color.White else Color(0xFF00E5FF)
-                            }
-                            isFocusedOnSun -> {
-                                Color(0xBBFFFFFF)
-                            }
-                            isFocusedAlreadyConnected -> {
-                                if (isMonochrome) Color.White else Color(0xFFC084FC)
-                            }
-                            else -> Color(0x9085A5C5)
-                        },
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.SansSerif,
-                        letterSpacing = 0.6.sp
-                    )
+                // =========================================================================
+                // 4. RAIL HORIZONTAL DE TEMÁTICAS
+                // =========================================================================
+                MedusaTagRail(
+                    tags = candidateTags,
+                    onTagClick = { tag ->
+                        viewModel.toggleTag(tag)
+                    },
+                    firstPillFocusRequester = tagRailFocusRequester,
+                    isMonochrome = isMonochrome,
+                    accentColor = accentColor,
+                    onTagFocused = { tag ->
+                        isFocusedOnTagRail = true
+                        isFocusedOnMoviesRow = false
+                        viewModel.onTagFocused(tag)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                    if (uiState.activeChain.isNotEmpty() && uiState.matchingMovies.isNotEmpty()) {
-                        val bottomPillInteractionSource = remember { MutableInteractionSource() }
-                        val isBottomPillFocused by bottomPillInteractionSource.collectIsFocusedAsState()
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // =========================================================================
+                // 5. SECCIÓN PROTAGONISTA: PELÍCULAS DESCUBIERTAS
+                // =========================================================================
+                if (uiState.activeChain.isNotEmpty() && uiState.matchingMovies.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(top = 4.dp)
+                    ) {
+                        val focusedMovie = uiState.selectedMovie ?: uiState.matchingMovies.firstOrNull()
 
                         Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(
-                                    if (isBottomPillFocused) {
-                                        if (isMonochrome) Color.White else Color(0xFF00E5FF)
-                                    } else {
-                                        if (isMonochrome) Color(0x3520242D) else Color(0x3500E5FF)
-                                    }
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isBottomPillFocused) Color.White else (if (isMonochrome) Color(0x60FFFFFF) else Color(0x8000E5FF)),
-                                    shape = RoundedCornerShape(20.dp)
-                                )
-                                .clickable(
-                                    interactionSource = bottomPillInteractionSource,
-                                    indication = null
-                                ) {
-                                    viewModel.toggleMoviesOverlay()
-                                }
-                                .focusable(interactionSource = bottomPillInteractionSource)
-                                .onKeyEvent { keyEvent ->
-                                    if (keyEvent.type == KeyEventType.KeyDown &&
-                                        (keyEvent.key == Key.DirectionCenter || keyEvent.key == Key.Enter)
-                                    ) {
-                                        viewModel.toggleMoviesOverlay()
-                                        true
-                                    } else false
-                                }
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                .fillMaxWidth()
+                                .padding(horizontal = 48.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Mini abanico de carátulas reales de las películas descubiertas
-                            val previewPosters = uiState.matchingMovies.take(3)
-                            Box(
-                                modifier = Modifier
-                                    .height(26.dp)
-                                    .width((18 + (previewPosters.size - 1) * 12).dp)
-                            ) {
-                                previewPosters.forEachIndexed { idx, media ->
-                                    Box(
-                                        modifier = Modifier
-                                            .offset(x = (idx * 12).dp)
-                                            .size(width = 18.dp, height = 26.dp)
-                                            .clip(RoundedCornerShape(3.dp))
-                                            .border(
-                                                0.5.dp,
-                                                if (isBottomPillFocused) Color.Black else Color(0x60FFFFFF),
-                                                RoundedCornerShape(3.dp)
-                                            )
-                                            .background(Color(0xFF1A2230))
-                                    ) {
-                                        if (media.posterUrl != null) {
-                                            AsyncImage(
-                                                model = media.posterUrl,
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "${uiState.matchingMovies.size} ${formatNounPlural.uppercase()}",
+                                    color = if (isMonochrome) Color.White else accentColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.2.sp,
+                                    fontFamily = FontFamily.SansSerif
+                                )
+
+                                if (focusedMovie != null) {
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Text(
+                                        text = focusedMovie.title,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (focusedMovie.year != null) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "(${focusedMovie.year})",
+                                            color = Color(0x8094A3B8),
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    if (focusedMovie.rating != null && focusedMovie.rating > 0f) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        TvRatingBadge(rating = focusedMovie.rating, compact = true)
                                     }
                                 }
                             }
 
                             Text(
-                                text = "✦ Ver ${uiState.matchingMovies.size} $formatNounPlural  ➔",
-                                color = if (isBottomPillFocused) Color(0xFF05070B) else (if (isMonochrome) Color.White else Color(0xFF00E5FF)),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
+                                text = if (isFocusedOnMoviesRow) "[ARRIBA] Volver a filtros  ·  [OK] Ver ficha" else "[ABAJO] Navegar películas  ·  [BACK] Deshacer",
+                                color = Color(0x7794A3B8),
+                                fontSize = 10.sp,
                                 fontFamily = FontFamily.SansSerif
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        LazyRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .onFocusChanged {
+                                    if (it.hasFocus) {
+                                        isFocusedOnMoviesRow = true
+                                    }
+                                },
+                            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            itemsIndexed(
+                                items = uiState.matchingMovies,
+                                key = { _, movie -> movie.id }
+                            ) { _, movie ->
+                                MediaCard(
+                                    item = movie,
+                                    onClick = {
+                                        onDetailMedia(movie.id)
+                                    },
+                                    onFocus = {
+                                        isFocusedOnTagRail = false
+                                        isFocusedOnMoviesRow = true
+                                        viewModel.selectMovie(movie)
+                                    }
+                                )
+                            }
+                        }
                     }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
 
                 // =========================================================================
-                // 4. VISOR DE PELÍCULAS DESCUBIERTAS (SE ABRE CON [OK] EN EL NODO PORTAL)
+                // 6. HUD INFERIOR SOBRIO
                 // =========================================================================
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = uiState.showMoviesOverlay,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                    modifier = Modifier.align(Alignment.BottomCenter)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF030508))
+                        .padding(horizontal = 48.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MovieDiscoveryDrawer(
-                        chain = uiState.activeChain,
-                        movies = uiState.matchingMovies,
-                        formatNoun = formatNounPlural,
-                        onClose = {
-                            viewModel.toggleMoviesOverlay()
-                            canvasFocusRequester.requestFocus()
-                        },
-                        onSelectMovie = { movie ->
-                            viewModel.selectMovie(movie)
-                        },
-                        onDetailMovie = { movie ->
-                            onDetailMedia(movie.id)
-                        },
-                        focusRequester = moviesDrawerFocusRequester,
-                        isMonochrome = isMonochrome
+                    val hudText = when {
+                        isFocusedOnMoviesRow -> "[ARRIBA] Volver a filtros  ·  [OK] Ver ficha  ·  [BACK] Deshacer"
+                        isFocusedOnActiveChain -> "[OK] Eliminar esta temática  ·  [ABAJO] Rail de temáticas  ·  [BACK] Volver"
+                        uiState.activeChain.isNotEmpty() -> "[OK] Filtrar más  ·  [ARRIBA] Editar filtros  ·  [ABAJO] Películas  ·  [BACK] Deshacer"
+                        else -> "[OK] Seleccionar  ·  [← →] Explorar  ·  [BACK] Salir"
+                    }
+
+                    Text(
+                        text = hudText,
+                        color = if (uiState.activeChain.isNotEmpty()) {
+                            if (isMonochrome) Color.White else accentColor
+                        } else Color(0x8094A3B8),
+                        fontSize = 10.5.sp,
+                        fontFamily = FontFamily.SansSerif,
+                        letterSpacing = 0.5.sp
                     )
+
+                    if (uiState.activeChain.isNotEmpty()) {
+                        Text(
+                            text = "${uiState.matchingMovies.size} $formatNounPlural disponibles",
+                            color = if (isMonochrome) Color.White else accentColor,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
@@ -521,142 +454,96 @@ fun MedusaScreen(
 }
 
 /**
- * Drawer inferior deslizante que muestra las películas exactas que satisfacen
- * el árbol completo de sensaciones activas en la constelación.
+ * Píldora de temática seleccionada en la cadena activa.
+ * Enfocable con mando TV, resalte bioluminiscente nítido y tecla [OK] para eliminar.
  */
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun MovieDiscoveryDrawer(
-    chain: List<SpatialNebulaNode>,
-    movies: List<MediaItem>,
-    formatNoun: String = "títulos",
-    onClose: () -> Unit,
-    onSelectMovie: (MediaItem) -> Unit,
-    onDetailMovie: (MediaItem) -> Unit,
-    focusRequester: FocusRequester,
-    isMonochrome: Boolean = false
+private fun SelectedTagBadge(
+    tag: MedusaMosaicTag,
+    onRemove: () -> Unit,
+    isMonochrome: Boolean,
+    accentColor: Color,
+    onFocusChange: (Boolean) -> Unit = {}
 ) {
-    val firstCardFocusRequester = remember { FocusRequester() }
-    var canClickCard by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
 
-    LaunchedEffect(movies) {
-        canClickCard = false
-        if (movies.isNotEmpty()) {
-            delay(350)
-            canClickCard = true
-            firstCardFocusRequester.requestFocus()
-        }
+    LaunchedEffect(isFocused) {
+        onFocusChange(isFocused)
+    }
+
+    val focusColor = if (isMonochrome) Color.White else accentColor
+    val focusContent = if (isMonochrome) Color(0xFF0F172A) else Color(0xFF0F172A)
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.08f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f),
+        label = "badgeScale"
+    )
+
+    // Exactamente los mismos estados de FormatFilterBar y TvTopBar:
+    // Foco -> Sólido cian con texto oscuro
+    // Seleccionado en reposo -> Fondo translúcido con borde cian y texto cian
+    val containerColor = if (isFocused) {
+        focusColor
+    } else {
+        if (isMonochrome) Color(0x28FFFFFF) else focusColor.copy(alpha = 0.22f)
+    }
+
+    val contentColor = if (isFocused) {
+        focusContent
+    } else {
+        if (isMonochrome) Color.White else focusColor
+    }
+
+    val borderColor = if (isFocused) {
+        Color.Transparent
+    } else {
+        if (isMonochrome) Color(0x33FFFFFF) else focusColor.copy(alpha = 0.70f)
     }
 
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(375.dp)
-            .background(
-                Brush.verticalGradient(
-                    colors = if (isMonochrome) {
-                        listOf(Color(0xF012141A), Color(0xFC0A0B0E))
-                    } else {
-                        listOf(Color(0xF0080E1A), Color(0xFC05070B))
-                    }
-                )
+            .scale(scale)
+            .height(30.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .background(containerColor)
+            .then(
+                if (!isFocused) {
+                    Modifier.border(1.dp, borderColor, RoundedCornerShape(15.dp))
+                } else Modifier
             )
-            .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(
-                    colors = if (isMonochrome) {
-                        listOf(Color(0x77FFFFFF), Color(0x15FFFFFF))
-                    } else {
-                        listOf(Color(0x7700E5FF), Color(0x1500E5FF))
-                    }
-                ),
-                shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onRemove
             )
-            .padding(horizontal = 48.dp, vertical = 18.dp)
+            .padding(horizontal = 14.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Título de la constelación resultante
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "✦ ${movies.size} ${formatNoun.uppercase()} QUE RESONAN CON TU CONSTELACIÓN",
-                        color = if (isMonochrome) Color.White else Color(0xFFC084FC),
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.6.sp
-                    )
-                    val chainTitle = if (chain.isNotEmpty()) {
-                        chain.joinToString(" ➔ ") { it.label }
-                    } else "Selección General"
-                    Text(
-                        text = chainTitle,
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.SansSerif,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Text(
-                    text = "[ARRIBA / BACK] Volver a la constelación",
-                    color = Color(0x8085A5C5),
-                    fontSize = 11.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            if (movies.isEmpty()) {
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "No se encontraron títulos exactos en tu biblioteca para esta combinación tan específica",
-                        color = Color(0x99FFFFFF),
-                        fontSize = 14.sp
-                    )
-                }
-            } else {
-                LazyRow(
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester)
-                        .onKeyEvent { keyEvent ->
-                            if (keyEvent.type == KeyEventType.KeyDown) {
-                                when (keyEvent.key) {
-                                    Key.DirectionUp -> {
-                                        onClose()
-                                        true
-                                    }
-                                    else -> false
-                                }
-                            } else false
-                        },
-                    contentPadding = PaddingValues(end = 32.dp, bottom = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    itemsIndexed(movies, key = { _, it -> it.id }) { index, movie ->
-                        MediaCard(
-                            item = movie,
-                            onClick = {
-                                if (canClickCard) {
-                                    onDetailMovie(movie)
-                                }
-                            },
-                            onFocus = {
-                                onSelectMovie(movie)
-                            },
-                            modifier = if (index == 0) Modifier.focusRequester(firstCardFocusRequester) else Modifier
-                        )
-                    }
-                }
-            }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Text(
+                text = "✓",
+                color = contentColor,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = tag.label,
+                color = contentColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif
+            )
+            Text(
+                text = "✕",
+                color = contentColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
         }
     }
 }
-
-
