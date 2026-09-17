@@ -137,7 +137,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 if (info != null) {
                     _uiState.value = _uiState.value.copy(
                         updateInfo = info,
-                        statusMessage = if (info.hasUpdate) "¡Nueva versión ${info.latestVersion} disponible!" else "Tujelly está al día (${info.currentVersion})"
+                        statusMessage = if (info.hasUpdate) "¡Nueva versión ${info.latestVersion} disponible!" else "Medusa está al día (${info.currentVersion})"
                     )
                 }
             }
@@ -609,7 +609,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             )
 
             val api = NetworkClientFactory.createService(cleanUrl, JellyfinApiService::class.java)
-            val authHeader = "MediaBrowser Client=\"Tujelly\", Device=\"AndroidTV\", DeviceId=\"TujellyApp\", Version=\"1.0.0\""
+            val authHeader = "MediaBrowser Client=\"Medusa\", Device=\"AndroidTV\", DeviceId=\"MedusaTV\", Version=\"2.0.2\""
 
             try {
                 val initResult = api.initiateQuickConnect(authHeader = authHeader)
@@ -697,7 +697,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             _uiState.value = state.copy(isLoading = true, statusMessage = "Conectando con $cleanUrl...")
 
             val api = NetworkClientFactory.createService(cleanUrl, JellyfinApiService::class.java)
-            val authHeader = "MediaBrowser Client=\"Tujelly\", Device=\"AndroidTV\", DeviceId=\"TujellyApp\", Version=\"1.0.0\""
+            val authHeader = "MediaBrowser Client=\"Medusa\", Device=\"AndroidTV\", DeviceId=\"MedusaTV\", Version=\"2.0.2\""
 
             try {
                 val info = api.getPublicInfo()
@@ -782,7 +782,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 _uiState.value = _uiState.value.copy(
                     isCheckingUpdate = false,
                     updateInfo = info,
-                    statusMessage = if (info.hasUpdate) "¡Nueva versión ${info.latestVersion} disponible!" else "Tujelly está al día (${info.currentVersion})"
+                    statusMessage = if (info.hasUpdate) "¡Nueva versión ${info.latestVersion} disponible!" else "Medusa está al día (${info.currentVersion})"
                 )
             }.onFailure { e ->
                 _uiState.value = _uiState.value.copy(
