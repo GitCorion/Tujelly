@@ -26,9 +26,13 @@ data class SearchUiState(
     val query: String = "",
     val isLoading: Boolean = false,
     val sections: List<HomeSection> = emptyList(),
+    val results: List<MediaItem> = emptyList(),
     val totalHits: Int = 0,
     val focusedItem: MediaItem? = null,
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    val validNextChars: Set<Char> = emptySet(),
+    val suggestions: List<String> = emptyList(),
+    val isPredictiveActive: Boolean = true
 )
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
@@ -52,19 +56,69 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
+    private var catalogTitles: List<String> = emptyList()
     private var searchJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            catalogTitles = mediaRepository.getAllLocalTitles()
+            updatePredictiveState(_uiState.value.query)
+        }
+    }
+
+    private fun updatePredictiveState(query: String) {
+        val nextChars = if (_uiState.value.isPredictiveActive) {
+            SearchPredictiveEngine.findValidNextCharacters(query, catalogTitles)
+        } else {
+            SearchPredictiveEngine.ALL_KEYBOARD_CHARS
+        }
+        val suggestions = SearchPredictiveEngine.generateAutocompleteSuggestions(query, catalogTitles, limit = 5)
+        _uiState.value = _uiState.value.copy(
+            validNextChars = nextChars,
+            suggestions = suggestions
+        )
+    }
+
+    fun appendChar(c: Char) {
+        val newQuery = _uiState.value.query + c
+        onQueryChange(newQuery)
+    }
+
+    fun onBackspace() {
+        val current = _uiState.value.query
+        if (current.isNotEmpty()) {
+            val newQuery = current.dropLast(1)
+            onQueryChange(newQuery)
+        }
+    }
+
+    fun onClear() {
+        onQueryChange("")
+    }
+
+    fun selectSuggestion(suggestion: String) {
+        onQueryChange(suggestion)
+    }
+
+    fun togglePredictive() {
+        val newActive = !_uiState.value.isPredictiveActive
+        _uiState.value = _uiState.value.copy(isPredictiveActive = newActive)
+        updatePredictiveState(_uiState.value.query)
+    }
 
     fun onQueryChange(newQuery: String) {
         _uiState.value = _uiState.value.copy(query = newQuery)
+        updatePredictiveState(newQuery)
         searchJob?.cancel()
 
         if (newQuery.isBlank()) {
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 sections = emptyList(),
+                results = emptyList(),
                 totalHits = 0,
                 focusedItem = null,
-                statusMessage = "Escribe un título para buscar en tu servidor Jellyfin"
+                statusMessage = null
             )
             return
         }
@@ -134,6 +188,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         queryClean: String,
         isLoading: Boolean
     ) {
+        val allMediaItems = results.map { it.toMediaItem(baseUrl, token) }
         val movies = results.filter { it.type.equals("Movie", ignoreCase = true) }
         val series = results.filter { !it.type.equals("Movie", ignoreCase = true) }
 
@@ -164,7 +219,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val newFocused = if (currentFocused != null && results.any { it.id == currentFocused.id }) {
             currentFocused
         } else {
-            sections.firstOrNull()?.items?.firstOrNull()
+            allMediaItems.firstOrNull()
         }
 
         val statusMessage = when {
@@ -176,6 +231,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.value = _uiState.value.copy(
             isLoading = isLoading,
             sections = sections,
+            results = allMediaItems,
             totalHits = totalHits,
             focusedItem = newFocused,
             statusMessage = statusMessage

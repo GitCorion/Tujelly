@@ -74,6 +74,10 @@ class FakeJellyfinDao : JellyfinDao {
         return localDb.filter { it.title.contains(query, ignoreCase = true) }.take(limit)
     }
 
+    override suspend fun getAllLocalTitles(): List<String> {
+        return localDb.filter { it.type in listOf("Movie", "Series") }.map { it.title }.distinct()
+    }
+
     override suspend fun getMovies(): List<JellyfinMediaEntity> = localDb.filter { it.type == "Movie" }
 
     override suspend fun getSeries(): List<JellyfinMediaEntity> = localDb.filter { it.type == "Series" }

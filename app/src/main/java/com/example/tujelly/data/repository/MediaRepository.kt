@@ -797,6 +797,7 @@ class MediaRepository(
     suspend fun getTopSeriesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopSeriesLocal(limit).deduplicateMediaEntities()
     suspend fun getTopRatedLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopRatedLocal(limit).deduplicateMediaEntities()
     suspend fun searchLocalMedia(query: String, limit: Int = 40): List<JellyfinMediaEntity> = jellyfinDao.searchLocalMedia(query.trim(), limit).deduplicateMediaEntities()
+    suspend fun getAllLocalTitles(): List<String> = jellyfinDao.getAllLocalTitles()
     suspend fun getLocalCount(): Int = jellyfinDao.getCount()
     fun getMediaCountFlow(): Flow<Int> = jellyfinDao.getMediaCountFlow()
     fun getMoviesCountFlow(): Flow<Int> = jellyfinDao.getMoviesCountFlow()

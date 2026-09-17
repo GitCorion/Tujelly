@@ -45,6 +45,9 @@ interface JellyfinDao {
     @Query("SELECT * FROM jellyfin_media WHERE type IN ('Movie', 'Series') AND (LOWER(title) LIKE '%' || LOWER(:query) || '%' OR LOWER(originalTitle) LIKE '%' || LOWER(:query) || '%') ORDER BY communityRating DESC LIMIT :limit")
     suspend fun searchLocalMedia(query: String, limit: Int = 40): List<JellyfinMediaEntity>
 
+    @Query("SELECT DISTINCT title FROM jellyfin_media WHERE type IN ('Movie', 'Series') AND title IS NOT NULL AND title != '' ORDER BY title ASC")
+    suspend fun getAllLocalTitles(): List<String>
+
     @Query("SELECT * FROM jellyfin_media WHERE id = :id LIMIT 1")
     suspend fun getItemById(id: String): JellyfinMediaEntity?
 

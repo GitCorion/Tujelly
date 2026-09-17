@@ -1,27 +1,35 @@
 package com.example.tujelly.ui.screens.search
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Search
-import androidx.tv.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,22 +37,26 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
-import com.example.tujelly.data.local.BUTTON_STYLE_TEXT_ONLY
-import com.example.tujelly.ui.components.MediaRow
+import com.example.tujelly.ui.components.MediaCard
+import com.example.tujelly.ui.components.TvNavTab
+import com.example.tujelly.ui.components.TvTopBar
 import com.example.tujelly.ui.theme.TvAccent
 import com.example.tujelly.ui.theme.TvPill
 import kotlinx.coroutines.delay
@@ -68,15 +80,37 @@ fun SearchScreen(
     val isMonochrome by viewModel.isMonochrome.collectAsState()
     val focusColor = TvAccent.getColor(accentColorKey)
     val focusContent = TvAccent.getFocusedContentColor(accentColorKey)
-    val showIcons = buttonStyleKey != BUTTON_STYLE_TEXT_ONLY
-    val showText = buttonStyleKey != BUTTON_STYLE_ICONS_ONLY
 
-    val focusRequester = remember { FocusRequester() }
+    // Enfoque inicial automático en la primera tecla del teclado (A)
+    val initialKeyFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        delay(200)
-        focusRequester.requestFocus()
+        delay(180)
+        try {
+            initialKeyFocusRequester.requestFocus()
+        } catch (_: Exception) {}
     }
+
+    // El botón Atrás del mando borra letras si hay texto; si está vacío, sale de la pantalla
+    BackHandler(enabled = true) {
+        if (uiState.query.isNotEmpty()) {
+            viewModel.onBackspace()
+        } else {
+            onBack()
+        }
+    }
+
+    // Cursor animado parpadeante para la barra de búsqueda
+    val infiniteTransition = rememberInfiniteTransition(label = "SearchCursor")
+    val cursorAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.15f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 550, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "cursorAlpha"
+    )
 
     Column(
         modifier = Modifier
@@ -84,8 +118,8 @@ fun SearchScreen(
             .background(Color(0xFF0A0B0E))
     ) {
         // Universal Persistent TV TopBar
-        com.example.tujelly.ui.components.TvTopBar(
-            selectedTab = com.example.tujelly.ui.components.TvNavTab.SEARCH,
+        TvTopBar(
+            selectedTab = TvNavTab.SEARCH,
             onNavigateHome = onNavigateHome,
             onOpenMedusa = onOpenMedusa,
             onOpenFavorites = onOpenFavorites,
@@ -96,86 +130,278 @@ fun SearchScreen(
             isMonochrome = isMonochrome
         )
 
-        // Search Input Box
+        // Contenedor principal de búsqueda dividida (Panel Izquierdo: Teclado | Panel Derecho: Resultados)
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 48.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .padding(horizontal = 48.dp, vertical = 6.dp)
         ) {
-            TvPill(
-                text = "BUSCADOR",
-                containerColor = if (isMonochrome) Color(0x18FFFFFF) else focusColor.copy(alpha = 0.18f),
-                textColor = if (isMonochrome) Color(0xFFE2E8F0) else focusColor,
-                borderColor = if (isMonochrome) Color(0x22FFFFFF) else focusColor.copy(alpha = 0.45f),
-                fontSizeSp = 11,
-                horizontalPadDp = 10.dp,
-                verticalPadDp = 6.dp
-            )
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            OutlinedTextField(
-                value = uiState.query,
-                onValueChange = { viewModel.onQueryChange(it) },
-                singleLine = true,
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Search,
-                        contentDescription = null,
-                        tint = if (isMonochrome) Color.White else focusColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                },
-                placeholder = {
-                    Text("Buscar película o serie...", color = Color(0xFF64748B), fontSize = 15.sp)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester),
-                textStyle = TextStyle(color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedContainerColor = Color(0xFF1B1E2E),
-                    unfocusedContainerColor = Color(0xFF141624),
-                    focusedBorderColor = if (isMonochrome) Color.White else focusColor,
-                    unfocusedBorderColor = Color(0x44FFFFFF),
-                    cursorColor = if (isMonochrome) Color.White else focusColor
-                )
-            )
-        }
-
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            // Results Counter
-            if (uiState.statusMessage != null || uiState.totalHits > 0) {
-                item {
-                    Box(
-                        modifier = Modifier.padding(horizontal = 48.dp, vertical = 4.dp)
+            // ==========================================================
+            // PANEL IZQUIERDO: Display de Texto + Teclado Integrado Fijo
+            // ==========================================================
+            Column(
+                modifier = Modifier.width(320.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Barra de visualización de lo que se escribe (Compacta, sin lupa para no confundir con un input)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(38.dp)
+                        .background(Color(0xFF131622), RoundedCornerShape(8.dp))
+                        .border(
+                            1.dp,
+                            if (uiState.query.isNotEmpty()) focusColor.copy(alpha = 0.5f) else Color(0x18FFFFFF),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
                     ) {
-                        val msg = uiState.statusMessage ?: "Se encontraron ${uiState.totalHits} títulos en tu servidor Jellyfin"
+                        if (uiState.query.isEmpty()) {
+                            Text(
+                                text = "Buscar...",
+                                color = Color(0xFF64748B),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        } else {
+                            Text(
+                                text = uiState.query,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            // Cursor parpadeante
+                            Text(
+                                text = "|",
+                                color = (if (isMonochrome) Color.White else focusColor).copy(alpha = cursorAlpha),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Selector de Modo Predictivo sobrio y limpio
+                    Button(
+                        onClick = { viewModel.togglePredictive() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        shape = ButtonDefaults.shape(RoundedCornerShape(6.dp)),
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (uiState.isPredictiveActive) {
+                                if (isMonochrome) Color(0x22FFFFFF) else focusColor.copy(alpha = 0.18f)
+                            } else Color(0x0AFFFFFF),
+                            contentColor = if (uiState.isPredictiveActive) {
+                                if (isMonochrome) Color.White else focusColor
+                            } else Color(0xFF64748B),
+                            focusedContainerColor = focusColor,
+                            focusedContentColor = focusContent
+                        ),
+                        border = ButtonDefaults.border(
+                            border = Border(
+                                border = BorderStroke(
+                                    0.8.dp,
+                                    if (uiState.isPredictiveActive) focusColor.copy(alpha = 0.4f) else Color(0x18FFFFFF)
+                                )
+                            ),
+                            focusedBorder = Border(border = BorderStroke(1.5.dp, focusColor))
+                        ),
+                        modifier = Modifier.height(26.dp)
+                    ) {
                         Text(
-                            text = msg,
-                            color = Color(0xFF94A3B8),
-                            style = MaterialTheme.typography.bodyMedium
+                            text = if (uiState.isPredictiveActive) "Auto" else "Libre",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
                         )
                     }
                 }
-            }
 
+                Spacer(modifier = Modifier.height(8.dp))
 
-
-            // Media Results Rows
-            items(uiState.sections) { section ->
-                MediaRow(
-                    section = section,
-                    onItemClick = { item -> onDetailMedia(item.id) },
-                    onItemFocus = { item -> viewModel.setFocusedItem(item) }
+                // Teclado integrado en pantalla D-pad (Posición 100% fija, sin saltos verticales)
+                TvIntegratedKeyboard(
+                    validNextChars = uiState.validNextChars,
+                    isPredictiveActive = uiState.isPredictiveActive,
+                    query = uiState.query,
+                    focusColor = focusColor,
+                    focusContentColor = focusContent,
+                    onKeyClick = { viewModel.appendChar(it) },
+                    onBackspace = { viewModel.onBackspace() },
+                    onClear = { viewModel.onClear() },
+                    initialFocusRequester = initialKeyFocusRequester
                 )
             }
 
-            item {
-                Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.width(32.dp))
+
+            // ==========================================
+            // PANEL DERECHO: Resultados / Sugerencias
+            // ==========================================
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            ) {
+                if (uiState.query.isBlank()) {
+                    // Estado inicial limpio y minimalista (sin duplicar novedades del Home)
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(24.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(68.dp)
+                                    .background(
+                                        brush = Brush.radialGradient(
+                                            listOf(
+                                                (if (isMonochrome) Color.White else focusColor).copy(alpha = 0.15f),
+                                                Color.Transparent
+                                            )
+                                        ),
+                                        shape = CircleShape
+                                    )
+                                    .border(
+                                        1.dp,
+                                        (if (isMonochrome) Color.White else focusColor).copy(alpha = 0.25f),
+                                        CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Search,
+                                    contentDescription = null,
+                                    tint = if (isMonochrome) Color.White else focusColor,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = "Búsqueda en catálogo",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                } else {
+                    // Estado con consulta activa: Muestra Sugerencias superiores, contador y Cuadrícula
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Fila de sugerencias de autocompletado directa
+                        if (uiState.suggestions.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                uiState.suggestions.take(4).forEach { suggestion ->
+                                    Button(
+                                        onClick = { viewModel.selectSuggestion(suggestion) },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                        shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)),
+                                        colors = ButtonDefaults.colors(
+                                            containerColor = Color(0xFF191D2C),
+                                            contentColor = Color(0xFFE2E8F0),
+                                            focusedContainerColor = focusColor,
+                                            focusedContentColor = focusContent
+                                        ),
+                                        border = ButtonDefaults.border(
+                                            border = Border(border = BorderStroke(0.7.dp, Color(0x22FFFFFF))),
+                                            focusedBorder = Border(border = BorderStroke(1.5.dp, focusColor))
+                                        ),
+                                        modifier = Modifier.height(26.dp)
+                                    ) {
+                                        Text(
+                                            text = suggestion,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Cabecera de resultados
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val counterText = when {
+                                uiState.isLoading -> "Buscando en tu servidor Jellyfin..."
+                                uiState.totalHits == 1 -> "1 título encontrado"
+                                uiState.totalHits > 1 -> "${uiState.totalHits} títulos encontrados"
+                                else -> "Sin coincidencias"
+                            }
+
+                            Text(
+                                text = counterText,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (uiState.totalHits > 0) Color.White else Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        if (uiState.results.isEmpty() && !uiState.isLoading) {
+                            // Sin resultados para el término
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "No se encontraron títulos para \"${uiState.query}\"",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color(0xFFCBD5E1),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        } else {
+                            // Cuadrícula TV de Resultados (Pósters interactivos)
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 140.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                contentPadding = PaddingValues(bottom = 32.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(
+                                    items = uiState.results,
+                                    key = { it.id }
+                                ) { item ->
+                                    MediaCard(
+                                        item = item,
+                                        onClick = { onDetailMedia(item.id) },
+                                        onFocus = { viewModel.setFocusedItem(item) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
