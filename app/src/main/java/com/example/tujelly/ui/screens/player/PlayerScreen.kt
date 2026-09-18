@@ -73,8 +73,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,8 +140,6 @@ fun PlayerScreen(
     onBack: () -> Unit,
     viewModel: PlayerViewModel = viewModel()
 ) {
-    val context = LocalContext.current
-
     LaunchedEffect(itemId) {
         android.util.Log.i("PlayerScreen", "PlayerScreen LaunchedEffect for itemId=$itemId")
         viewModel.loadStreamUrl(itemId)
@@ -152,9 +152,66 @@ fun PlayerScreen(
     val focusColor = if (isMonochrome) Color.White else TvAccent.getColor(accentColorKey)
     val focusContent = if (isMonochrome) Color(0xFF0F172A) else TvAccent.getFocusedContentColor(accentColorKey)
 
+    val currentInfo = streamInfo
+    if (currentInfo != null) {
+        PlayerContent(
+            info = currentInfo,
+            buttonStyle = buttonStyle,
+            isMonochrome = isMonochrome,
+            focusColor = focusColor,
+            focusContent = focusContent,
+            viewModel = viewModel,
+            onBack = onBack
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CircularProgressIndicator(
+                    color = if (isMonochrome) Color.White else focusColor,
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(36.dp)
+                )
+                Text(
+                    text = "Cargando...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF94A3B8)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(UnstableApi::class)
+@ExperimentalTvMaterial3Api
+@Composable
+private fun PlayerContent(
+    info: PlayerStreamInfo,
+    buttonStyle: String,
+    isMonochrome: Boolean,
+    focusColor: Color,
+    focusContent: Color,
+    viewModel: PlayerViewModel,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+
     var showOverlayControls by remember { mutableStateOf(true) }
     var seekIndicatorText by remember { mutableStateOf<String?>(null) }
     var activeModalTab by remember { mutableStateOf(PlayerModalTab.NONE) }
+    var lastInteractionTrigger by remember { mutableLongStateOf(0L) }
+
+    fun notifyInteraction() {
+        lastInteractionTrigger = System.currentTimeMillis()
+    }
 
     // Resume dialog state: null = not yet decided, true = show dialog, false = decision made
     var showResumeDialog by remember { mutableStateOf(false) }
@@ -162,9 +219,8 @@ fun PlayerScreen(
     var chosenStartPositionMs by remember { mutableLongStateOf(0L) }
 
     // Show resume dialog immediately when streamInfo is loaded if user has saved progress (>=10s)
-    LaunchedEffect(streamInfo) {
-        val info = streamInfo
-        if (info != null && info.startPositionMs >= 10_000L && !resumeDecisionMade) {
+    LaunchedEffect(info) {
+        if (info.startPositionMs >= 10_000L && !resumeDecisionMade) {
             showResumeDialog = true
         }
     }
@@ -173,8 +229,6 @@ fun PlayerScreen(
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var bufferedPosition by remember { mutableLongStateOf(0L) }
-
-    val activity = remember(context) { context.findActivity() }
 
     // Prevent Android TV from going to sleep / ambient mode while playing or viewing controls
     DisposableEffect(activity, isPlaying, showOverlayControls) {
@@ -198,8 +252,171 @@ fun PlayerScreen(
     var isBuffering by remember { mutableStateOf(true) }
     var playerErrorMessage by remember { mutableStateOf<String?>(null) }
     var retryTrigger by remember { mutableIntStateOf(0) }
+
     val playPauseFocusRequester = remember { FocusRequester() }
     val retryFocusRequester = remember { FocusRequester() }
+
+    val candidates = info.candidateUrls.ifEmpty { listOf(info.primaryStreamUrl) }
+
+    val exoPlayer = remember(info, retryTrigger) {
+        var candidateIdx = 0
+
+        val defaultHeaders = buildMap {
+            if (info.token.isNotBlank()) {
+                put("X-Emby-Token", info.token)
+                put("X-MediaBrowser-Token", info.token)
+            }
+            if (info.authHeader.isNotBlank()) {
+                put("X-Emby-Authorization", info.authHeader)
+            }
+        }
+
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(30_000)
+            .setReadTimeoutMs(90_000)
+            .setUserAgent("Mozilla/5.0 (Linux; Android 14; Google TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .setDefaultRequestProperties(defaultHeaders)
+
+        val mediaSourceFactory = DefaultMediaSourceFactory(httpDataSourceFactory)
+
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 5_000,
+                /* maxBufferMs = */ 30_000,
+                /* bufferForPlaybackMs = */ 1_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+            )
+            .build()
+
+        val renderersFactory = DefaultRenderersFactory(context)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            .setEnableDecoderFallback(true)
+
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
+
+        ExoPlayer.Builder(context)
+            .setRenderersFactory(renderersFactory)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(loadControl)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setAudioAttributes(audioAttributes, true)
+            .build().apply {
+                addAnalyticsListener(androidx.media3.exoplayer.util.EventLogger())
+
+                val mediaItem = MediaItem.Builder()
+                    .setUri(candidates.first())
+                    .setMediaMetadata(
+                        androidx.media3.common.MediaMetadata.Builder()
+                            .setTitle(info.title)
+                            .setDisplayTitle(info.title)
+                            .build()
+                    )
+                    .build()
+
+                setMediaItem(mediaItem)
+
+                addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        isPlaying = playing
+                        if (playing) {
+                            viewModel.reportStart(currentPosition.coerceAtLeast(0L))
+                        }
+                    }
+
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        isBuffering = (playbackState == Player.STATE_BUFFERING)
+                        if (playbackState == Player.STATE_READY) {
+                            playerErrorMessage = null
+                        }
+                    }
+
+                    override fun onTracksChanged(tracks: Tracks) {
+                        val (audios, subs) = extractTracksFromExoPlayer(this@apply)
+                        audioTracks = audios
+                        subtitleTracks = subs
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        android.util.Log.e("PlayerScreen", "ExoPlayer error on candidate $candidateIdx (${candidates.getOrNull(candidateIdx)}): ${error.errorCodeName}", error)
+
+                        candidateIdx++
+                        if (candidateIdx < candidates.size) {
+                            val nextUrl = candidates[candidateIdx]
+                            android.util.Log.i("PlayerScreen", "Attempting fallback candidate $candidateIdx: $nextUrl")
+                            val pos = currentPosition.coerceAtLeast(0L)
+
+                            val fallbackItem = MediaItem.Builder()
+                                .setUri(nextUrl)
+                                .setMediaMetadata(
+                                    androidx.media3.common.MediaMetadata.Builder()
+                                        .setTitle(info.title)
+                                        .setDisplayTitle(info.title)
+                                        .build()
+                                )
+                                .build()
+                            setMediaItem(fallbackItem)
+                            if (pos > 0 && isCurrentMediaItemSeekable) seekTo(pos)
+                            prepare()
+                            playWhenReady = true
+                        } else {
+                            android.util.Log.e("PlayerScreen", "All ${candidates.size} playback candidates failed!")
+                            val httpCode = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode ?: 0
+                            val humanMsg = when {
+                                httpCode in 500..599 -> "El proxy Real-Debrid devolvió HTTP $httpCode al resolver los mirrors. Pulsa Reintentar."
+                                httpCode == 401 -> "Error de autenticación con el servidor (HTTP 401). Pulsa Reintentar."
+                                error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "Error del servidor o proxy al obtener el vídeo (HTTP)"
+                                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Tiempo de espera agotado al conectar con Real-Debrid o el proxy"
+                                error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+                                error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED -> "Formato no compatible o enlace de streaming no disponible"
+                                error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> "El dispositivo no soporta este formato de vídeo o audio (HEVC/HDR)"
+                                else -> error.message ?: error.errorCodeName
+                            }
+                            playerErrorMessage = humanMsg
+                            isBuffering = false
+                        }
+                    }
+                })
+
+                // Only prepare ExoPlayer immediately if no resume decision is required
+                if (resumeDecisionMade || info.startPositionMs < 10_000L) {
+                    val startAt = if (chosenStartPositionMs > 0) chosenStartPositionMs else info.startPositionMs
+                    if (startAt > 0) {
+                        seekTo(startAt)
+                    }
+                    prepare()
+                    playWhenReady = true
+                }
+            }
+    }
+
+    var accumulatedSeekOffset by remember { mutableLongStateOf(0L) }
+    var lastSeekTime by remember { mutableLongStateOf(0L) }
+
+    fun seekRelative(deltaMs: Long) {
+        notifyInteraction()
+        val cur = exoPlayer.currentPosition.coerceAtLeast(0L)
+        val dur = exoPlayer.duration.takeIf { it > 0 } ?: duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+        val target = (cur + deltaMs).coerceIn(0L, dur)
+        exoPlayer.seekTo(target)
+        currentPosition = target
+
+        val now = System.currentTimeMillis()
+        if (now - lastSeekTime > 1200L || (accumulatedSeekOffset > 0 && deltaMs < 0) || (accumulatedSeekOffset < 0 && deltaMs > 0)) {
+            accumulatedSeekOffset = deltaMs
+        } else {
+            accumulatedSeekOffset += deltaMs
+        }
+        lastSeekTime = now
+
+        val absSec = kotlin.math.abs(accumulatedSeekOffset) / 1000
+        val sign = if (accumulatedSeekOffset < 0) "⏪ -" else "⏩ +"
+        seekIndicatorText = "$sign${absSec}s (${formatTime(target)})"
+    }
 
     // Auto-focus retry button if an error occurs
     LaunchedEffect(playerErrorMessage) {
@@ -212,8 +429,8 @@ fun PlayerScreen(
     }
 
     // Auto-focus the play/pause button when controls overlay is visible so remote D-pad works immediately!
-    LaunchedEffect(showOverlayControls, streamInfo) {
-        if (showOverlayControls && streamInfo != null && playerErrorMessage == null) {
+    LaunchedEffect(showOverlayControls) {
+        if (showOverlayControls && playerErrorMessage == null && !showResumeDialog) {
             delay(150L)
             try {
                 playPauseFocusRequester.requestFocus()
@@ -226,11 +443,12 @@ fun PlayerScreen(
         if (seekIndicatorText != null) {
             delay(1200L)
             seekIndicatorText = null
+            accumulatedSeekOffset = 0L
         }
     }
 
-    // Auto-hide controls overlay after 5s if activeModalTab is NONE
-    LaunchedEffect(showOverlayControls, activeModalTab) {
+    // Auto-hide controls overlay after 5s if activeModalTab is NONE (resets on user interaction)
+    LaunchedEffect(showOverlayControls, activeModalTab, lastInteractionTrigger) {
         if (showOverlayControls && activeModalTab == PlayerModalTab.NONE) {
             delay(5000L)
             showOverlayControls = false
@@ -242,8 +460,62 @@ fun PlayerScreen(
             onBack()
         } else if (activeModalTab != PlayerModalTab.NONE) {
             activeModalTab = PlayerModalTab.NONE
+        } else if (showOverlayControls) {
+            showOverlayControls = false
         } else {
             onBack()
+        }
+    }
+
+    // 75-second timeout for initial slow proxy resolution (resolving RD / rescue can take 10-40s)
+    LaunchedEffect(info, retryTrigger) {
+        delay(75_000L)
+        if (exoPlayer.playbackState == Player.STATE_BUFFERING && currentPosition == 0L) {
+            playerErrorMessage = "La resolución en Real-Debrid tardó demasiado tiempo. Pulsa Reintentar."
+            isBuffering = false
+        }
+    }
+
+    // Sync position & Report progress (Only during active playback in STATE_READY, never while buffering/stalled)
+    LaunchedEffect(exoPlayer) {
+        var lastReportedMs = 0L
+        var lastWasPlaying = false
+
+        while (isActive) {
+            val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
+            val dur = exoPlayer.duration.coerceAtLeast(0L)
+            val buf = exoPlayer.bufferedPosition.coerceAtLeast(0L)
+            val playing = exoPlayer.isPlaying
+            val state = exoPlayer.playbackState
+
+            currentPosition = pos
+            duration = dur
+            bufferedPosition = buf
+
+            val isActivelyPlaying = exoPlayer.playerError == null && state == Player.STATE_READY && playing
+            if (isActivelyPlaying && pos > 0) {
+                val now = System.currentTimeMillis()
+                val stateChanged = playing != lastWasPlaying
+                val intervalPassed = (now - lastReportedMs) >= 5000L
+
+                if (stateChanged || intervalPassed) {
+                    viewModel.reportProgress(pos, isPaused = false)
+                    lastReportedMs = now
+                    lastWasPlaying = playing
+                }
+            }
+
+            delay(500L)
+        }
+    }
+
+    DisposableEffect(exoPlayer) {
+        onDispose {
+            val finalPos = exoPlayer.currentPosition
+            if (finalPos > 0 && exoPlayer.playerError == null) {
+                viewModel.reportStopped(finalPos)
+            }
+            exoPlayer.release()
         }
     }
 
@@ -253,643 +525,486 @@ fun PlayerScreen(
             .background(Color.Black)
             .onKeyEvent { keyEvent ->
                 if (showResumeDialog) return@onKeyEvent false
-                showOverlayControls = true
+                if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
 
                 when (keyEvent.key) {
-                    Key.DirectionLeft, Key.MediaRewind -> {
+                    Key.MediaRewind -> {
+                        seekRelative(-10_000L)
+                        true
+                    }
+                    Key.MediaFastForward -> {
+                        seekRelative(+10_000L)
+                        true
+                    }
+                    Key.MediaPlayPause -> {
+                        notifyInteraction()
+                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                        true
+                    }
+                    Key.MediaPlay -> {
+                        notifyInteraction()
+                        exoPlayer.play()
+                        true
+                    }
+                    Key.MediaPause -> {
+                        notifyInteraction()
+                        exoPlayer.pause()
+                        true
+                    }
+                    Key.DirectionLeft -> {
                         if (!showOverlayControls && activeModalTab == PlayerModalTab.NONE) {
-                            seekIndicatorText = "⏪ -10s"
+                            seekRelative(-10_000L)
+                            true
+                        } else {
+                            notifyInteraction()
+                            false // Let Compose focus system navigate to the Rewind button on the left
                         }
                     }
-                    Key.DirectionRight, Key.MediaFastForward -> {
+                    Key.DirectionRight -> {
                         if (!showOverlayControls && activeModalTab == PlayerModalTab.NONE) {
-                            seekIndicatorText = "⏩ +10s"
+                            seekRelative(+10_000L)
+                            true
+                        } else {
+                            notifyInteraction()
+                            false // Let Compose focus system navigate to the Forward button on the right
                         }
                     }
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        if (!showOverlayControls) {
+                            showOverlayControls = true
+                            notifyInteraction()
+                            true
+                        } else {
+                            notifyInteraction()
+                            false
+                        }
+                    }
+                    Key.DirectionUp, Key.DirectionDown -> {
+                        if (!showOverlayControls) {
+                            showOverlayControls = true
+                            notifyInteraction()
+                            true
+                        } else {
+                            notifyInteraction()
+                            false
+                        }
+                    }
+                    else -> false
                 }
-                false
             }
             .clickable(enabled = !showResumeDialog) {
+                notifyInteraction()
                 showOverlayControls = !showOverlayControls
             }
     ) {
-        if (streamInfo != null) {
-            val info = streamInfo!!
-            val candidates = info.candidateUrls.ifEmpty { listOf(info.primaryStreamUrl) }
-
-            val exoPlayer = remember(info, retryTrigger) {
-                var candidateIdx = 0
-
-                val defaultHeaders = buildMap {
-                    if (info.token.isNotBlank()) {
-                        put("X-Emby-Token", info.token)
-                        put("X-MediaBrowser-Token", info.token)
-                    }
-                    if (info.authHeader.isNotBlank()) {
-                        put("X-Emby-Authorization", info.authHeader)
-                    }
+        // Video Player Surface
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = false
+                    resizeMode = currentResizeMode
+                    keepScreenOn = true
                 }
+            },
+            update = { playerView ->
+                playerView.resizeMode = currentResizeMode
+                playerView.keepScreenOn = isPlaying || showOverlayControls
+            },
+            modifier = Modifier.fillMaxSize()
+        )
 
-                val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                    .setAllowCrossProtocolRedirects(true)
-                    .setConnectTimeoutMs(30_000)
-                    .setReadTimeoutMs(90_000)
-                    .setUserAgent("Mozilla/5.0 (Linux; Android 14; Google TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                    .setDefaultRequestProperties(defaultHeaders)
-
-                val mediaSourceFactory = DefaultMediaSourceFactory(httpDataSourceFactory)
-
-                val loadControl = DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(
-                        /* minBufferMs = */ 5_000,
-                        /* maxBufferMs = */ 30_000,
-                        /* bufferForPlaybackMs = */ 1_000,
-                        /* bufferForPlaybackAfterRebufferMs = */ 2_000
-                    )
-                    .build()
-
-                val renderersFactory = DefaultRenderersFactory(context)
-                    .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-                    .setEnableDecoderFallback(true)
-
-                val audioAttributes = AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                    .build()
-
-                ExoPlayer.Builder(context)
-                    .setRenderersFactory(renderersFactory)
-                    .setMediaSourceFactory(mediaSourceFactory)
-                    .setLoadControl(loadControl)
-                    .setWakeMode(C.WAKE_MODE_NETWORK)
-                    .setAudioAttributes(audioAttributes, true)
-                    .build().apply {
-                        addAnalyticsListener(androidx.media3.exoplayer.util.EventLogger())
-
-                        val mediaItem = MediaItem.Builder()
-                            .setUri(candidates.first())
-                            .setMediaMetadata(
-                                androidx.media3.common.MediaMetadata.Builder()
-                                    .setTitle(info.title)
-                                    .setDisplayTitle(info.title)
-                                    .build()
-                            )
-                            .build()
-
-                        setMediaItem(mediaItem)
-
-                        addListener(object : Player.Listener {
-                            override fun onIsPlayingChanged(playing: Boolean) {
-                                isPlaying = playing
-                                if (playing) {
-                                    viewModel.reportStart(currentPosition.coerceAtLeast(0L))
-                                }
-                            }
-
-                            override fun onPlaybackStateChanged(playbackState: Int) {
-                                isBuffering = (playbackState == Player.STATE_BUFFERING)
-                                if (playbackState == Player.STATE_READY) {
-                                    playerErrorMessage = null
-                                }
-                            }
-
-                            override fun onTracksChanged(tracks: Tracks) {
-                                val (audios, subs) = extractTracksFromExoPlayer(this@apply)
-                                audioTracks = audios
-                                subtitleTracks = subs
-                            }
-
-                            override fun onPlayerError(error: PlaybackException) {
-                                android.util.Log.e("PlayerScreen", "ExoPlayer error on candidate $candidateIdx (${candidates.getOrNull(candidateIdx)}): ${error.errorCodeName}", error)
-
-                                candidateIdx++
-                                if (candidateIdx < candidates.size) {
-                                    val nextUrl = candidates[candidateIdx]
-                                    android.util.Log.i("PlayerScreen", "Attempting fallback candidate $candidateIdx: $nextUrl")
-                                    val pos = currentPosition.coerceAtLeast(0L)
-
-                                    val fallbackItem = MediaItem.Builder()
-                                        .setUri(nextUrl)
-                                        .setMediaMetadata(
-                                            androidx.media3.common.MediaMetadata.Builder()
-                                                .setTitle(info.title)
-                                                .setDisplayTitle(info.title)
-                                                .build()
-                                        )
-                                        .build()
-                                    setMediaItem(fallbackItem)
-                                    if (pos > 0 && isCurrentMediaItemSeekable) seekTo(pos)
-                                    prepare()
-                                    playWhenReady = true
-                                } else {
-                                    android.util.Log.e("PlayerScreen", "All ${candidates.size} playback candidates failed!")
-                                    val httpCode = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode ?: 0
-                                    val humanMsg = when {
-                                        httpCode in 500..599 -> "El proxy Real-Debrid devolvió HTTP $httpCode al resolver los mirrors. Pulsa Reintentar."
-                                        httpCode == 401 -> "Error de autenticación con el servidor (HTTP 401). Pulsa Reintentar."
-                                        error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "Error del servidor o proxy al obtener el vídeo (HTTP)"
-                                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
-                                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Tiempo de espera agotado al conectar con Real-Debrid o el proxy"
-                                        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
-                                        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED -> "Formato no compatible o enlace de streaming no disponible"
-                                        error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> "El dispositivo no soporta este formato de vídeo o audio (HEVC/HDR)"
-                                        else -> error.message ?: error.errorCodeName
-                                    }
-                                    playerErrorMessage = humanMsg
-                                    isBuffering = false
-                                }
-                            }
-                        })
-
-                        // Only prepare ExoPlayer immediately if no resume decision is required
-                        if (resumeDecisionMade || info.startPositionMs < 10_000L) {
-                            val startAt = if (chosenStartPositionMs > 0) chosenStartPositionMs else info.startPositionMs
-                            if (startAt > 0) {
-                                seekTo(startAt)
-                            }
-                            prepare()
-                            playWhenReady = true
-                        }
-                    }
-            }
-
-            // 75-second timeout for initial slow proxy resolution (resolving RD / rescue can take 10-40s)
-            LaunchedEffect(info, retryTrigger) {
-                delay(75_000L)
-                if (exoPlayer.playbackState == Player.STATE_BUFFERING && currentPosition == 0L) {
-                    playerErrorMessage = "La resolución en Real-Debrid tardó demasiado tiempo. Pulsa Reintentar."
-                    isBuffering = false
-                }
-            }
-
-            // Sync position & Report progress (Only during active playback in STATE_READY, never while buffering/stalled)
-            LaunchedEffect(exoPlayer) {
-                var lastReportedMs = 0L
-                var lastWasPlaying = false
-
-                while (isActive) {
-                    val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
-                    val dur = exoPlayer.duration.coerceAtLeast(0L)
-                    val buf = exoPlayer.bufferedPosition.coerceAtLeast(0L)
-                    val playing = exoPlayer.isPlaying
-                    val state = exoPlayer.playbackState
-
-                    currentPosition = pos
-                    duration = dur
-                    bufferedPosition = buf
-
-                    val isActivelyPlaying = exoPlayer.playerError == null && state == Player.STATE_READY && playing
-                    if (isActivelyPlaying && pos > 0) {
-                        val now = System.currentTimeMillis()
-                        val stateChanged = playing != lastWasPlaying
-                        val intervalPassed = (now - lastReportedMs) >= 5000L
-
-                        if (stateChanged || intervalPassed) {
-                            viewModel.reportProgress(pos, isPaused = false)
-                            lastReportedMs = now
-                            lastWasPlaying = playing
-                        }
-                    }
-
-                    delay(500L)
-                }
-            }
-
-            DisposableEffect(exoPlayer) {
-                onDispose {
-                    val finalPos = exoPlayer.currentPosition
-                    if (finalPos > 0 && exoPlayer.playerError == null) {
-                        viewModel.reportStopped(finalPos)
-                    }
-                    exoPlayer.release()
-                }
-            }
-
-            // Video Player Surface
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = false
-                        resizeMode = currentResizeMode
-                        keepScreenOn = true
-                    }
+        // Resume Playback Dialog Overlay (Netflix-style)
+        if (showResumeDialog && info.startPositionMs >= 10_000L) {
+            ResumePlaybackDialog(
+                savedPositionMs = info.startPositionMs,
+                onResume = {
+                    showResumeDialog = false
+                    resumeDecisionMade = true
+                    chosenStartPositionMs = info.startPositionMs
+                    exoPlayer.seekTo(info.startPositionMs)
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = true
+                    exoPlayer.play()
                 },
-                update = { playerView ->
-                    playerView.resizeMode = currentResizeMode
-                    playerView.keepScreenOn = isPlaying || showOverlayControls
+                onStartOver = {
+                    showResumeDialog = false
+                    resumeDecisionMade = true
+                    chosenStartPositionMs = 0L
+                    exoPlayer.seekTo(0L)
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = true
+                    exoPlayer.play()
                 },
-                modifier = Modifier.fillMaxSize()
+                isMonochrome = isMonochrome,
+                focusColor = focusColor,
+                focusContent = focusContent
             )
+        }
 
-            // Resume Playback Dialog Overlay (Netflix-style)
-            if (showResumeDialog && info.startPositionMs >= 10_000L) {
-                ResumePlaybackDialog(
-                    savedPositionMs = info.startPositionMs,
-                    onResume = {
-                        showResumeDialog = false
-                        resumeDecisionMade = true
-                        chosenStartPositionMs = info.startPositionMs
-                        exoPlayer.seekTo(info.startPositionMs)
-                        exoPlayer.prepare()
-                        exoPlayer.playWhenReady = true
-                        exoPlayer.play()
-                    },
-                    onStartOver = {
-                        showResumeDialog = false
-                        resumeDecisionMade = true
-                        chosenStartPositionMs = 0L
-                        exoPlayer.seekTo(0L)
-                        exoPlayer.prepare()
-                        exoPlayer.playWhenReady = true
-                        exoPlayer.play()
-                    },
-                    isMonochrome = isMonochrome,
-                    focusColor = focusColor,
-                    focusContent = focusContent
-                )
-            }
-
-            // Buffering / Loading Indicator Overlay
-            if (isBuffering && playerErrorMessage == null && !showResumeDialog) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.35f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(Color(0xEE121320))
-                            .border(1.dp, Color(0x44FFFFFF), RoundedCornerShape(24.dp))
-                            .padding(horizontal = 24.dp, vertical = 14.dp)
-                    ) {
-                        com.example.tujelly.ui.components.JellyLoadingIndicator(
-                            size = 28.dp,
-                            message = null,
-                            isMonochrome = isMonochrome
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Cargando reproducción...",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-
-            // Playback Error Overlay
-            if (playerErrorMessage != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.85f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .padding(horizontal = 32.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color(0xEE1A1828))
-                            .border(1.dp, Color(0x66FF5252), RoundedCornerShape(20.dp))
-                            .padding(horizontal = 36.dp, vertical = 28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Error",
-                            tint = Color(0xFFFF5252),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Error de reproducción",
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = playerErrorMessage ?: "No se pudo reproducir este archivo",
-                            color = Color(0xFFDDDDDD),
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    playerErrorMessage = null
-                                    retryTrigger++
-                                },
-                                modifier = Modifier.focusRequester(retryFocusRequester),
-                                colors = ButtonDefaults.colors(
-                                    containerColor = Color(0xFF3F51B5),
-                                    focusedContainerColor = Color(0xFF5C6BC0)
-                                )
-                            ) {
-                                Text("Reintentar", color = Color.White, fontWeight = FontWeight.SemiBold)
-                            }
-                            Button(
-                                onClick = onBack,
-                                colors = ButtonDefaults.colors(
-                                    containerColor = Color(0xFF2C2D3C),
-                                    focusedContainerColor = Color(0xFF424458)
-                                )
-                            ) {
-                                Text("Volver", color = Color.White)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Seek Indicator Overlay (Center Top Toast for D-Pad Left/Right)
-            AnimatedVisibility(
-                visible = seekIndicatorText != null,
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut(),
-                modifier = Modifier.align(Alignment.Center)
+        // Buffering / Loading Indicator Overlay
+        if (isBuffering && playerErrorMessage == null && !showResumeDialog) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(RoundedCornerShape(24.dp))
                         .background(Color(0xEE121320))
-                        .border(1.dp, Color.White, RoundedCornerShape(24.dp))
-                        .padding(horizontal = 28.dp, vertical = 14.dp)
+                        .border(1.dp, Color(0x44FFFFFF), RoundedCornerShape(24.dp))
+                        .padding(horizontal = 24.dp, vertical = 14.dp)
                 ) {
+                    com.example.tujelly.ui.components.JellyLoadingIndicator(
+                        size = 28.dp,
+                        message = null,
+                        isMonochrome = isMonochrome
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
                     Text(
-                        text = seekIndicatorText ?: "",
+                        text = "Cargando reproducción...",
                         color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
+        }
 
-            // Apple TV+ / High-End Cinema HUD Controls Overlay
-            AnimatedVisibility(
-                visible = showOverlayControls && !showResumeDialog,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    // Top Bar: Back Button + Title + Minimal Metadata
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .align(Alignment.TopStart)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Black.copy(alpha = 0.85f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                            .padding(horizontal = 40.dp, vertical = 28.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(18.dp)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                text = info.title.ifBlank { "Reproduciendo" },
-                                color = Color.White,
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "1080p  •  AAC 5.1  •  Jellyfin Direct",
-                                color = Color(0x99FFFFFF),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-
-                    // Bottom Floating Apple TV Style HUD Bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .align(Alignment.BottomCenter)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.95f)
-                                    )
-                                )
-                            )
-                            .padding(horizontal = 40.dp, vertical = 28.dp)
-                    ) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            // Progress Scrubber
-                            TvProgressBar(
-                                currentPositionMs = currentPosition,
-                                bufferedPositionMs = bufferedPosition,
-                                durationMs = duration,
-                                isMonochrome = isMonochrome,
-                                focusColor = focusColor,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            // Time & Unified Glass Controls Row (Play & Seek on Left, Options on Right)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                // Left Group: Play / Pause, Rewind 10s, Forward 10s, and Time
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    // 1. Play / Pause
-                                    TvCircularIconButton(
-                                        onClick = {
-                                            if (exoPlayer.isPlaying) {
-                                                exoPlayer.pause()
-                                            } else {
-                                                exoPlayer.play()
-                                            }
-                                        },
-                                        icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = if (isPlaying) "Pausar" else "Reproducir",
-                                        size = 46.dp,
-                                        iconSize = 24.dp,
-                                        containerColor = if (isMonochrome) Color.White else focusColor,
-                                        focusedContainerColor = if (isMonochrome) Color.White else focusColor,
-                                        contentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
-                                        focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
-                                        isMonochrome = isMonochrome,
-                                        focusColor = focusColor,
-                                        focusRequester = playPauseFocusRequester
-                                    )
-
-                                    // 2. Rewind 10s
-                                    TvCircularIconButton(
-                                        onClick = {
-                                            val newPos = (exoPlayer.currentPosition - 10000).coerceAtLeast(0)
-                                            exoPlayer.seekTo(newPos)
-                                            seekIndicatorText = "⏪ -10s"
-                                        },
-                                        icon = Icons.Default.FastRewind,
-                                        contentDescription = "Retroceder 10 segundos",
-                                        size = 42.dp,
-                                        iconSize = 20.dp,
-                                        containerColor = Color(0x22FFFFFF),
-                                        focusedContainerColor = if (isMonochrome) Color.White else focusColor,
-                                        contentColor = Color.White,
-                                        focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
-                                        isMonochrome = isMonochrome,
-                                        focusColor = focusColor
-                                    )
-
-                                    // 3. Fast Forward 10s
-                                    TvCircularIconButton(
-                                        onClick = {
-                                            val newPos = (exoPlayer.currentPosition + 10000).coerceAtMost(exoPlayer.duration)
-                                            exoPlayer.seekTo(newPos)
-                                            seekIndicatorText = "⏩ +10s"
-                                        },
-                                        icon = Icons.Default.FastForward,
-                                        contentDescription = "Adelantar 10 segundos",
-                                        size = 42.dp,
-                                        iconSize = 20.dp,
-                                        containerColor = Color(0x22FFFFFF),
-                                        focusedContainerColor = if (isMonochrome) Color.White else focusColor,
-                                        contentColor = Color.White,
-                                        focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
-                                        isMonochrome = isMonochrome,
-                                        focusColor = focusColor
-                                    )
-
-                                    Spacer(modifier = Modifier.width(6.dp))
-
-                                    // Time Indicator
-                                    Text(
-                                        text = "${formatTime(currentPosition)} / ${formatTime(duration)}",
-                                        color = Color(0xFFCBD5E1),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-
-                                // Right Group: Audio, Subtitles, Settings (Respects buttonStyle)
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // 4. Audio Selector Button
-                                    TvPillButton(
-                                        onClick = {
-                                            activeModalTab = PlayerModalTab.AUDIO
-                                        },
-                                        icon = Icons.Default.Audiotrack,
-                                        label = "Audio",
-                                        isSelected = activeModalTab == PlayerModalTab.AUDIO,
-                                        buttonStyle = buttonStyle,
-                                        isMonochrome = isMonochrome,
-                                        focusColor = focusColor,
-                                        focusContent = focusContent
-                                    )
-
-                                    // 5. Subtitles Selector Button
-                                    TvPillButton(
-                                        onClick = {
-                                            activeModalTab = PlayerModalTab.SUBTITLES
-                                        },
-                                        icon = Icons.Default.Subtitles,
-                                        label = "Subtítulos",
-                                        isSelected = activeModalTab == PlayerModalTab.SUBTITLES,
-                                        buttonStyle = buttonStyle,
-                                        isMonochrome = isMonochrome,
-                                        focusColor = focusColor,
-                                        focusContent = focusContent
-                                    )
-
-                                    // 6. Settings Selector Button
-                                    TvPillButton(
-                                        onClick = {
-                                            activeModalTab = PlayerModalTab.SETTINGS
-                                        },
-                                        icon = Icons.Default.Tune,
-                                        label = "Ajustes",
-                                        isSelected = activeModalTab == PlayerModalTab.SETTINGS,
-                                        buttonStyle = buttonStyle,
-                                        isMonochrome = isMonochrome,
-                                        focusColor = focusColor,
-                                        focusContent = focusContent
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Custom TV Modal Sheet Overlay for Track / Settings Selection
-            if (activeModalTab != PlayerModalTab.NONE) {
-                PlayerCustomModalSheet(
-                    activeTab = activeModalTab,
-                    audioTracks = audioTracks,
-                    subtitleTracks = subtitleTracks,
-                    currentSpeed = currentPlaybackSpeed,
-                    currentResizeMode = currentResizeMode,
-                    onSelectAudioTrack = { track ->
-                        selectAudioTrackInExoPlayer(exoPlayer, track)
-                    },
-                    onSelectSubtitleTrack = { track ->
-                        selectSubtitleTrackInExoPlayer(exoPlayer, track)
-                    },
-                    onSelectSpeed = { speed ->
-                        currentPlaybackSpeed = speed
-                        exoPlayer.setPlaybackSpeed(speed)
-                    },
-                    onSelectResizeMode = { mode ->
-                        currentResizeMode = mode
-                    },
-                    onClose = {
-                        activeModalTab = PlayerModalTab.NONE
-                    },
-                    isMonochrome = isMonochrome,
-                    focusColor = focusColor,
-                    focusContent = focusContent
-                )
-            }
-        } else {
+        // Playback Error Overlay
+        if (playerErrorMessage != null) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.85f)),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier
+                        .padding(horizontal = 32.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xEE1A1828))
+                        .border(1.dp, Color(0x66FF5252), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 36.dp, vertical = 28.dp)
                 ) {
-                    CircularProgressIndicator(
-                        color = if (isMonochrome) Color.White else focusColor,
-                        strokeWidth = 3.dp,
-                        modifier = Modifier.size(36.dp)
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Error",
+                        tint = Color(0xFFFF5252),
+                        modifier = Modifier.size(48.dp)
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Cargando...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF94A3B8)
+                        text = "Error de reproducción",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = playerErrorMessage ?: "No se pudo reproducir este archivo",
+                        color = Color(0xFFDDDDDD),
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                playerErrorMessage = null
+                                retryTrigger++
+                            },
+                            modifier = Modifier.focusRequester(retryFocusRequester),
+                            colors = ButtonDefaults.colors(
+                                containerColor = Color(0xFF3F51B5),
+                                focusedContainerColor = Color(0xFF5C6BC0)
+                            )
+                        ) {
+                            Text("Reintentar", color = Color.White, fontWeight = FontWeight.SemiBold)
+                        }
+                        Button(
+                            onClick = onBack,
+                            colors = ButtonDefaults.colors(
+                                containerColor = Color(0xFF2C2D3C),
+                                focusedContainerColor = Color(0xFF424458)
+                            )
+                        ) {
+                            Text("Volver", color = Color.White)
+                        }
+                    }
                 }
             }
+        }
+
+        // Seek Indicator Overlay (Center Toast for D-Pad Left/Right & Media Keys)
+        AnimatedVisibility(
+            visible = seekIndicatorText != null,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xEE121320))
+                    .border(1.5.dp, if (isMonochrome) Color.White else focusColor, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 28.dp, vertical = 14.dp)
+            ) {
+                Text(
+                    text = seekIndicatorText ?: "",
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        // Apple TV+ / High-End Cinema HUD Controls Overlay
+        AnimatedVisibility(
+            visible = showOverlayControls && !showResumeDialog,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Top Bar: Back Button + Title + Minimal Metadata
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopStart)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.85f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                        .padding(horizontal = 40.dp, vertical = 28.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = info.title.ifBlank { "Reproduciendo" },
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "1080p  •  AAC 5.1  •  Jellyfin Direct",
+                            color = Color(0x99FFFFFF),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                // Bottom Floating Apple TV Style HUD Bar
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.95f)
+                                )
+                            )
+                        )
+                        .padding(horizontal = 40.dp, vertical = 28.dp)
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Progress Scrubber
+                        TvProgressBar(
+                            currentPositionMs = currentPosition,
+                            bufferedPositionMs = bufferedPosition,
+                            durationMs = duration,
+                            isMonochrome = isMonochrome,
+                            focusColor = focusColor,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Time & Unified Glass Controls Row (Ergonomic Playback Controls on Left, Options on Right)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Left Group: Rewind 10s, Play / Pause (Center Focus), Fast Forward 10s, and Time
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // 1. Rewind 10s (Retroceso)
+                                TvCircularIconButton(
+                                    onClick = {
+                                        seekRelative(-10_000L)
+                                    },
+                                    icon = Icons.Default.FastRewind,
+                                    contentDescription = "Retroceder 10 segundos",
+                                    size = 42.dp,
+                                    iconSize = 20.dp,
+                                    containerColor = Color(0x22FFFFFF),
+                                    focusedContainerColor = if (isMonochrome) Color.White else focusColor,
+                                    contentColor = Color.White,
+                                    focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor
+                                )
+
+                                // 2. Play / Pause (Primary Action - Centered & Default Focus)
+                                TvCircularIconButton(
+                                    onClick = {
+                                        notifyInteraction()
+                                        if (exoPlayer.isPlaying) {
+                                            exoPlayer.pause()
+                                        } else {
+                                            exoPlayer.play()
+                                        }
+                                    },
+                                    icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                                    size = 48.dp,
+                                    iconSize = 26.dp,
+                                    containerColor = if (isMonochrome) Color.White else focusColor,
+                                    focusedContainerColor = if (isMonochrome) Color.White else focusColor,
+                                    contentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                                    focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor,
+                                    focusRequester = playPauseFocusRequester
+                                )
+
+                                // 3. Fast Forward 10s (Avance)
+                                TvCircularIconButton(
+                                    onClick = {
+                                        seekRelative(+10_000L)
+                                    },
+                                    icon = Icons.Default.FastForward,
+                                    contentDescription = "Adelantar 10 segundos",
+                                    size = 42.dp,
+                                    iconSize = 20.dp,
+                                    containerColor = Color(0x22FFFFFF),
+                                    focusedContainerColor = if (isMonochrome) Color.White else focusColor,
+                                    contentColor = Color.White,
+                                    focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor
+                                )
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                // Time Indicator
+                                Text(
+                                    text = "${formatTime(currentPosition)} / ${formatTime(duration)}",
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            // Right Group: Audio, Subtitles, Settings (Respects buttonStyle)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // 4. Audio Selector Button
+                                TvPillButton(
+                                    onClick = {
+                                        notifyInteraction()
+                                        activeModalTab = PlayerModalTab.AUDIO
+                                    },
+                                    icon = Icons.Default.Audiotrack,
+                                    label = "Audio",
+                                    isSelected = activeModalTab == PlayerModalTab.AUDIO,
+                                    buttonStyle = buttonStyle,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor,
+                                    focusContent = focusContent
+                                )
+
+                                // 5. Subtitles Selector Button
+                                TvPillButton(
+                                    onClick = {
+                                        notifyInteraction()
+                                        activeModalTab = PlayerModalTab.SUBTITLES
+                                    },
+                                    icon = Icons.Default.Subtitles,
+                                    label = "Subtítulos",
+                                    isSelected = activeModalTab == PlayerModalTab.SUBTITLES,
+                                    buttonStyle = buttonStyle,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor,
+                                    focusContent = focusContent
+                                )
+
+                                // 6. Settings Selector Button
+                                TvPillButton(
+                                    onClick = {
+                                        notifyInteraction()
+                                        activeModalTab = PlayerModalTab.SETTINGS
+                                    },
+                                    icon = Icons.Default.Tune,
+                                    label = "Ajustes",
+                                    isSelected = activeModalTab == PlayerModalTab.SETTINGS,
+                                    buttonStyle = buttonStyle,
+                                    isMonochrome = isMonochrome,
+                                    focusColor = focusColor,
+                                    focusContent = focusContent
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Custom TV Modal Sheet Overlay for Track / Settings Selection
+        if (activeModalTab != PlayerModalTab.NONE) {
+            PlayerCustomModalSheet(
+                activeTab = activeModalTab,
+                audioTracks = audioTracks,
+                subtitleTracks = subtitleTracks,
+                currentSpeed = currentPlaybackSpeed,
+                currentResizeMode = currentResizeMode,
+                onSelectAudioTrack = { track ->
+                    notifyInteraction()
+                    selectAudioTrackInExoPlayer(exoPlayer, track)
+                },
+                onSelectSubtitleTrack = { track ->
+                    notifyInteraction()
+                    selectSubtitleTrackInExoPlayer(exoPlayer, track)
+                },
+                onSelectSpeed = { speed ->
+                    notifyInteraction()
+                    currentPlaybackSpeed = speed
+                    exoPlayer.setPlaybackSpeed(speed)
+                },
+                onSelectResizeMode = { mode ->
+                    notifyInteraction()
+                    currentResizeMode = mode
+                },
+                onClose = {
+                    notifyInteraction()
+                    activeModalTab = PlayerModalTab.NONE
+                },
+                isMonochrome = isMonochrome,
+                focusColor = focusColor,
+                focusContent = focusContent
+            )
         }
     }
 }
