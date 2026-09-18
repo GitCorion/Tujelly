@@ -22,6 +22,12 @@
 
 # Media3 / ExoPlayer
 -dontwarn androidx.media3.**
+-keep class androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer {
+    public <init>(...);
+}
+-keep class androidx.media3.decoder.ffmpeg.FfmpegLibrary {
+    *;
+}
 
 # Coil Image Loader
 -dontwarn coil.**

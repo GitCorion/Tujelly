@@ -25,8 +25,8 @@ android {
         applicationId = "com.example.tujelly"
         minSdk = 26
         targetSdk = 35
-        versionCode = 41
-        versionName = "2.0.5"
+        versionCode = 42
+        versionName = "2.0.6"
     }
 
     signingConfigs {
@@ -97,6 +97,7 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.hls)
+    implementation(libs.media3.ffmpeg.decoder)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")

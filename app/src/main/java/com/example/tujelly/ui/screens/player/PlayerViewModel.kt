@@ -144,7 +144,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun createAndroidTvDeviceProfile(): com.example.tujelly.data.remote.jellyfin.JellyfinDeviceProfile {
         val isEmu = com.example.tujelly.util.DeviceUtils.isEmulator()
         val hwVideoCodecs = mutableSetOf("h264") // h264 always supported
-        val hwAudioCodecs = mutableSetOf("aac", "mp3") // baseline audio
+        // Base audio formats supported natively or via bundled FFmpeg software decoders (DTS, TrueHD, AC3, EAC3, FLAC, Opus)
+        val supportedAudioCodecs = mutableSetOf(
+            "aac", "mp3", "ac3", "eac3", "dts", "dca", "truehd", "flac", "opus", "vorbis"
+        )
         var maxVideoWidth = 1920 // default to 1080p
 
         if (!isEmu) {
@@ -172,17 +175,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         }
                     }
                 }
-                // If device has HW HEVC, it almost certainly has AC3/EAC3 passthrough (Android TV)
-                if ("hevc" in hwVideoCodecs) {
-                    hwAudioCodecs.addAll(listOf("ac3", "eac3"))
-                }
             } catch (e: Exception) {
                 Log.w("PlayerViewModel", "Error probing MediaCodecList: ${e.message}")
             }
         }
 
         val videoCodecStr = hwVideoCodecs.joinToString(",")
-        val audioCodecStr = (hwAudioCodecs + setOf("aac", "mp3")).joinToString(",")
+        val audioCodecStr = supportedAudioCodecs.joinToString(",")
 
         Log.i("PlayerViewModel", "DeviceProfile: isEmulator=$isEmu videoCodecs=$videoCodecStr audioCodecs=$audioCodecStr maxWidth=$maxVideoWidth")
 
