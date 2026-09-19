@@ -27,13 +27,35 @@ object NetworkClientFactory {
         init(null, trustAllCerts, java.security.SecureRandom())
     }
 
+    private fun isLocalHost(hostname: String): Boolean {
+        return hostname.equals("localhost", ignoreCase = true)
+                || hostname.startsWith("127.0.0.1")
+                || hostname.startsWith("10.")
+                || hostname.startsWith("192.168.")
+                || hostname.matches(Regex("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..*"))
+                || hostname.endsWith(".local", ignoreCase = true)
+                || hostname.endsWith(".lan", ignoreCase = true)
+                || hostname.endsWith(".home", ignoreCase = true)
+    }
+
     val okHttpClient = OkHttpClient.Builder()
         .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as javax.net.ssl.X509TrustManager)
-        .hostnameVerifier { _, _ -> true }
+        .hostnameVerifier { hostname, session ->
+            if (isLocalHost(hostname)) {
+                true
+            } else {
+                javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(hostname, session)
+            }
+        }
         .dns(object : okhttp3.Dns {
             override fun lookup(hostname: String): List<java.net.InetAddress> {
                 val addresses = okhttp3.Dns.SYSTEM.lookup(hostname)
-                return addresses.sortedBy { it !is java.net.Inet4Address }
+                // En dominios públicos priorizamos IPv6 (para saltar bloqueos de operadoras como Digi/LaLiga sobre IPv4)
+                return if (isLocalHost(hostname)) {
+                    addresses.sortedBy { it !is java.net.Inet4Address }
+                } else {
+                    addresses.sortedBy { it is java.net.Inet4Address }
+                }
             }
         })
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -44,7 +66,21 @@ object NetworkClientFactory {
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Google TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .header("Accept", "application/json, text/plain, */*")
                 .build()
-            chain.proceed(request)
+            val response = chain.proceed(request)
+
+            val contentType = response.body?.contentType()?.toString()?.lowercase() ?: ""
+            val isApiCall = request.url.encodedPath.contains("System/Info", ignoreCase = true)
+                    || request.url.encodedPath.contains("Users/", ignoreCase = true)
+                    || request.url.encodedPath.contains("QuickConnect", ignoreCase = true)
+                    || request.url.encodedPath.contains("Items", ignoreCase = true)
+
+            if (isApiCall && contentType.contains("text/html")) {
+                val peekBody = response.peekBody(2048).string()
+                if (peekBody.contains("LaLiga", ignoreCase = true) || peekBody.contains("bloqueado", ignoreCase = true) || peekBody.contains("Sentencia", ignoreCase = true)) {
+                    throw java.io.IOException("Tu operador (Digi) ha bloqueado la IP de este servidor por orden judicial de LaLiga. Activa IPv6 en tu router, usa una VPN (WARP 1.1.1.1) o pon el dominio en nube gris.")
+                }
+            }
+            response
         }
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC

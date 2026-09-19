@@ -554,6 +554,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun formatNetworkError(e: Throwable, cleanUrl: String): String {
+        val msg = e.localizedMessage ?: ""
+        val isHtmlInsteadOfJson = msg.contains("Expected start of the object", ignoreCase = true)
+                || msg.contains("<!DOCTYPE", ignoreCase = true)
+                || msg.contains("Unexpected JSON token", ignoreCase = true)
+
+        if (isHtmlInsteadOfJson) {
+            return "La dirección no responde como un servidor Jellyfin (devolvió una página web HTML en lugar de JSON). Revisa que la URL y el puerto sean correctos (ej: http://192.168.1.X:8096) o si la red tiene un portal cautivo/proxy."
+        }
+
         return when (e) {
             is retrofit2.HttpException -> {
                 when (e.code()) {
@@ -568,7 +577,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             is java.net.SocketTimeoutException -> "Tiempo de espera agotado al conectar a $cleanUrl."
             is java.net.UnknownHostException -> "No se encuentra el host '$cleanUrl'."
             is javax.net.ssl.SSLHandshakeException -> "Error de certificado SSL. Si estás en red local usa http://."
-            else -> "Error de conexión: ${e.localizedMessage ?: "Fallo desconocido"}"
+            else -> "Error de conexión: ${msg.ifBlank { "Fallo desconocido" }}"
         }
     }
 
