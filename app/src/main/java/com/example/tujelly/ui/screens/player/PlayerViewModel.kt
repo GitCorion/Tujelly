@@ -9,6 +9,8 @@ import com.example.tujelly.data.local.UserPreferencesRepository
 import com.example.tujelly.data.remote.NetworkClientFactory
 import com.example.tujelly.data.remote.jellyfin.JellyfinApiService
 import com.example.tujelly.data.remote.jellyfin.JellyfinPlaybackProgressRequest
+import com.example.tujelly.data.remote.jellyfin.NextEpisodeInfo
+import com.example.tujelly.data.remote.jellyfin.SkipMarker
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,6 +76,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var currentPlayableId: String = ""
     private var jellyfinBaseUrl: String = ""
     private var jellyfinAuthHeader: String = ""
+
+    // ─── Skip markers ──────────────────────────────────────────────────
+    // Cada campo de SkipMarker viene directamente del plugin/API, sin valores inventados.
+    /** Marcador de intro. Campos: showAt=ShowSkipPromptAt, hideAt=HideSkipPromptAt, skipTo=IntroEnd */
+    private val _introMarker = MutableStateFlow<SkipMarker?>(null)
+    val introMarker: StateFlow<SkipMarker?> = _introMarker.asStateFlow()
+
+    /** Marcador de outro/créditos. Campos: showAt=StartTicks, hideAt=EndTicks, skipTo=EndTicks */
+    private val _creditsMarker = MutableStateFlow<SkipMarker?>(null)
+    val creditsMarker: StateFlow<SkipMarker?> = _creditsMarker.asStateFlow()
+
+    // ─── Next episode info ────────────────────────────────────────────────
+    private val _nextEpisode = MutableStateFlow<NextEpisodeInfo?>(null)
+    val nextEpisode: StateFlow<NextEpisodeInfo?> = _nextEpisode.asStateFlow()
 
     private suspend fun resolveStrmTargetUrl(
         baseUrl: String,
@@ -690,4 +706,142 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
+
+    // ─── Intro Skipper + Next Episode ─────────────────────────────────────────
+
+    /**
+     * Loads intro/credits markers and next-episode info for the currently playing item.
+     * Priority: Jellyfin 10.10+ MediaSegments API → Intro Skipper plugin legacy endpoint.
+     * Call this after [loadStreamUrl] resolves successfully.
+     *
+     * @param itemId  The Jellyfin ID of the currently playing episode.
+     * @param seriesId  The series ID, needed to fetch next-up episode.
+     */
+    fun loadIntroAndNextEpisode(itemId: String, seriesId: String?) {
+        if (jellyfinBaseUrl.isBlank() || jellyfinAuthHeader.isBlank()) return
+        viewModelScope.launch {
+            val api = NetworkClientFactory.createService(jellyfinBaseUrl, JellyfinApiService::class.java)
+            val prefs = userPreferencesRepository.userPreferencesFlow.first()
+            val userId = prefs.jellyfinUserId
+
+            // Reset previous state
+            _introMarker.value = null
+            _creditsMarker.value = null
+            _nextEpisode.value = null
+
+            // 1️⃣ Try native MediaSegments (Jellyfin 10.10+) — covers Intro, Outro, Recap, etc.
+            var nativeSegmentsLoaded = false
+            runCatching {
+                val segmentsResponse = api.getMediaSegments(
+                    authHeader = jellyfinAuthHeader,
+                    itemId = itemId
+                )
+                if (segmentsResponse.items.isNotEmpty()) {
+                    nativeSegmentsLoaded = true
+                    for (seg in segmentsResponse.items) {
+                        // MediaSegments usa ticks; los convertimos a ms directamente
+                        val startMs = seg.startPositionTicks / 10_000L
+                        val endMs   = seg.endPositionTicks   / 10_000L
+                        when (seg.type.lowercase()) {
+                            "intro" -> {
+                                // Para intro nativo: showAt=start, hideAt=end, skipTo=end
+                                _introMarker.value = SkipMarker(
+                                    showAtMs = startMs,
+                                    hideAtMs = endMs,
+                                    skipToMs = endMs
+                                )
+                                Log.i("PlayerViewModel", "MediaSegments Intro: ${startMs}ms → ${endMs}ms")
+                            }
+                            "outro", "credits" -> {
+                                // Para outro: showAt=start (aquí aparece el card), hideAt=end, skipTo=end
+                                _creditsMarker.value = SkipMarker(
+                                    showAtMs = startMs,
+                                    hideAtMs = endMs,
+                                    skipToMs = endMs
+                                )
+                                Log.i("PlayerViewModel", "MediaSegments Outro: ${startMs}ms → ${endMs}ms")
+                            }
+                            else -> Log.d("PlayerViewModel", "MediaSegments segment type '${seg.type}' ignored")
+                        }
+                    }
+                }
+            }.onFailure { e ->
+                Log.d("PlayerViewModel", "MediaSegments API not available (${e.message}), trying Intro Skipper plugin…")
+            }
+
+            // 2️⃣ Fallback: Intro Skipper plugin — usa exactamente los campos que el plugin devuelve
+            if (!nativeSegmentsLoaded) {
+                var introLoaded = false
+
+                fun applyIntroSkipperResult(ts: com.example.tujelly.data.remote.jellyfin.JellyfinIntroTimestamps) {
+                    if (!ts.valid || ts.introEnd <= ts.introStart) return
+                    // El plugin especifica exactamente cuándo mostrar y ocultar el botón
+                    _introMarker.value = SkipMarker(
+                        showAtMs = (ts.showSkipPromptAt ?: ts.introStart).times(1000).toLong(),
+                        hideAtMs = (ts.hideSkipPromptAt ?: ts.introEnd).times(1000).toLong(),
+                        skipToMs = ts.introEnd.times(1000).toLong()
+                    )
+                }
+
+                // Probar ruta v1 primero (builds recientes del plugin)
+                runCatching {
+                    val ts = api.getIntroTimestampsV1(authHeader = jellyfinAuthHeader, itemId = itemId)
+                    if (ts.valid && ts.introEnd > ts.introStart) {
+                        applyIntroSkipperResult(ts)
+                        introLoaded = true
+                        Log.i("PlayerViewModel", "IntroSkipper v1: show=${ts.showSkipPromptAt}s hide=${ts.hideSkipPromptAt}s skipTo=${ts.introEnd}s")
+                    }
+                }
+                if (!introLoaded) {
+                    runCatching {
+                        val ts = api.getIntroTimestamps(authHeader = jellyfinAuthHeader, itemId = itemId)
+                        if (ts.valid && ts.introEnd > ts.introStart) {
+                            applyIntroSkipperResult(ts)
+                            Log.i("PlayerViewModel", "IntroSkipper base: show=${ts.showSkipPromptAt}s hide=${ts.hideSkipPromptAt}s skipTo=${ts.introEnd}s")
+                        }
+                    }.onFailure { e ->
+                        Log.d("PlayerViewModel", "Intro Skipper plugin not available: ${e.message}")
+                    }
+                }
+            }
+
+            // 3️⃣ Next episode via NextUp (only for series episodes)
+            if (!seriesId.isNullOrBlank()) {
+                runCatching {
+                    val nextUp = api.getNextUpItems(
+                        authHeader = jellyfinAuthHeader,
+                        userId = userId,
+                        seriesId = seriesId
+                    )
+                    val nextDto = nextUp.items.firstOrNull()
+                    if (nextDto != null && nextDto.id != itemId) {
+                        val season = nextDto.parentIndexNumber ?: 0
+                        val episode = nextDto.indexNumber ?: 0
+                        val thumbUrl = if (nextDto.imageTags?.containsKey("Primary") == true) {
+                            "$jellyfinBaseUrl/Items/${nextDto.id}/Images/Primary?fillWidth=300"
+                        } else if (!nextDto.seriesId.isNullOrBlank() && !nextDto.seriesPrimaryImageTag.isNullOrBlank()) {
+                            "$jellyfinBaseUrl/Items/${nextDto.seriesId}/Images/Primary?fillWidth=300"
+                        } else null
+
+                        _nextEpisode.value = NextEpisodeInfo(
+                            itemId = nextDto.id,
+                            title = nextDto.name ?: "Siguiente episodio",
+                            episodeCode = "T$season E$episode",
+                            thumbUrl = thumbUrl
+                        )
+                        Log.i("PlayerViewModel", "NextEpisode loaded: ${nextDto.id} ${nextDto.name}")
+                    }
+                }.onFailure { e ->
+                    Log.d("PlayerViewModel", "NextUp fetch failed: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /** Seek the current player to [positionMs]. Used for Skip Intro / Skip Credits. */
+    fun seekToMs(positionMs: Long, exoPlayerSeek: (Long) -> Unit) {
+        exoPlayerSeek(positionMs)
+        Log.i("PlayerViewModel", "Seeked to ${positionMs}ms via user action")
+    }
 }
+

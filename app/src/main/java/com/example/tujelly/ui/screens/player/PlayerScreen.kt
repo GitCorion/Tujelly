@@ -114,6 +114,8 @@ import androidx.tv.material3.Text
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_AND_TEXT
 import com.example.tujelly.data.local.BUTTON_STYLE_ICONS_ONLY
 import com.example.tujelly.data.local.BUTTON_STYLE_TEXT_ONLY
+import com.example.tujelly.data.remote.jellyfin.NextEpisodeInfo
+import com.example.tujelly.data.remote.jellyfin.SkipMarker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -152,6 +154,21 @@ fun PlayerScreen(
     val focusColor = if (isMonochrome) Color.White else TvAccent.getColor(accentColorKey)
     val focusContent = if (isMonochrome) Color(0xFF0F172A) else TvAccent.getFocusedContentColor(accentColorKey)
 
+    // Load intro markers + next episode once stream is ready
+    val introMarker by viewModel.introMarker.collectAsState()
+    val creditsMarker by viewModel.creditsMarker.collectAsState()
+    val nextEpisode by viewModel.nextEpisode.collectAsState()
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(streamInfo) {
+        val info = streamInfo ?: return@LaunchedEffect
+        // Look up seriesId from local DB
+        val db = com.example.tujelly.data.local.db.AppDatabase.getDatabase(context)
+        val entity = db.jellyfinDao().getItemById(info.playableId)
+        val seriesId = entity?.seriesId
+        viewModel.loadIntroAndNextEpisode(itemId = info.playableId, seriesId = seriesId)
+    }
+
     val currentInfo = streamInfo
     if (currentInfo != null) {
         PlayerContent(
@@ -161,7 +178,13 @@ fun PlayerScreen(
             focusColor = focusColor,
             focusContent = focusContent,
             viewModel = viewModel,
-            onBack = onBack
+            introMarker = introMarker,
+            creditsMarker = creditsMarker,
+            nextEpisode = nextEpisode,
+            onBack = onBack,
+            onPlayNextEpisode = { nextEp ->
+                viewModel.loadStreamUrl(nextEp.itemId)
+            }
         )
     } else {
         Box(
@@ -199,7 +222,11 @@ private fun PlayerContent(
     focusColor: Color,
     focusContent: Color,
     viewModel: PlayerViewModel,
-    onBack: () -> Unit
+    introMarker: SkipMarker? = null,
+    creditsMarker: SkipMarker? = null,
+    nextEpisode: NextEpisodeInfo? = null,
+    onBack: () -> Unit,
+    onPlayNextEpisode: (NextEpisodeInfo) -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -212,6 +239,16 @@ private fun PlayerContent(
     fun notifyInteraction() {
         lastInteractionTrigger = System.currentTimeMillis()
     }
+
+    // Intro / Credits skip banner visibility
+    var showSkipIntroBanner by remember { mutableStateOf(false) }
+    var showSkipCreditsBanner by remember { mutableStateOf(false) }
+
+    // Next-episode overlay
+    var showNextEpisodeOverlay by remember { mutableStateOf(false) }
+    // countdown calculado en vivo desde la posición del reproductor, no un timer fijo
+    // -1 = sin cuenta atrás (episodio terminó, mostrar sin contador)
+    var nextEpisodeCountdown by remember { mutableIntStateOf(-1) }
 
     // Resume dialog state: null = not yet decided, true = show dialog, false = decision made
     var showResumeDialog by remember { mutableStateOf(false) }
@@ -516,6 +553,79 @@ private fun PlayerContent(
                 viewModel.reportStopped(finalPos)
             }
             exoPlayer.release()
+        }
+    }
+
+    // ─── Intro / Credits banner: usa los campos del plugin fielmente ────────────
+    // introMarker.showAtMs = ShowSkipPromptAt del plugin
+    // introMarker.hideAtMs = HideSkipPromptAt del plugin
+    LaunchedEffect(currentPosition, introMarker) {
+        val marker = introMarker
+        if (marker != null) {
+            // El banner es visible exactamente en el rango que el plugin especifica
+            val inWindow = currentPosition in marker.showAtMs..marker.hideAtMs
+            if (inWindow != showSkipIntroBanner) showSkipIntroBanner = inWindow
+        } else {
+            showSkipIntroBanner = false
+        }
+    }
+
+    LaunchedEffect(currentPosition, creditsMarker) {
+        val marker = creditsMarker
+        if (marker != null) {
+            val inWindow = currentPosition in marker.showAtMs..marker.hideAtMs
+            if (inWindow != showSkipCreditsBanner) showSkipCreditsBanner = inWindow
+        } else {
+            showSkipCreditsBanner = false
+        }
+    }
+
+    // ─── Next episode overlay ────────────────────────────────────────────
+    // Caso A: creditsMarker presente (del plugin) → showAt=StartTicks, hideAt=EndTicks
+    //         countdown = (hideAtMs - currentPosition) / 1000 en vivo
+    // Caso B: sin marker → sólo cuando STATE_ENDED (ver listener abajo)
+    LaunchedEffect(currentPosition, creditsMarker, nextEpisode) {
+        if (nextEpisode == null) {
+            if (showNextEpisodeOverlay) showNextEpisodeOverlay = false
+            return@LaunchedEffect
+        }
+
+        val marker = creditsMarker
+        if (marker != null) {
+            // Rango del overlay = el mismo rango que el plugin indica para el outro
+            val inRange = currentPosition in marker.showAtMs..marker.hideAtMs
+            if (inRange) {
+                // Cuenta atrás = ticks reales que quedan hasta el fin del outro
+                nextEpisodeCountdown = ((marker.hideAtMs - currentPosition) / 1000L).toInt().coerceAtLeast(0)
+                if (!showNextEpisodeOverlay) showNextEpisodeOverlay = true
+            } else if (currentPosition > marker.hideAtMs) {
+                if (showNextEpisodeOverlay) {
+                    showNextEpisodeOverlay = false
+                    onPlayNextEpisode(nextEpisode!!)
+                }
+            } else {
+                if (showNextEpisodeOverlay) showNextEpisodeOverlay = false
+            }
+        }
+    }
+
+    // Caso B: STATE_ENDED sin marcador de créditos → mostrar overlay sin countdown
+    LaunchedEffect(exoPlayer) {
+        exoPlayer.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED && nextEpisode != null && creditsMarker == null) {
+                    nextEpisodeCountdown = -1 // sin cuenta atrás: el episodio ya ha terminado
+                    showNextEpisodeOverlay = true
+                }
+            }
+        })
+    }
+
+    // Cuando el countdown llega a 0 (caso A: créditos terminaron), lanzar siguiente episodio
+    LaunchedEffect(nextEpisodeCountdown) {
+        if (nextEpisodeCountdown == 0 && showNextEpisodeOverlay && nextEpisode != null) {
+            showNextEpisodeOverlay = false
+            onPlayNextEpisode(nextEpisode!!)
         }
     }
 
@@ -1006,8 +1116,291 @@ private fun PlayerContent(
                 focusContent = focusContent
             )
         }
+
+        // ─── Skip Intro Banner (bottom-right, Netflix-style) ─────────────────
+        AnimatedVisibility(
+            visible = showSkipIntroBanner && !showResumeDialog && activeModalTab == PlayerModalTab.NONE,
+            enter = fadeIn() + scaleIn(initialScale = 0.92f),
+            exit = fadeOut() + scaleOut(targetScale = 0.92f),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 48.dp, bottom = 120.dp)
+        ) {
+            SkipIntroBanner(
+                isMonochrome = isMonochrome,
+                focusColor = focusColor,
+                focusContent = focusContent,
+                onSkip = {
+                    // skipToMs = IntroEnd del plugin, el campo exacto para saltar
+                    val skipTo = introMarker?.skipToMs ?: return@SkipIntroBanner
+                    exoPlayer.seekTo(skipTo)
+                    showSkipIntroBanner = false
+                    notifyInteraction()
+                }
+            )
+        }
+
+        // ─── Skip Credits Banner ──────────────────────────────────────────────
+        AnimatedVisibility(
+            visible = showSkipCreditsBanner && !showResumeDialog && activeModalTab == PlayerModalTab.NONE,
+            enter = fadeIn() + scaleIn(initialScale = 0.92f),
+            exit = fadeOut() + scaleOut(targetScale = 0.92f),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 48.dp, bottom = 120.dp)
+        ) {
+            SkipIntroBanner(
+                label = "Omitir créditos",
+                isMonochrome = isMonochrome,
+                focusColor = focusColor,
+                focusContent = focusContent,
+                onSkip = {
+                    // skipToMs = EndPositionTicks del segmento Outro
+                    val skipTo = creditsMarker?.skipToMs ?: return@SkipIntroBanner
+                    exoPlayer.seekTo(skipTo)
+                    showSkipCreditsBanner = false
+                    notifyInteraction()
+                }
+            )
+        }
+
+        // ─── Next Episode Overlay (Apple TV+ style, bottom-right) ────────────
+        AnimatedVisibility(
+            visible = showNextEpisodeOverlay && !showResumeDialog && nextEpisode != null,
+            enter = fadeIn() + scaleIn(initialScale = 0.92f),
+            exit = fadeOut() + scaleOut(targetScale = 0.92f),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 48.dp, bottom = 120.dp)
+        ) {
+            nextEpisode?.let { ep ->
+                NextEpisodeCard(
+                    nextEpisode = ep,
+                    countdown = nextEpisodeCountdown,
+                    isMonochrome = isMonochrome,
+                    focusColor = focusColor,
+                    focusContent = focusContent,
+                    onPlayNow = {
+                        showNextEpisodeOverlay = false
+                        onPlayNextEpisode(ep)
+                    },
+                    onDismiss = {
+                        showNextEpisodeOverlay = false
+                        nextEpisodeCountdown = -1 // Prevent auto-play
+                    }
+                )
+            }
+        }
     }
 }
+
+@ExperimentalTvMaterial3Api
+@Composable
+private fun SkipIntroBanner(
+    label: String = "Omitir intro",
+    isMonochrome: Boolean = false,
+    focusColor: Color = Color.White,
+    focusContent: Color = Color(0xFF0F172A),
+    onSkip: () -> Unit
+) {
+    val skipFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(120L)
+        runCatching { skipFocusRequester.requestFocus() }
+    }
+
+    Surface(
+        onClick = onSkip,
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(14.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color(0xEE1A1C2E),
+            focusedContainerColor = if (isMonochrome) Color.White else focusColor,
+            contentColor = Color.White,
+            focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(
+                border = BorderStroke(1.5.dp, if (isMonochrome) Color(0x66FFFFFF) else focusColor.copy(alpha = 0.6f)),
+                shape = RoundedCornerShape(14.dp)
+            ),
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, if (isMonochrome) Color.White else focusColor),
+                shape = RoundedCornerShape(14.dp)
+            )
+        ),
+        modifier = Modifier.focusRequester(skipFocusRequester)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.FastForward,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = label,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@ExperimentalTvMaterial3Api
+@Composable
+private fun NextEpisodeCard(
+    nextEpisode: NextEpisodeInfo,
+    countdown: Int,
+    isMonochrome: Boolean = false,
+    focusColor: Color = Color.White,
+    focusContent: Color = Color(0xFF0F172A),
+    onPlayNow: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val playFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(120L)
+        runCatching { playFocusRequester.requestFocus() }
+    }
+
+    Box(
+        modifier = Modifier
+            .width(360.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xF0111422))
+            .border(1.5.dp, if (isMonochrome) Color(0x33FFFFFF) else focusColor.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+            .padding(18.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    // Si hay countdown activo: "Siguiente en Xs" · Si no (STATE_ENDED): "Siguiente episodio"
+                    text = if (countdown > 0) "Siguiente en ${countdown}s" else "Siguiente episodio",
+                    color = if (isMonochrome) Color.White else focusColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.2.sp
+                )
+                // Círculo de countdown sólo cuando hay créditos con tiempo restante real
+                if (countdown > 0) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(if (isMonochrome) Color(0x22FFFFFF) else focusColor.copy(alpha = 0.18f))
+                            .border(1.5.dp, if (isMonochrome) Color.White else focusColor, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "$countdown",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            // Episode info row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Episode code badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isMonochrome) Color(0x22FFFFFF) else focusColor.copy(alpha = 0.15f))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = nextEpisode.episodeCode,
+                        color = if (isMonochrome) Color.White else focusColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = nextEpisode.title,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Action buttons
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Play now (primary, focused by default)
+                Surface(
+                    onClick = onPlayNow,
+                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = if (isMonochrome) Color.White else focusColor,
+                        focusedContainerColor = if (isMonochrome) Color(0xFFE0E7FF) else focusColor,
+                        contentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent,
+                        focusedContentColor = if (isMonochrome) Color(0xFF0F172A) else focusContent
+                    ),
+                    modifier = Modifier
+                        .focusRequester(playFocusRequester)
+                        .weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Reproducir ahora",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Dismiss
+                Surface(
+                    onClick = onDismiss,
+                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = Color(0x22FFFFFF),
+                        focusedContainerColor = Color(0x44FFFFFF),
+                        contentColor = Color.White,
+                        focusedContentColor = Color.White
+                    )
+                ) {
+                    Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Text(
+                            text = "Cancelar",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 @ExperimentalTvMaterial3Api
 @Composable

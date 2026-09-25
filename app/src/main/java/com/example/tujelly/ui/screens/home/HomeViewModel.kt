@@ -37,7 +37,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val userPreferencesRepository = UserPreferencesRepository(application)
     private val database = AppDatabase.getDatabase(application)
-    private val mediaRepository = MediaRepository(database.jellyfinDao(), userPreferencesRepository)
+    private val mediaRepository = MediaRepository(database.jellyfinDao(), userPreferencesRepository, database.tmdbVoteCacheDao())
     private val filterToLibraryUseCase = FilterToLibraryUseCase(mediaRepository)
     private val getHomeFeedUseCase = GetHomeFeedUseCase(mediaRepository, filterToLibraryUseCase)
 

@@ -56,7 +56,8 @@ interface JellyfinApiService {
         @Query("SortBy") sortBy: String? = "SortName",
         @Query("SortOrder") sortOrder: String? = "Ascending",
         @Query("MinDateLastSaved") minDateLastSaved: String? = null,
-        @Query("EnableTotalRecordCount") enableTotalRecordCount: Boolean? = null
+        @Query("EnableTotalRecordCount") enableTotalRecordCount: Boolean? = null,
+        @Query("Filters") filters: String? = null // e.g. "IsFavorite", "IsPlayed", "IsUnplayed"
     ): JellyfinItemsResponse
 
     @GET("Items")
@@ -209,5 +210,26 @@ interface JellyfinApiService {
         @Path("userId") userId: String,
         @Path("itemId") itemId: String
     ): JellyfinUserDataDto
-}
 
+    // ─── Intro Skipper Plugin (legacy): /Episode/{ItemId}/IntroTimestamps ──────
+    @GET("Episode/{itemId}/IntroTimestamps")
+    suspend fun getIntroTimestamps(
+        @Header("X-Emby-Authorization") authHeader: String,
+        @Path("itemId") itemId: String
+    ): JellyfinIntroTimestamps
+
+    // Same endpoint but v1 path (newer Intro Skipper builds)
+    @GET("Episode/{itemId}/IntroTimestamps/v1")
+    suspend fun getIntroTimestampsV1(
+        @Header("X-Emby-Authorization") authHeader: String,
+        @Path("itemId") itemId: String
+    ): JellyfinIntroTimestamps
+
+    // ─── Jellyfin 10.10+ Native MediaSegments ───────────────────────────
+    @GET("MediaSegments/{itemId}")
+    suspend fun getMediaSegments(
+        @Header("X-Emby-Authorization") authHeader: String,
+        @Path("itemId") itemId: String,
+        @Query("SegmentType") segmentType: String? = null // "Intro", "Outro", etc.
+    ): JellyfinMediaSegmentsResponse
+}

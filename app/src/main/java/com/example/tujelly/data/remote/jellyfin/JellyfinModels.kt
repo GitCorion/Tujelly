@@ -251,3 +251,51 @@ data class JellyfinItemsResponse(
     @SerialName("Items") val items: List<JellyfinItemDto> = emptyList(),
     @SerialName("TotalRecordCount") val totalRecordCount: Int = 0
 )
+
+// ─── Intro Skipper Plugin: /Episode/{ItemId}/IntroTimestamps ─────────────────
+@Serializable
+data class JellyfinIntroTimestamps(
+    @SerialName("EpisodeId") val episodeId: String? = null,
+    @SerialName("Valid") val valid: Boolean = false,
+    @SerialName("IntroStart") val introStart: Double = 0.0,
+    @SerialName("IntroEnd") val introEnd: Double = 0.0,
+    @SerialName("ShowSkipPromptAt") val showSkipPromptAt: Double? = null,
+    @SerialName("HideSkipPromptAt") val hideSkipPromptAt: Double? = null
+)
+
+// ─── Jellyfin 10.10+ Native MediaSegments API: /MediaSegments/{ItemId} ───────
+@Serializable
+data class JellyfinMediaSegmentDto(
+    @SerialName("StartPositionTicks") val startPositionTicks: Long = 0L,
+    @SerialName("EndPositionTicks") val endPositionTicks: Long = 0L,
+    @SerialName("Type") val type: String = "", // "Intro", "Outro", "Recap", "Preview", "Commercial"
+    @SerialName("TypeIndex") val typeIndex: Int = 0,
+    @SerialName("ItemId") val itemId: String? = null
+)
+
+@Serializable
+data class JellyfinMediaSegmentsResponse(
+    @SerialName("Items") val items: List<JellyfinMediaSegmentDto> = emptyList(),
+    @SerialName("TotalRecordCount") val totalRecordCount: Int = 0
+)
+
+// ─── Next Episode Info (para overlay "Siguiente episodio") ───────────────────
+data class NextEpisodeInfo(
+    val itemId: String,
+    val title: String,
+    val episodeCode: String, // e.g. "T1 E5"
+    val thumbUrl: String? = null
+)
+
+// ─── SkipMarker: refleja fielmente lo que el plugin/API ya proporciona ────────
+// Intro Skipper: ShowSkipPromptAt, HideSkipPromptAt, IntroEnd
+// MediaSegments: StartPositionTicks, EndPositionTicks
+// No hay valores inventados: todos los campos vienen del servidor.
+data class SkipMarker(
+    /** Ms en que el plugin pide mostrar el botón (ShowSkipPromptAt × 1000) */
+    val showAtMs: Long,
+    /** Ms en que el plugin pide ocultar el botón (HideSkipPromptAt × 1000) */
+    val hideAtMs: Long,
+    /** Ms a los que saltar al pulsar "Omitir" (IntroEnd/OutroEnd × 1000) */
+    val skipToMs: Long
+)

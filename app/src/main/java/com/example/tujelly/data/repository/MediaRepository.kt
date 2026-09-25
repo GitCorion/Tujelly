@@ -3,6 +3,8 @@ package com.example.tujelly.data.repository
 import com.example.tujelly.data.local.UserPreferencesRepository
 import com.example.tujelly.data.local.db.JellyfinDao
 import com.example.tujelly.data.local.db.JellyfinMediaEntity
+import com.example.tujelly.data.local.db.TmdbVoteCacheDao
+import com.example.tujelly.data.local.db.TmdbVoteCacheEntity
 import com.example.tujelly.data.remote.NetworkClientFactory
 import com.example.tujelly.data.remote.jellyfin.JellyfinApiService
 import com.example.tujelly.data.remote.jellyfin.JellyfinItemDto
@@ -45,7 +47,8 @@ data class SyncProgress(
 
 class MediaRepository(
     private val jellyfinDao: JellyfinDao,
-    private val userPreferencesRepository: UserPreferencesRepository? = null
+    private val userPreferencesRepository: UserPreferencesRepository? = null,
+    private val tmdbVoteCacheDao: TmdbVoteCacheDao? = null
 ) {
     companion object {
         private val _syncProgress = MutableStateFlow(SyncProgress())
@@ -671,16 +674,39 @@ class MediaRepository(
 
     data class TmdbVoteStats(val voteCount: Int, val voteAverage: Float)
 
+    /**
+     * Devuelve stats de votación de TMDB con caché de 24h.
+     *
+     * Antes: una request HTTP por cada película/serie (N+1, hasta 200 requests/sesión).
+     * Ahora: SQLite lookup en ~0.1ms si el dato es fresco; HTTP solo si está expirado.
+     */
     suspend fun getTmdbVoteStats(apiKey: String, tmdbId: Long, isTv: Boolean = false): TmdbVoteStats? {
+        // 1. Intentar desde caché local (0.1ms)
+        val cached = tmdbVoteCacheDao?.get(tmdbId, isTv)
+        if (cached != null && !cached.isExpired()) {
+            return TmdbVoteStats(voteCount = cached.voteCount, voteAverage = cached.voteAverage)
+        }
+
+        // 2. Cache miss o expirado → ir a red
         return runCatching {
             val api = NetworkClientFactory.createService("https://api.themoviedb.org/3/", TmdbApiService::class.java)
-            if (isTv) {
+            val stats = if (isTv) {
                 val d = api.getTvDetails(seriesId = tmdbId, apiKey = apiKey)
                 TmdbVoteStats(voteCount = d.voteCount ?: 0, voteAverage = d.voteAverage ?: 0f)
             } else {
                 val d = api.getMovieDetails(movieId = tmdbId, apiKey = apiKey)
                 TmdbVoteStats(voteCount = d.voteCount ?: 0, voteAverage = d.voteAverage ?: 0f)
             }
+            // Guardar en caché para las próximas 24h
+            tmdbVoteCacheDao?.upsert(
+                TmdbVoteCacheEntity(
+                    tmdbId = tmdbId,
+                    isTv = isTv,
+                    voteAverage = stats.voteAverage,
+                    voteCount = stats.voteCount
+                )
+            )
+            stats
         }.getOrNull()
     }
 
@@ -736,56 +762,162 @@ class MediaRepository(
         }
     }
 
+    /**
+     * Selección dinámica de películas para la cabecera — lógica estilo streaming.
+     *
+     * Prioridad (igual que Netflix/Disney+):
+     *   1. Añadidas recientemente que NO has visto → lo más relevante: es nuevo y pendiente
+     *   2. Tus favoritas que NO has visto (o que no terminas) → lo que tú mismo has marcado
+     *   3. Fallback: lo mejor valorado que aún no has visto → descubrir joyas pendientes
+     *
+     * NO muestra películas que ya has visto completamente (IsPlayed).
+     * NO hace random puro (daría viejas películas sin criterio).
+     */
     suspend fun getTopRatedMoviesServer(serverUrl: String, userId: String, token: String, limit: Int = 20): List<JellyfinMediaEntity> {
-        val local = jellyfinDao.getTopMoviesLocal(limit)
-        if (local.size >= limit) return local
-        if (serverUrl.isBlank() || token.isBlank()) return local
+        if (serverUrl.isBlank() || token.isBlank()) return jellyfinDao.getTopMoviesLocal(limit)
 
         return runCatching {
             val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
             val authHeader = buildJellyfinAuthHeader(token = token)
-            val response = api.getLibraryItems(
+            val fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,UserData,Genres,Tags"
+
+            // 1. Añadidas recientemente y NO vistas → lo más fresco de tu biblioteca pendiente
+            val recentUnplayed = api.getLibraryItems(
                 authHeader = authHeader,
                 userId = userId,
                 includeItemTypes = "Movie",
-                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,UserData,Genres,Tags",
+                fields = fields,
                 recursive = true,
-                limit = limit,
-                sortBy = "CommunityRating",
-                sortOrder = "Descending"
-            )
-            val entities = response.items.map { it.toEntity() }
-            if (entities.isNotEmpty()) {
-                jellyfinDao.insertOrUpdateAll(entities)
+                limit = 40, // reducido de 100: solo necesitamos 20, 40 da margen suficiente
+                sortBy = "DateCreated",
+                sortOrder = "Descending",
+                filters = "IsUnplayed"
+            ).items.map { it.toEntity() }
+                .filter { !it.backdropImageTag.isNullOrEmpty() && (it.communityRating ?: 0f) >= 6.5f }
+
+            // 2. Favoritas no vistas → preferencia explícita del usuario pendiente de ver
+            val favoritesUnplayed = runCatching {
+                api.getLibraryItems(
+                    authHeader = authHeader,
+                    userId = userId,
+                    includeItemTypes = "Movie",
+                    fields = fields,
+                    recursive = true,
+                    limit = 15,
+                    sortBy = "DateCreated",
+                    sortOrder = "Descending",
+                    filters = "IsFavorite,IsUnplayed"
+                ).items.map { it.toEntity() }
+                    .filter { !it.backdropImageTag.isNullOrEmpty() }
+            }.getOrDefault(emptyList())
+
+            // 3. Fallback: mejor valoradas sin ver → descubrir pendientes de calidad
+            val topUnplayed = if ((favoritesUnplayed + recentUnplayed).distinctBy { it.id }.size < limit) {
+                runCatching {
+                    api.getLibraryItems(
+                        authHeader = authHeader,
+                        userId = userId,
+                        includeItemTypes = "Movie",
+                        fields = fields,
+                        recursive = true,
+                        limit = limit * 2,
+                        sortBy = "CommunityRating",
+                        sortOrder = "Descending",
+                        filters = "IsUnplayed"
+                    ).items.map { it.toEntity() }
+                        .filter { !it.backdropImageTag.isNullOrEmpty() && (it.communityRating ?: 0f) >= 7.0f }
+                }.getOrDefault(emptyList())
+            } else emptyList()
+
+            // Favoritas primero, luego recientes, luego top valoradas — sin duplicados
+            val merged = (favoritesUnplayed + recentUnplayed + topUnplayed)
+                .distinctBy { it.id }
+                .take(limit)
+
+            if (merged.isNotEmpty()) {
+                jellyfinDao.insertOrUpdateAll(merged)
+                merged
+            } else {
+                jellyfinDao.getTopMoviesLocal(limit)
             }
-            if (entities.isNotEmpty()) entities else local
-        }.getOrDefault(local)
+        }.getOrDefault(jellyfinDao.getTopMoviesLocal(limit))
     }
 
+    /**
+     * Selección dinámica de series para la cabecera — misma lógica que películas.
+     *
+     * Prioridad:
+     *   1. Series añadidas recientemente que NO has empezado
+     *   2. Tus series favoritas no vistas
+     *   3. Fallback: series mejor valoradas sin ver
+     */
     suspend fun getTopRatedSeriesServer(serverUrl: String, userId: String, token: String, limit: Int = 20): List<JellyfinMediaEntity> {
-        val local = jellyfinDao.getTopSeriesLocal(limit)
-        if (local.size >= limit) return local
-        if (serverUrl.isBlank() || token.isBlank()) return local
+        if (serverUrl.isBlank() || token.isBlank()) return jellyfinDao.getTopSeriesLocal(limit)
 
         return runCatching {
             val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
             val authHeader = buildJellyfinAuthHeader(token = token)
-            val response = api.getLibraryItems(
+            val fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,UserData,Genres,Tags"
+
+            // 1. Series añadidas recientemente y no empezadas
+            val recentUnplayed = api.getLibraryItems(
                 authHeader = authHeader,
                 userId = userId,
                 includeItemTypes = "Series",
-                fields = "Overview,ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,UserData,Genres,Tags",
+                fields = fields,
                 recursive = true,
-                limit = limit,
-                sortBy = "CommunityRating",
-                sortOrder = "Descending"
-            )
-            val entities = response.items.map { it.toEntity() }
-            if (entities.isNotEmpty()) {
-                jellyfinDao.insertOrUpdateAll(entities)
+                limit = 40, // reducido de 100
+                sortBy = "DateCreated",
+                sortOrder = "Descending",
+                filters = "IsUnplayed"
+            ).items.map { it.toEntity() }
+                .filter { !it.backdropImageTag.isNullOrEmpty() && (it.communityRating ?: 0f) >= 6.5f }
+
+            // 2. Favoritas no empezadas
+            val favoritesUnplayed = runCatching {
+                api.getLibraryItems(
+                    authHeader = authHeader,
+                    userId = userId,
+                    includeItemTypes = "Series",
+                    fields = fields,
+                    recursive = true,
+                    limit = 15,
+                    sortBy = "DateCreated",
+                    sortOrder = "Descending",
+                    filters = "IsFavorite,IsUnplayed"
+                ).items.map { it.toEntity() }
+                    .filter { !it.backdropImageTag.isNullOrEmpty() }
+            }.getOrDefault(emptyList())
+
+            // 3. Fallback: mejor valoradas sin empezar
+            val topUnplayed = if ((favoritesUnplayed + recentUnplayed).distinctBy { it.id }.size < limit) {
+                runCatching {
+                    api.getLibraryItems(
+                        authHeader = authHeader,
+                        userId = userId,
+                        includeItemTypes = "Series",
+                        fields = fields,
+                        recursive = true,
+                        limit = limit * 2,
+                        sortBy = "CommunityRating",
+                        sortOrder = "Descending",
+                        filters = "IsUnplayed"
+                    ).items.map { it.toEntity() }
+                        .filter { !it.backdropImageTag.isNullOrEmpty() && (it.communityRating ?: 0f) >= 7.0f }
+                }.getOrDefault(emptyList())
+            } else emptyList()
+
+            val merged = (favoritesUnplayed + recentUnplayed + topUnplayed)
+                .distinctBy { it.id }
+                .take(limit)
+
+            if (merged.isNotEmpty()) {
+                jellyfinDao.insertOrUpdateAll(merged)
+                merged
+            } else {
+                jellyfinDao.getTopSeriesLocal(limit)
             }
-            if (entities.isNotEmpty()) entities else local
-        }.getOrDefault(local)
+        }.getOrDefault(jellyfinDao.getTopSeriesLocal(limit))
     }
 
     fun getAllLocalLibrary(): Flow<List<JellyfinMediaEntity>> = jellyfinDao.getAllItems()
@@ -1002,33 +1134,57 @@ class MediaRepository(
         return jellyfinDao.getRecentSeriesByGenre(genre, limit)
     }
 
-    suspend fun getRecommendedMovies(excludeIds: Set<String>, limit: Int = 20): List<JellyfinMediaEntity> {
-        val topGenres = getMostWatchedGenres().take(4)
-        val resultList = mutableListOf<JellyfinMediaEntity>()
+    suspend fun getRecommendedMovies(
+        excludeIds: Set<String>,
+        limit: Int = 20,
+        genres: List<String>? = null
+    ): List<JellyfinMediaEntity> {
+        val topGenres = (genres ?: getMostWatchedGenres()).take(4)
         val addedIds = mutableSetOf<String>().apply { addAll(excludeIds) }
 
-        // 1. Obtener películas de los géneros más vistos
-        for (genre in topGenres) {
-            val genreItems = jellyfinDao.getItemsByGenre(genre)
-                .filter { it.type.equals("Movie", ignoreCase = true) && it.id !in addedIds }
-            for (item in genreItems) {
-                resultList.add(item)
-                addedIds.add(item.id)
-                if (resultList.size >= limit) break
-            }
-            if (resultList.size >= limit) break
+        // Máximo de ítems por género para garantizar variedad real.
+        // Con 4 géneros × 4 = 16, completamos hasta 20 con el fallback.
+        val maxPerGenre = 4
+
+        // Recoger candidatos de cada género por separado, luego intercalar
+        val buckets: List<List<JellyfinMediaEntity>> = topGenres.map { genre ->
+            jellyfinDao.getItemsByGenre(genre, limit = maxPerGenre * 3) // pedir más de los que necesitamos para tener margen
+                .filter {
+                    it.type.equals("Movie", ignoreCase = true)
+                        && it.id !in addedIds
+                        && !it.isPlayed  // ya vista → no mostrar
+                        && (it.communityRating ?: 0f) >= 5.5f // calidad mínima
+                }
+                .take(maxPerGenre)
         }
 
-        // 2. Rellenar con otras películas valoradas de la biblioteca local que no se hayan mostrado
-        if (resultList.size < limit) {
-            val remaining = jellyfinDao.getMovies()
-                .filter { it.id !in addedIds }
-                .sortedByDescending { it.communityRating ?: 0f }
-            for (item in remaining) {
-                resultList.add(item)
-                addedIds.add(item.id)
-                if (resultList.size >= limit) break
+        // Intercalar: primero un item de cada género, luego el segundo de cada género, etc.
+        // Resultado: Acción, Drama, Thriller, Comedia, Acción, Drama, Thriller, Comedia...
+        // En vez de: Comedia, Comedia, Comedia, Comedia, Acción, Acción...
+        val resultList = mutableListOf<JellyfinMediaEntity>()
+        val maxRound = buckets.maxOfOrNull { it.size } ?: 0
+        for (round in 0 until maxRound) {
+            for (bucket in buckets) {
+                if (round < bucket.size) {
+                    val item = bucket[round]
+                    if (item.id !in addedIds) {
+                        resultList.add(item)
+                        addedIds.add(item.id)
+                        if (resultList.size >= limit) return resultList
+                    }
+                }
             }
+        }
+
+        // Fallback: rellenar con películas bien valoradas no mostradas aún (evitando escanear toda la DB)
+        if (resultList.size < limit) {
+            jellyfinDao.getTopMoviesLocal(limit = 50)
+                .filter { it.id !in addedIds && !it.isPlayed && (it.communityRating ?: 0f) >= 6.0f }
+                .take(limit - resultList.size)
+                .forEach {
+                    resultList.add(it)
+                    addedIds.add(it.id)
+                }
         }
 
         return resultList
