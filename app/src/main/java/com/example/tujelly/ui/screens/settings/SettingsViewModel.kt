@@ -566,6 +566,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         return when (e) {
             is retrofit2.HttpException -> {
                 when (e.code()) {
+                    400 -> "Error 400: Solicitud rechazada por Jellyfin. Revisa tus credenciales o permisos de usuario."
                     401 -> "Error 401: Usuario o contraseña incorrectos en Jellyfin."
                     403 -> "Error 403: Acceso denegado en Jellyfin."
                     404 -> "Error 404: Servidor Jellyfin no encontrado en $cleanUrl."
@@ -629,7 +630,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             )
 
             val api = NetworkClientFactory.createService(cleanUrl, JellyfinApiService::class.java)
-            val authHeader = "MediaBrowser Client=\"Medusa\", Device=\"AndroidTV\", DeviceId=\"MedusaTV\", Version=\"2.0.2\""
+            val authHeader = "MediaBrowser Client=\"Tujelly\", Device=\"AndroidTV\", DeviceId=\"TujellyTV\", Version=\"1.0.0\""
 
             try {
                 val initResult = api.initiateQuickConnect(authHeader = authHeader)
@@ -717,7 +718,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             _uiState.value = state.copy(isLoading = true, statusMessage = "Conectando con $cleanUrl...")
 
             val api = NetworkClientFactory.createService(cleanUrl, JellyfinApiService::class.java)
-            val authHeader = "MediaBrowser Client=\"Medusa\", Device=\"AndroidTV\", DeviceId=\"MedusaTV\", Version=\"2.0.2\""
+            val authHeader = "MediaBrowser Client=\"Tujelly\", Device=\"AndroidTV\", DeviceId=\"TujellyTV\", Version=\"1.0.0\""
 
             try {
                 val info = api.getPublicInfo()

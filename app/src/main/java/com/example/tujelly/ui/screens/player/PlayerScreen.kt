@@ -299,12 +299,19 @@ private fun PlayerContent(
         var candidateIdx = 0
 
         val defaultHeaders = buildMap {
-            if (info.token.isNotBlank()) {
-                put("X-Emby-Token", info.token)
-                put("X-MediaBrowser-Token", info.token)
+            val token = info.token
+            val auth = info.authHeader
+            if (token.isNotBlank()) {
+                put("X-Emby-Token", token)
+                put("X-MediaBrowser-Token", token)
             }
-            if (info.authHeader.isNotBlank()) {
-                put("X-Emby-Authorization", info.authHeader)
+            if (auth.isNotBlank()) {
+                put("Authorization", auth)
+                put("X-Emby-Authorization", auth)
+            } else if (token.isNotBlank()) {
+                val genAuth = "MediaBrowser Client=\"Tujelly\", Device=\"AndroidTV\", DeviceId=\"TujellyTV\", Version=\"1.0.0\", Token=\"$token\""
+                put("Authorization", genAuth)
+                put("X-Emby-Authorization", genAuth)
             }
         }
 

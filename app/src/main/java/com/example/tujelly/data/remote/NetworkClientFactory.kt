@@ -62,10 +62,40 @@ object NetworkClientFactory {
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
-            val request = chain.request().newBuilder()
+            val original = chain.request()
+            val requestBuilder = original.newBuilder()
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Google TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .header("Accept", "application/json, text/plain, */*")
-                .build()
+
+            // Jellyfin 12+ compatibility: Jellyfin 12 disables EnableLegacyAuthorization by default,
+            // rejecting X-Emby-Authorization and strictly requiring Authorization: MediaBrowser ...
+            // We ensure both headers are present for backwards and forwards compatibility.
+            val authHeader = original.header("Authorization")
+            val embyAuthHeader = original.header("X-Emby-Authorization")
+
+            if (!authHeader.isNullOrBlank() && embyAuthHeader.isNullOrBlank()) {
+                requestBuilder.header("X-Emby-Authorization", authHeader)
+            } else if (!embyAuthHeader.isNullOrBlank() && authHeader.isNullOrBlank()) {
+                requestBuilder.header("Authorization", embyAuthHeader)
+            }
+
+            // Also synchronize token headers if passed separately
+            val token = original.header("X-Emby-Token") ?: original.header("X-MediaBrowser-Token")
+            if (!token.isNullOrBlank()) {
+                if (original.header("X-Emby-Token").isNullOrBlank()) {
+                    requestBuilder.header("X-Emby-Token", token)
+                }
+                if (original.header("X-MediaBrowser-Token").isNullOrBlank()) {
+                    requestBuilder.header("X-MediaBrowser-Token", token)
+                }
+                if (authHeader.isNullOrBlank() && embyAuthHeader.isNullOrBlank()) {
+                    val defaultAuth = "MediaBrowser Client=\"Tujelly\", Device=\"AndroidTV\", DeviceId=\"TujellyTV\", Version=\"1.0.0\", Token=\"$token\""
+                    requestBuilder.header("Authorization", defaultAuth)
+                    requestBuilder.header("X-Emby-Authorization", defaultAuth)
+                }
+            }
+
+            val request = requestBuilder.build()
             val response = chain.proceed(request)
 
             val contentType = response.body?.contentType()?.toString()?.lowercase() ?: ""

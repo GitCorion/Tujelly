@@ -108,6 +108,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 val request = Request.Builder()
                     .url(targetUrl)
+                    .header("Authorization", authHeader)
                     .header("X-Emby-Authorization", authHeader)
                     .build()
 
@@ -639,9 +640,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     .apply {
                         if (token.isNotBlank()) {
                             header("X-Emby-Token", token)
+                            header("X-MediaBrowser-Token", token)
                         }
                         if (authHeader.isNotBlank()) {
+                            header("Authorization", authHeader)
                             header("X-Emby-Authorization", authHeader)
+                        } else if (token.isNotBlank()) {
+                            val genAuth = "MediaBrowser Client=\"Tujelly\", Device=\"AndroidTV\", DeviceId=\"TujellyTV\", Version=\"1.0.0\", Token=\"$token\""
+                            header("Authorization", genAuth)
+                            header("X-Emby-Authorization", genAuth)
                         }
                     }
                     .build()
