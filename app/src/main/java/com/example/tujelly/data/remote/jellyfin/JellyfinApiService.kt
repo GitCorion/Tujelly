@@ -86,7 +86,7 @@ interface JellyfinApiService {
         @Header("Authorization") authHeader: String,
         @Path("userId") userId: String,
         @Query("Limit") limit: Int = 20,
-        @Query("Fields") fields: String = "ProviderIds,Overview,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData"
+        @Query("Fields") fields: String = "ProviderIds,Overview,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,SeriesPrimaryImageTag"
     ): JellyfinItemsResponse
 
     @GET("Shows/NextUp")
@@ -95,7 +95,7 @@ interface JellyfinApiService {
         @Query("UserId") userId: String,
         @Query("SeriesId") seriesId: String? = null,
         @Query("Limit") limit: Int = 20,
-        @Query("Fields") fields: String = "ProviderIds,Overview,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData"
+        @Query("Fields") fields: String = "ProviderIds,Overview,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,SeriesPrimaryImageTag"
     ): JellyfinItemsResponse
 
     @GET("Shows/{seriesId}/Seasons")
@@ -113,7 +113,7 @@ interface JellyfinApiService {
         @Query("UserId") userId: String,
         @Query("SeasonId") seasonId: String? = null,
         @Query("Season") seasonNumber: Int? = null,
-        @Query("Fields") fields: String = "Overview,PrimaryImageTag,UserData,IndexNumber,ParentIndexNumber,RunTimeTicks",
+        @Query("Fields") fields: String = "Overview,PrimaryImageTag,UserData,IndexNumber,ParentIndexNumber,RunTimeTicks,SeriesPrimaryImageTag",
         @Query("Limit") limit: Int? = null
     ): JellyfinItemsResponse
 
@@ -122,7 +122,7 @@ interface JellyfinApiService {
         @Header("Authorization") authHeader: String,
         @Path("userId") userId: String,
         @Query("Limit") limit: Int = 20,
-        @Query("Fields") fields: String = "ProviderIds,Overview,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData"
+        @Query("Fields") fields: String = "ProviderIds,Overview,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,SeriesPrimaryImageTag"
     ): List<JellyfinItemDto>
 
     @GET("Users/{userId}/Items")
@@ -135,7 +135,7 @@ interface JellyfinApiService {
         @Query("IncludeItemTypes") includeItemTypes: String = "Movie,Series,Episode",
         @Query("Recursive") recursive: Boolean = true,
         @Query("Limit") limit: Int = 10,
-        @Query("Fields") fields: String = "ProviderIds,Overview,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData"
+        @Query("Fields") fields: String = "ProviderIds,Overview,PrimaryImageTag,BackdropImageTags,CommunityRating,UserData,SeriesPrimaryImageTag"
     ): JellyfinItemsResponse
 
     @GET("Users/{userId}/Items/{itemId}")
