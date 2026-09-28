@@ -77,16 +77,21 @@ fun MediaCard(
     val activeGlowColor = if (isMonochrome) Color.White else accentColor
     val focusBorderColor = if (isMonochrome) Color.White else accentColor
 
-    val infiniteTransition = rememberInfiniteTransition(label = "MediaCardGlow")
-    val pulseGlow by infiniteTransition.animateFloat(
-        initialValue = 0.50f,
-        targetValue = 0.90f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseGlow"
-    )
+    val pulseGlow = if (isFocused) {
+        val infiniteTransition = rememberInfiniteTransition(label = "MediaCardGlow")
+        val animatedGlow by infiniteTransition.animateFloat(
+            initialValue = 0.50f,
+            targetValue = 0.90f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "pulseGlow"
+        )
+        animatedGlow
+    } else {
+        0.50f
+    }
 
     Box(
         modifier = modifier

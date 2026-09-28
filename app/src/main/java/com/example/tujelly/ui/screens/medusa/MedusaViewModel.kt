@@ -11,8 +11,11 @@ import com.example.tujelly.data.local.db.JellyfinMediaEntity
 import com.example.tujelly.data.repository.MediaRepository
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
+import com.example.tujelly.util.toOptimizedMediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,7 +46,11 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
     private val userPreferencesRepository = UserPreferencesRepository(application)
     private val database = AppDatabase.getDatabase(application)
     private val jellyfinDao = database.jellyfinDao()
-    private val mediaRepository = MediaRepository(jellyfinDao, userPreferencesRepository)
+    private val mediaRepository = MediaRepository(
+        jellyfinDao,
+        userPreferencesRepository,
+        database.tmdbVoteCacheDao()
+    )
     private val filterToLibraryUseCase = FilterToLibraryUseCase(mediaRepository)
 
     private val matrixEngine = MedusaTagMatrixEngine()
@@ -89,13 +96,19 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             serverUrl = prefs.jellyfinServerUrl
             accessToken = prefs.jellyfinAccessToken
 
-            val movies = withContext(Dispatchers.IO) { runCatching { jellyfinDao.getMovies() }.getOrDefault(emptyList()) }
-            val series = withContext(Dispatchers.IO) { runCatching { jellyfinDao.getSeries() }.getOrDefault(emptyList()) }
-            rawCatalog = movies + series
+            val (catalog, localTop) = coroutineScope {
+                val catD = async(Dispatchers.IO) {
+                    runCatching { jellyfinDao.getAllCatalog() }.getOrDefault(emptyList())
+                }
+                val topD = async(Dispatchers.IO) {
+                    runCatching { jellyfinDao.getTopRatedLocal(30) }.getOrDefault(emptyList())
+                }
+                Pair(catD.await(), topD.await())
+            }
+            rawCatalog = catalog
 
             val favorites = rawCatalog.filter { it.isFavorite }
             val recentWatched = rawCatalog.filter { it.isPlayed || it.playbackPositionTicks > 0 }
-            val localTop = withContext(Dispatchers.IO) { runCatching { jellyfinDao.getTopRatedLocal(30) }.getOrDefault(emptyList()) }
 
             lastFavorites = favorites
             lastRecentWatched = recentWatched
@@ -130,15 +143,21 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             val tmdbKey = prefs.tmdbApiKey.trim()
             if (tmdbKey.isNotBlank()) {
                 withContext(Dispatchers.IO) {
-                    val canonDto: List<com.example.tujelly.data.remote.tmdb.TmdbItemDto> = runCatching {
-                        mediaRepository.getTmdbTopRated(tmdbKey).getOrDefault(emptyList())
-                    }.getOrDefault(emptyList())
-                    val matchedCanon = runCatching { filterToLibraryUseCase.filterTmdbItems(canonDto, maxCandidates = 30) }.getOrDefault(emptyList())
-
-                    val trendingDto: List<com.example.tujelly.data.remote.tmdb.TmdbItemDto> = runCatching {
-                        mediaRepository.getTmdbTrendingDay(tmdbKey).getOrDefault(emptyList())
-                    }.getOrDefault(emptyList())
-                    val matchedTrending = runCatching { filterToLibraryUseCase.filterTmdbItems(trendingDto, maxCandidates = 30) }.getOrDefault(emptyList())
+                    val (matchedCanon, matchedTrending) = coroutineScope {
+                        val cD = async {
+                            val canonDto: List<com.example.tujelly.data.remote.tmdb.TmdbItemDto> = runCatching {
+                                mediaRepository.getTmdbTopRated(tmdbKey).getOrDefault(emptyList())
+                            }.getOrDefault(emptyList())
+                            runCatching { filterToLibraryUseCase.filterTmdbItems(canonDto, maxCandidates = 30) }.getOrDefault(emptyList())
+                        }
+                        val tD = async {
+                            val trendingDto: List<com.example.tujelly.data.remote.tmdb.TmdbItemDto> = runCatching {
+                                mediaRepository.getTmdbTrendingDay(tmdbKey).getOrDefault(emptyList())
+                            }.getOrDefault(emptyList())
+                            runCatching { filterToLibraryUseCase.filterTmdbItems(trendingDto, maxCandidates = 30) }.getOrDefault(emptyList())
+                        }
+                        Pair(cD.await(), tD.await())
+                    }
 
                     if (matchedCanon.isNotEmpty() || matchedTrending.isNotEmpty()) {
                         lastTmdbCanon = matchedCanon
@@ -284,17 +303,6 @@ class MedusaViewModel(application: Application) : AndroidViewModel(application) 
             return currentMatches.filter { !it.isPlayed }.randomOrNull() ?: currentMatches.randomOrNull()
         }
         val pool = rawCatalog.filter { !it.isPlayed && (it.communityRating ?: 0f) >= 7.0f }
-            .ifEmpty { rawCatalog }
-        return pool.randomOrNull()?.let {
-            MediaItem(
-                id = it.id,
-                title = it.title,
-                overview = it.overview,
-                type = it.type,
-                posterUrl = it.primaryImageTag?.let { tag -> "$serverUrl/Items/${it.id}/Images/Primary?tag=$tag" },
-                rating = it.communityRating,
-                year = it.productionYear
-            )
-        }
+        return pool.randomOrNull()?.toOptimizedMediaItem(serverUrl, accessToken)
     }
 }

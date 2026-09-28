@@ -38,7 +38,8 @@ object NetworkClientFactory {
                 || hostname.endsWith(".home", ignoreCase = true)
     }
 
-    val okHttpClient = OkHttpClient.Builder()
+    @Volatile
+    var okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as javax.net.ssl.X509TrustManager)
         .hostnameVerifier { hostname, session ->
             if (isLocalHost(hostname)) {
@@ -58,6 +59,7 @@ object NetworkClientFactory {
                 }
             }
         })
+        .connectionPool(okhttp3.ConnectionPool(20, 5, TimeUnit.MINUTES))
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -117,6 +119,16 @@ object NetworkClientFactory {
         })
         .build()
 
+    private val serviceCache = java.util.concurrent.ConcurrentHashMap<Pair<String, Class<*>>, Any>()
+
+    fun initCache(context: android.content.Context) {
+        if (okHttpClient.cache != null) return
+        val cacheDir = java.io.File(context.cacheDir, "http_cache")
+        val cache = okhttp3.Cache(cacheDir, 50L * 1024 * 1024) // 50 MB
+        okHttpClient = okHttpClient.newBuilder().cache(cache).build()
+        serviceCache.clear()
+    }
+
     fun normalizeUrl(rawUrl: String): String {
         var url = rawUrl.trim()
         if (url.isEmpty()) return ""
@@ -174,16 +186,19 @@ object NetworkClientFactory {
         return "$scheme$rest"
     }
 
+    @Suppress("UNCHECKED_CAST")
     fun <T> createService(baseUrl: String, serviceClass: Class<T>): T {
         val cleanUrl = normalizeUrl(baseUrl)
         val validUrl = if (cleanUrl.endsWith("/")) cleanUrl else "$cleanUrl/"
-        val contentType = "application/json".toMediaType()
 
-        return Retrofit.Builder()
-            .baseUrl(validUrl)
-            .client(okHttpClient)
-            .addConverterFactory(json.asConverterFactory(contentType))
-            .build()
-            .create(serviceClass)
+        return serviceCache.getOrPut(Pair(validUrl, serviceClass)) {
+            val contentType = "application/json".toMediaType()
+            Retrofit.Builder()
+                .baseUrl(validUrl)
+                .client(okHttpClient)
+                .addConverterFactory(json.asConverterFactory(contentType))
+                .build()
+                .create(serviceClass) as Any
+        } as T
     }
 }

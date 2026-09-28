@@ -13,6 +13,9 @@ import com.example.tujelly.domain.model.HomeSection
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
+import com.example.tujelly.util.toOptimizedMediaItem
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -39,7 +42,11 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
 
     private val userPreferencesRepository = UserPreferencesRepository(application)
     private val database = com.example.tujelly.data.local.db.AppDatabase.getDatabase(application)
-    private val mediaRepository = com.example.tujelly.data.repository.MediaRepository(database.jellyfinDao())
+    private val mediaRepository = com.example.tujelly.data.repository.MediaRepository(
+        database.jellyfinDao(),
+        userPreferencesRepository,
+        database.tmdbVoteCacheDao()
+    )
     private val filterToLibraryUseCase = FilterToLibraryUseCase(mediaRepository)
 
     private val _uiState = MutableStateFlow<GenreUiState>(GenreUiState.Loading)
@@ -68,12 +75,15 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
             currentFormat = GenreFormat.ALL
 
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
-            val collected = mutableListOf<Pair<GenreFormat, HomeSection>>()
-            val shownMediaIds = mutableSetOf<String>()
 
-            // 1. Cargar ítems locales del género
-            val localMovies = runCatching { mediaRepository.getMoviesByGenre(genreName, 150) }.getOrDefault(emptyList())
-            val localSeries = runCatching { mediaRepository.getSeriesByGenre(genreName, 150) }.getOrDefault(emptyList())
+            // 1. Cargar ítems locales del género en paralelo (<50ms)
+            val (localMovies, localSeries, recentMoviesList, recentSeriesList) = coroutineScope {
+                val m = async { runCatching { mediaRepository.getMoviesByGenre(genreName, 150) }.getOrDefault(emptyList()) }
+                val s = async { runCatching { mediaRepository.getSeriesByGenre(genreName, 150) }.getOrDefault(emptyList()) }
+                val rm = async { runCatching { mediaRepository.getRecentMoviesByGenre(genreName, 15) }.getOrDefault(emptyList()) }
+                val rs = async { runCatching { mediaRepository.getRecentSeriesByGenre(genreName, 15) }.getOrDefault(emptyList()) }
+                listOf(m.await(), s.await(), rm.await(), rs.await())
+            }
 
             val localMovieItems = localMovies.map {
                 it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
@@ -81,162 +91,179 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
             val localSeriesItems = localSeries.map {
                 it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
             }
+            val recentMovies = recentMoviesList.map {
+                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
+            }
+            val recentSeries = recentSeriesList.map {
+                it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN)
+            }
 
-            // Sanitizar notas locales para evitar que 10.0 falsos sin votos lideren el Top 10
             val sanitizedLocalMovies = sanitizeRatings(localMovieItems)
             val sanitizedLocalSeries = sanitizeRatings(localSeriesItems)
 
-            // 2. Descubrimiento TMDB (Obtiene producciones verdaderas aclamadas de este género)
-            var tmdbMovieItems: List<MediaItem> = emptyList()
-            var tmdbSeriesItems: List<MediaItem> = emptyList()
+            val buildSections = { tmdbMovies: List<MediaItem>, tmdbSeries: List<MediaItem> ->
+                val collected = mutableListOf<Pair<GenreFormat, HomeSection>>()
+                val shownMediaIds = mutableSetOf<String>()
 
+                val curatedTopCandidates = (tmdbMovies + tmdbSeries + sanitizedLocalMovies + sanitizedLocalSeries)
+                    .distinctBy { it.id }
+                    .filter { (it.rating ?: 0f) >= 6.8f }
+                    .sortedByDescending { item ->
+                        val isTmdb = item.source == MediaSource.TMDB_TRENDING
+                        val baseRating = item.rating ?: 0f
+                        if (isTmdb) baseRating * 10f + 5f else baseRating * 10f
+                    }
+                    .take(10)
+
+                if (curatedTopCandidates.isNotEmpty()) {
+                    shownMediaIds.addAll(curatedTopCandidates.map { it.id })
+                    collected.add(
+                        GenreFormat.ALL to HomeSection(
+                            title = "Top 10 Imprescindibles",
+                            items = curatedTopCandidates,
+                            badge = null,
+                            isRanked = true
+                        )
+                    )
+                }
+
+                val allLocalSanitized = (sanitizedLocalMovies + sanitizedLocalSeries).distinctBy { it.id }
+                val hiddenGems = allLocalSanitized
+                    .filter { it.id !in shownMediaIds && !it.isPlayed && (it.rating ?: 0f) in 7.0f..9.5f }
+                    .sortedByDescending { it.rating ?: 0f }
+                    .take(15)
+
+                if (hiddenGems.isNotEmpty()) {
+                    shownMediaIds.addAll(hiddenGems.map { it.id })
+                    collected.add(
+                        GenreFormat.ALL to HomeSection(
+                            title = "Joyas Ocultas",
+                            items = hiddenGems,
+                            badge = null
+                        )
+                    )
+                }
+
+                val curatedMovies = (sanitizedLocalMovies + tmdbMovies)
+                    .distinctBy { it.id }
+                    .filter { it.id !in shownMediaIds }
+                    .take(20)
+
+                if (curatedMovies.isNotEmpty()) {
+                    shownMediaIds.addAll(curatedMovies.map { it.id })
+                    collected.add(
+                        GenreFormat.MOVIES to HomeSection(
+                            title = "Películas",
+                            items = curatedMovies,
+                            badge = null
+                        )
+                    )
+                }
+
+                val curatedSeries = (sanitizedLocalSeries + tmdbSeries)
+                    .distinctBy { it.id }
+                    .filter { it.id !in shownMediaIds }
+                    .take(20)
+
+                if (curatedSeries.isNotEmpty()) {
+                    shownMediaIds.addAll(curatedSeries.map { it.id })
+                    collected.add(
+                        GenreFormat.SERIES to HomeSection(
+                            title = "Series",
+                            items = curatedSeries,
+                            badge = null
+                        )
+                    )
+                }
+
+
+                val recentCombined = (recentMovies + recentSeries)
+                    .distinctBy { it.id }
+                    .filter { it.id !in shownMediaIds }
+                    .sortedByDescending { it.year ?: 0 }
+                    .take(15)
+
+                if (recentCombined.isNotEmpty()) {
+                    collected.add(
+                        GenreFormat.ALL to HomeSection(
+                            title = "Novedades Recientes",
+                            items = recentCombined,
+                            badge = null
+                        )
+                    )
+                }
+                collected
+            }
+
+            // Emisión instantánea si hay contenido local disponible
+            val initialSections = buildSections(emptyList(), emptyList())
+            if (initialSections.isNotEmpty()) {
+                formatSections = initialSections
+                applyFormat()
+            }
+
+            // 2. Descubrimiento TMDB en segundo plano sin bloquear la pantalla
             if (prefs.tmdbApiKey.isNotBlank()) {
                 try {
                     val api = NetworkClientFactory.createService("https://api.themoviedb.org/3/", TmdbApiService::class.java)
                     val movieGenreId = tmdbMovieGenreId(genreName)
                     val tvGenreId = tmdbTvGenreId(genreName)
 
-                    val movieGenre = runCatching {
-                        api.discoverMoviesByGenre(apiKey = prefs.tmdbApiKey, genreId = movieGenreId)
-                    }.getOrNull()?.results ?: emptyList()
+                    val (movieGenre, tvGenre) = coroutineScope {
+                        val m = async {
+                            runCatching {
+                                api.discoverMoviesByGenre(apiKey = prefs.tmdbApiKey, genreId = movieGenreId)
+                            }.getOrNull()?.results ?: emptyList()
+                        }
+                        val t = async {
+                            if (tvGenreId != null) {
+                                runCatching {
+                                    api.discoverTvByGenre(apiKey = prefs.tmdbApiKey, genreId = tvGenreId)
+                                }.getOrNull()?.results ?: emptyList()
+                            } else emptyList()
+                        }
+                        Pair(m.await(), t.await())
+                    }
 
-                    val tvGenre = if (tvGenreId != null) {
-                        runCatching {
-                            api.discoverTvByGenre(apiKey = prefs.tmdbApiKey, genreId = tvGenreId)
-                        }.getOrNull()?.results ?: emptyList()
-                    } else emptyList()
+                    val (matchedMovies, matchedSeries) = coroutineScope {
+                        val mm = async {
+                            filterToLibraryUseCase.filterTmdbItems(
+                                tmdbItems = movieGenre.take(40),
+                                serverUrl = prefs.jellyfinServerUrl,
+                                userId = prefs.jellyfinUserId,
+                                token = prefs.jellyfinAccessToken,
+                                maxCandidates = 40
+                            )
+                        }
+                        val ms = async {
+                            filterToLibraryUseCase.filterTmdbItems(
+                                tmdbItems = tvGenre.take(40),
+                                serverUrl = prefs.jellyfinServerUrl,
+                                userId = prefs.jellyfinUserId,
+                                token = prefs.jellyfinAccessToken,
+                                maxCandidates = 40
+                            )
+                        }
+                        Pair(mm.await(), ms.await())
+                    }
 
-                    val matchedMovies = filterToLibraryUseCase.filterTmdbItems(
-                        tmdbItems = movieGenre.take(40),
-                        serverUrl = prefs.jellyfinServerUrl,
-                        userId = prefs.jellyfinUserId,
-                        token = prefs.jellyfinAccessToken,
-                        maxCandidates = 40
-                    )
-                    tmdbMovieItems = matchedMovies.map {
+                    val tmdbMovieItems = matchedMovies.map {
+                        it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                    }
+                    val tmdbSeriesItems = matchedSeries.map {
                         it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
                     }
 
-                    val matchedSeries = filterToLibraryUseCase.filterTmdbItems(
-                        tmdbItems = tvGenre.take(40),
-                        serverUrl = prefs.jellyfinServerUrl,
-                        userId = prefs.jellyfinUserId,
-                        token = prefs.jellyfinAccessToken,
-                        maxCandidates = 40
-                    )
-                    tmdbSeriesItems = matchedSeries.map {
-                        it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.TMDB_TRENDING)
+                    if (tmdbMovieItems.isNotEmpty() || tmdbSeriesItems.isNotEmpty()) {
+                        formatSections = buildSections(tmdbMovieItems, tmdbSeriesItems)
+                        applyFormat()
                     }
                 } catch (_: Exception) {}
             }
 
-            // =========================================================================
-            // CURACIÓN INTELIGENTE DE SECCIONES (Sin duplicados ni 10.0 inflados)
-            // =========================================================================
-
-            // A) TOP 10 IMPRESCINDIBLES (Prioriza producciones aclamadas por TMDB + locales verdaderas)
-            val curatedTopCandidates = (tmdbMovieItems + tmdbSeriesItems + sanitizedLocalMovies + sanitizedLocalSeries)
-                .distinctBy { it.id }
-                .filter { (it.rating ?: 0f) >= 6.8f }
-                .sortedByDescending { item ->
-                    val isTmdb = item.source == MediaSource.TMDB_TRENDING
-                    val baseRating = item.rating ?: 0f
-                    // Ponderar: Las producciones globales de TMDB y locales verificadas lideran la clasificación
-                    if (isTmdb) baseRating * 10f + 5f else baseRating * 10f
-                }
-                .take(10)
-
-            if (curatedTopCandidates.isNotEmpty()) {
-                shownMediaIds.addAll(curatedTopCandidates.map { it.id })
-                collected.add(
-                    GenreFormat.ALL to HomeSection(
-                        title = "Top 10 Imprescindibles",
-                        items = curatedTopCandidates,
-                        badge = null,
-                        isRanked = true
-                    )
-                )
+            if (formatSections.isEmpty()) {
+                _uiState.value = GenreUiState.Error("No se encontraron contenidos para el género '$currentGenre'.")
             }
-
-            // B) JOYAS OCULTAS EN $genreName (Solo títulos NO mostrados en Top 10, no vistos y con buena nota)
-            val allLocalSanitized = (sanitizedLocalMovies + sanitizedLocalSeries).distinctBy { it.id }
-            val hiddenGems = allLocalSanitized
-                .filter { it.id !in shownMediaIds && !it.isPlayed && (it.rating ?: 0f) in 7.0f..9.5f }
-                .sortedByDescending { it.rating ?: 0f }
-                .take(15)
-
-            if (hiddenGems.isNotEmpty()) {
-                shownMediaIds.addAll(hiddenGems.map { it.id })
-                collected.add(
-                    GenreFormat.ALL to HomeSection(
-                        title = "Joyas Ocultas",
-                        items = hiddenGems,
-                        badge = null
-                    )
-                )
-            }
-
-            // C) PELÍCULAS DE $genreName (Sin repetir las del Top 10)
-            val curatedMovies = (sanitizedLocalMovies + tmdbMovieItems)
-                .distinctBy { it.id }
-                .filter { it.id !in shownMediaIds }
-                .take(20)
-
-            if (curatedMovies.isNotEmpty()) {
-                shownMediaIds.addAll(curatedMovies.map { it.id })
-                collected.add(
-                    GenreFormat.MOVIES to HomeSection(
-                        title = "Películas",
-                        items = curatedMovies,
-                        badge = null
-                    )
-                )
-            }
-
-            // D) SERIES DE $genreName (Sin repetir las del Top 10)
-            val curatedSeries = (sanitizedLocalSeries + tmdbSeriesItems)
-                .distinctBy { it.id }
-                .filter { it.id !in shownMediaIds }
-                .take(20)
-
-            if (curatedSeries.isNotEmpty()) {
-                shownMediaIds.addAll(curatedSeries.map { it.id })
-                collected.add(
-                    GenreFormat.SERIES to HomeSection(
-                        title = "Series",
-                        items = curatedSeries,
-                        badge = null
-                    )
-                )
-            }
-
-            // E) NOVEDADES RECIENTES (Sin repetir lo ya mostrado)
-            val recentMovies = runCatching { mediaRepository.getRecentMoviesByGenre(genreName, 15) }
-                .getOrDefault(emptyList())
-                .map { it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN) }
-
-            val recentSeries = runCatching { mediaRepository.getRecentSeriesByGenre(genreName, 15) }
-                .getOrDefault(emptyList())
-                .map { it.toMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN) }
-
-            val recentCombined = (recentMovies + recentSeries)
-                .distinctBy { it.id }
-                .filter { it.id !in shownMediaIds }
-                .sortedByDescending { it.year ?: 0 }
-                .take(15)
-
-            if (recentCombined.isNotEmpty()) {
-                collected.add(
-                    GenreFormat.ALL to HomeSection(
-                        title = "Novedades Recientes",
-                        items = recentCombined,
-                        badge = null
-                    )
-                )
-            }
-
-            formatSections = collected
-            applyFormat()
         }
     }
 
@@ -339,58 +366,6 @@ class GenreViewModel(application: Application) : AndroidViewModel(application) {
         else -> null
     }
 
-    private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem {
-        val authParam = if (token.isNotBlank()) "api_key=$token" else ""
-
-        val posterUrl = when {
-            primaryImageTag?.startsWith("tmdb:") == true -> {
-                "https://image.tmdb.org/t/p/w500${primaryImageTag.removePrefix("tmdb:")}"
-            }
-            !primaryImageTag.isNullOrEmpty() -> {
-                val tagParam = "&tag=$primaryImageTag"
-                "$baseUrl/Items/$id/Images/Primary?$authParam$tagParam"
-            }
-            else -> {
-                "$baseUrl/Items/$id/Images/Primary?$authParam"
-            }
-        }
-
-        val backdropUrl = when {
-            backdropImageTag?.startsWith("tmdb:") == true -> {
-                "https://image.tmdb.org/t/p/w1280${backdropImageTag.removePrefix("tmdb:")}"
-            }
-            !backdropImageTag.isNullOrEmpty() -> {
-                val backdropTagParam = "&tag=$backdropImageTag"
-                "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
-            }
-            else -> {
-                "$baseUrl/Items/$id/Images/Backdrop/0?$authParam"
-            }
-        }
-
-        val effectiveLogoId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
-        val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/$effectiveLogoId/Images/Logo?$authParam" else null
-
-        val total = totalItemCount
-        val unplayed = unplayedItemCount
-        val played = if (total != null && unplayed != null) (total - unplayed).coerceAtLeast(0) else null
-
-        return MediaItem(
-            id = id,
-            title = title,
-            overview = overview,
-            type = type,
-            posterUrl = posterUrl,
-            backdropUrl = backdropUrl,
-            logoUrl = logoUrl,
-            rating = communityRating,
-            year = productionYear,
-            source = source,
-            playbackPositionTicks = playbackPositionTicks,
-            isPlayed = isPlayed,
-            isFavorite = isFavorite,
-            totalEpisodes = total,
-            playedEpisodes = played
-        )
-    }
+    private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem =
+        toOptimizedMediaItem(baseUrl, token, source)
 }

@@ -13,6 +13,8 @@ import com.example.tujelly.domain.model.MediaSource
 import com.example.tujelly.domain.model.SeasonItem
 import com.example.tujelly.domain.model.SeriesStatus
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
+import com.example.tujelly.util.JellyfinImageUtils
+import com.example.tujelly.util.toOptimizedMediaItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +56,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
 
     private val userPreferencesRepository = UserPreferencesRepository(application)
     private val database = AppDatabase.getDatabase(application)
-    private val mediaRepository = MediaRepository(database.jellyfinDao())
+    private val mediaRepository = MediaRepository(database.jellyfinDao(), userPreferencesRepository, database.tmdbVoteCacheDao())
 
     private val _uiState = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
@@ -103,10 +105,23 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
 
                     val baseUrl = prefs.jellyfinServerUrl
                     val token = prefs.jellyfinAccessToken
-                    val authParam = if (token.isNotBlank()) "&api_key=$token" else ""
-                    val posterUrl = finalEntity.primaryImageTag?.let { tag -> "$baseUrl/Items/${finalEntity.id}/Images/Primary?tag=$tag$authParam" }
-                    var backdropUrl = finalEntity.backdropImageTag?.let { tag -> "$baseUrl/Items/${finalEntity.id}/Images/Backdrop/0?tag=$tag$authParam" }
-                    val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/${finalEntity.id}/Images/Logo$authParam" else null
+                    val posterUrl = JellyfinImageUtils.getPosterUrl(
+                        baseUrl = baseUrl,
+                        itemId = finalEntity.id,
+                        imageTag = finalEntity.primaryImageTag,
+                        token = token
+                    )
+                    var backdropUrl = JellyfinImageUtils.getDetailBackdropUrl(
+                        baseUrl = baseUrl,
+                        itemId = finalEntity.id,
+                        imageTag = finalEntity.backdropImageTag,
+                        token = token
+                    )
+                    val logoUrl = JellyfinImageUtils.getLogoUrl(
+                        baseUrl = baseUrl,
+                        itemId = finalEntity.id,
+                        token = token
+                    )
 
                     // If viewing an episode, resolve seriesName and parent backdrop if needed
                     val currentSeriesId = finalEntity.seriesId
@@ -117,7 +132,12 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                                 finalEntity = finalEntity.copy(seriesName = parentSeries.title)
                             }
                             if (backdropUrl == null && !parentSeries.backdropImageTag.isNullOrBlank()) {
-                                backdropUrl = "$baseUrl/Items/${parentSeries.id}/Images/Backdrop/0?tag=${parentSeries.backdropImageTag}$authParam"
+                                backdropUrl = JellyfinImageUtils.getDetailBackdropUrl(
+                                    baseUrl = baseUrl,
+                                    itemId = parentSeries.id,
+                                    imageTag = parentSeries.backdropImageTag,
+                                    token = token
+                                )
                             }
                         }
                     }
@@ -398,32 +418,6 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem {
-        val authParam = if (token.isNotBlank()) "&api_key=$token" else ""
-        val effectivePosterId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
-        val effectivePosterTag = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesPrimaryImageTag else primaryImageTag
-
-        val tagParam = if (!effectivePosterTag.isNullOrEmpty()) "&tag=$effectivePosterTag" else ""
-        val posterUrl = "$baseUrl/Items/$effectivePosterId/Images/Primary?$authParam$tagParam"
-
-        val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
-        val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
-
-        val effectiveTitle = if (type.equals("Episode", ignoreCase = true) && !seriesName.isNullOrEmpty()) seriesName else title
-        val effectiveType = if (type.equals("Episode", ignoreCase = true) && source != MediaSource.JELLYFIN) "Series" else type
-
-        return MediaItem(
-            id = id,
-            title = effectiveTitle,
-            overview = overview,
-            type = effectiveType,
-            posterUrl = posterUrl,
-            backdropUrl = backdropUrl,
-            rating = communityRating,
-            year = productionYear,
-            source = source,
-            playbackPositionTicks = playbackPositionTicks,
-            isPlayed = isPlayed,
-            isFavorite = isFavorite
-        )
+        return toOptimizedMediaItem(baseUrl, token, source)
     }
 }

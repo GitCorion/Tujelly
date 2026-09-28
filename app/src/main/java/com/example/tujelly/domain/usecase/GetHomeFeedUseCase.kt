@@ -6,6 +6,7 @@ import com.example.tujelly.data.repository.MediaRepository
 import com.example.tujelly.domain.model.HomeSection
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
+import com.example.tujelly.util.toOptimizedMediaItem
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
@@ -45,10 +46,16 @@ class GetHomeFeedUseCase(
         // FIX 2: EMITIR DATOS LOCALES INMEDIATAMENTE (<100ms)
         // El usuario ve contenido mientras las llamadas de red se procesan en paralelo.
         // =========================================================================
+        val localContinueWatching = runCatching { mediaRepository.getContinueWatchingLocal(20) }.getOrDefault(emptyList())
         val localTopMovies = mediaRepository.getTopMoviesLocal(20)
         val localTopSeries = mediaRepository.getTopSeriesLocal(20)
-        val localContinue = runCatching { mediaRepository.getLocalCount() }.getOrDefault(0)
 
+        if (localContinueWatching.isNotEmpty()) {
+            sections.add(HomeSection(
+                title = "Continuar Viendo",
+                items = localContinueWatching.map { it.toOptimizedMediaItem(prefs.jellyfinServerUrl, prefs.jellyfinAccessToken, MediaSource.JELLYFIN) }
+            ))
+        }
         if (localTopMovies.isNotEmpty()) {
             sections.add(HomeSection(
                 title = "Grandes Producciones de tu colección",
@@ -646,71 +653,6 @@ class GetHomeFeedUseCase(
         }.take(20)
     }
 
-    private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem {
-        val authParam = if (token.isNotBlank()) "api_key=$token" else ""
-
-        // If it's an episode belonging to a series, use the SERIES vertical poster!
-        val effectivePosterId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
-        val effectivePosterTag = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesPrimaryImageTag else primaryImageTag
-
-        val tagParam = if (!effectivePosterTag.isNullOrEmpty()) "&tag=$effectivePosterTag" else ""
-        val posterUrl = "$baseUrl/Items/$effectivePosterId/Images/Primary?$authParam$tagParam"
-
-        val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
-        val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
-
-        val effectiveLogoId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
-        val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/$effectiveLogoId/Images/Logo?$authParam" else null
-
-        val isContinueWatching = source == MediaSource.JELLYFIN && playbackPositionTicks > 0
-        val effectiveTitle = if (type.equals("Episode", ignoreCase = true) && !seriesName.isNullOrEmpty()) {
-            if (isContinueWatching) {
-                val epCode = if (seasonNumber != null && episodeNumber != null) " (T${seasonNumber}:E${episodeNumber})" else ""
-                "$seriesName$epCode"
-            } else {
-                seriesName
-            }
-        } else {
-            title
-        }
-
-        val effectiveType = if (type.equals("Episode", ignoreCase = true) && source != MediaSource.JELLYFIN) "Series" else type
-
-        val total = totalItemCount
-        val unplayed = unplayedItemCount
-        val played = if (total != null && unplayed != null) (total - unplayed).coerceAtLeast(0) else null
-
-        val effectivePlayed = if (effectiveType.equals("Series", ignoreCase = true)) {
-            if (unplayed != null) unplayed == 0 && (total ?: 0) > 0 else isPlayed
-        } else if (type.equals("Episode", ignoreCase = true) && source != MediaSource.JELLYFIN) {
-            false
-        } else {
-            isPlayed
-        }
-
-        val effectiveRating = when {
-            communityRating == null -> null
-            communityRating > 9.5f -> null // Descartar notas infladas de un único voto (ej: 10.0, 9.7) no ponderadas
-            communityRating <= 0f -> null
-            else -> communityRating
-        }
-
-        return MediaItem(
-            id = id,
-            title = effectiveTitle,
-            overview = overview,
-            type = effectiveType,
-            posterUrl = posterUrl,
-            backdropUrl = backdropUrl,
-            logoUrl = logoUrl,
-            rating = effectiveRating,
-            year = productionYear,
-            source = source,
-            playbackPositionTicks = playbackPositionTicks,
-            isPlayed = effectivePlayed,
-            isFavorite = isFavorite,
-            totalEpisodes = total,
-            playedEpisodes = played
-        )
-    }
+    private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem =
+        toOptimizedMediaItem(baseUrl, token, source)
 }

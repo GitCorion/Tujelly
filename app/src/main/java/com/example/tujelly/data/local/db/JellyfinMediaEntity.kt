@@ -11,7 +11,11 @@ import androidx.room.PrimaryKey
         Index(value = ["imdbId"]),
         Index(value = ["title"]),
         Index(value = ["type"]),
-        Index(value = ["isFavorite"])
+        Index(value = ["isFavorite"]),
+        Index(value = ["type", "communityRating"]),
+        Index(value = ["seriesId", "type"]),
+        Index(value = ["playbackPositionTicks"]),
+        Index(value = ["productionYear"])
     ]
 )
 data class JellyfinMediaEntity(

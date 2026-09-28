@@ -57,6 +57,12 @@ interface JellyfinDao {
     @Query("SELECT * FROM jellyfin_media WHERE type = 'Series' ORDER BY title ASC")
     suspend fun getSeries(): List<JellyfinMediaEntity>
 
+    @Query("SELECT * FROM jellyfin_media WHERE type IN ('Movie', 'Series')")
+    suspend fun getAllCatalog(): List<JellyfinMediaEntity>
+
+    @Query("SELECT * FROM jellyfin_media WHERE playbackPositionTicks > 0 AND type IN ('Movie', 'Episode', 'Series') ORDER BY CASE WHEN type = 'Episode' THEN 0 ELSE 1 END LIMIT :limit")
+    suspend fun getContinueWatchingLocal(limit: Int = 20): List<JellyfinMediaEntity>
+
     @Query("SELECT * FROM jellyfin_media WHERE type IN ('Movie', 'Series') AND communityRating >= 7.0 AND communityRating <= 9.5 ORDER BY communityRating DESC LIMIT :limit")
     suspend fun getTopRatedLocal(limit: Int = 20): List<JellyfinMediaEntity>
 

@@ -24,10 +24,12 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.example.tujelly.data.worker.JellyfinSyncWorker
+import com.example.tujelly.util.JellyfinImageUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -213,46 +215,57 @@ class MediaRepository(
             val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
             val authHeader = buildJellyfinAuthHeader(token = token)
 
-            // 1. Sync Continue Watching (Resume Items)
-            try {
-                val resume = api.getResumeItems(authHeader = authHeader, userId = userId, limit = 30)
-                val resumeEntities = resume.items.map { it.toEntity() }
-                if (resumeEntities.isNotEmpty()) {
-                    jellyfinDao.insertOrUpdateAll(resumeEntities)
-                }
-            } catch (_: Exception) {}
-
-            // 2. Sync Recent Items (Fast, immediately populates UI with up to 50 items)
-            try {
-                val latest = api.getLatestItems(authHeader = authHeader, userId = userId, limit = 50)
-                val latestEntities = latest.map { it.toEntity() }
-                if (latestEntities.isNotEmpty()) {
-                    jellyfinDao.insertOrUpdateAll(latestEntities)
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("MediaRepository", "Error syncing latest items: ${e.message}", e)
-            }
-
-            // 3. Sync Favorites (Fast, critical)
-            try {
-                val favResponse = api.getFavoriteItems(authHeader = authHeader, userId = userId)
-                val favEntities = favResponse.items.map { it.toEntity().copy(isFavorite = true) }
-                if (favEntities.isNotEmpty()) {
-                    jellyfinDao.insertOrUpdateAll(favEntities)
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("MediaRepository", "Error syncing favorites: ${e.message}", e)
-            }
-
-            // 4. Sync Recently Played items (Fast, marks watched/progress in local DB)
             var playedEntities: List<JellyfinMediaEntity> = emptyList()
-            try {
-                val playedResponse = api.getRecentlyPlayedItems(authHeader = authHeader, userId = userId, limit = 100)
-                playedEntities = playedResponse.items.map { it.toEntity() }
-                if (playedEntities.isNotEmpty()) {
-                    jellyfinDao.insertOrUpdateAll(playedEntities)
+
+            coroutineScope {
+                // 1. Sync Continue Watching (Resume Items)
+                launch {
+                    try {
+                        val resume = api.getResumeItems(authHeader = authHeader, userId = userId, limit = 30)
+                        val resumeEntities = resume.items.map { it.toEntity() }
+                        if (resumeEntities.isNotEmpty()) {
+                            jellyfinDao.insertOrUpdateAll(resumeEntities)
+                        }
+                    } catch (_: Exception) {}
                 }
-            } catch (_: Exception) {}
+
+                // 2. Sync Recent Items (Fast, immediately populates UI with up to 50 items)
+                launch {
+                    try {
+                        val latest = api.getLatestItems(authHeader = authHeader, userId = userId, limit = 50)
+                        val latestEntities = latest.map { it.toEntity() }
+                        if (latestEntities.isNotEmpty()) {
+                            jellyfinDao.insertOrUpdateAll(latestEntities)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MediaRepository", "Error syncing latest items: ${e.message}", e)
+                    }
+                }
+
+                // 3. Sync Favorites (Fast, critical)
+                launch {
+                    try {
+                        val favResponse = api.getFavoriteItems(authHeader = authHeader, userId = userId)
+                        val favEntities = favResponse.items.map { it.toEntity().copy(isFavorite = true) }
+                        if (favEntities.isNotEmpty()) {
+                            jellyfinDao.insertOrUpdateAll(favEntities)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MediaRepository", "Error syncing favorites: ${e.message}", e)
+                    }
+                }
+
+                // 4. Sync Recently Played items (Fast, marks watched/progress in local DB)
+                launch {
+                    try {
+                        val playedResponse = api.getRecentlyPlayedItems(authHeader = authHeader, userId = userId, limit = 100)
+                        playedEntities = playedResponse.items.map { it.toEntity() }
+                        if (playedEntities.isNotEmpty()) {
+                            jellyfinDao.insertOrUpdateAll(playedEntities)
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
 
             // 5. Pre-cache parent series for any synced episodes so full series details exist in Room
             try {
@@ -925,6 +938,8 @@ class MediaRepository(
 
     suspend fun getLocalMovies(): List<JellyfinMediaEntity> = jellyfinDao.getMovies().deduplicateMediaEntities()
     suspend fun getLocalSeries(): List<JellyfinMediaEntity> = jellyfinDao.getSeries().deduplicateMediaEntities()
+    suspend fun getAllCatalog(): List<JellyfinMediaEntity> = jellyfinDao.getAllCatalog().deduplicateMediaEntities()
+    suspend fun getContinueWatchingLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getContinueWatchingLocal(limit).deduplicateMediaEntities()
     suspend fun getTopMoviesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopMoviesLocal(limit).deduplicateMediaEntities()
     suspend fun getTopSeriesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopSeriesLocal(limit).deduplicateMediaEntities()
     suspend fun getTopRatedLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopRatedLocal(limit).deduplicateMediaEntities()
@@ -1293,10 +1308,14 @@ class MediaRepository(
                 val seasonNum = item.parentIndexNumber ?: 1
                 val durationMin = item.runTimeTicks?.let { (it / 10_000_000L / 60L).toInt() }
                 val imageTag = item.imageTags?.get("Primary")
-                val imageUrl = if (imageTag != null) {
-                    val authParam = if (token.isNotBlank()) "&api_key=$token" else ""
-                    "$serverUrl/Items/${item.id}/Images/Primary?tag=$imageTag$authParam"
-                } else null
+                val imageUrl = imageTag?.let {
+                    JellyfinImageUtils.getEpisodeThumbnailUrl(
+                        baseUrl = serverUrl,
+                        itemId = item.id,
+                        imageTag = it,
+                        token = token
+                    )
+                }
 
                 EpisodeItem(
                     id = item.id,

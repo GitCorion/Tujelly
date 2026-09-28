@@ -3,6 +3,7 @@ package com.example.tujelly.ui.screens.medusa
 import com.example.tujelly.data.local.db.JellyfinMediaEntity
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
+import com.example.tujelly.util.toOptimizedMediaItem
 import java.util.Locale
 import kotlin.math.ln
 
@@ -12,36 +13,8 @@ internal fun JellyfinMediaEntity.matchesFormat(format: MediaFormat): Boolean = w
     MediaFormat.SERIES -> type.equals("Series", ignoreCase = true)
 }
 
-internal fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String): MediaItem {
-    val posterUrl = if (!primaryImageTag.isNullOrEmpty() && baseUrl.isNotBlank()) {
-        val cleanBase = baseUrl.trimEnd('/')
-        "$cleanBase/Items/$id/Images/Primary?quality=90&fillWidth=400&fillHeight=600"
-    } else null
-
-    val backdropUrl = if (!backdropImageTag.isNullOrEmpty() && baseUrl.isNotBlank()) {
-        val cleanBase = baseUrl.trimEnd('/')
-        "$cleanBase/Items/$id/Images/Backdrop/0?quality=90&maxWidth=1920"
-    } else posterUrl
-
-    return MediaItem(
-        id = id,
-        title = title,
-        overview = overview,
-        type = type,
-        posterUrl = posterUrl,
-        backdropUrl = backdropUrl,
-        rating = communityRating,
-        year = productionYear,
-        source = MediaSource.JELLYFIN,
-        playbackPositionTicks = playbackPositionTicks,
-        isPlayed = isPlayed,
-        isFavorite = isFavorite,
-        totalEpisodes = totalItemCount,
-        playedEpisodes = if (unplayedItemCount != null && totalItemCount != null) {
-            (totalItemCount - unplayedItemCount).coerceAtLeast(0)
-        } else null
-    )
-}
+internal fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String): MediaItem =
+    toOptimizedMediaItem(baseUrl, token, MediaSource.JELLYFIN)
 
 /**
  * Modelo de datos para cada cápsula / celda del Muro Mosaico de Medusa.

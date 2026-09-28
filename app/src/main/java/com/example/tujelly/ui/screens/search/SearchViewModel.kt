@@ -11,6 +11,7 @@ import com.example.tujelly.data.repository.MediaRepository
 import com.example.tujelly.domain.model.HomeSection
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
+import com.example.tujelly.util.toOptimizedMediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,7 +43,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private val userPreferencesRepository = UserPreferencesRepository(application)
     private val database = com.example.tujelly.data.local.db.AppDatabase.getDatabase(application)
-    private val mediaRepository = MediaRepository(database.jellyfinDao())
+    private val mediaRepository = MediaRepository(database.jellyfinDao(), userPreferencesRepository, database.tmdbVoteCacheDao())
 
     val accentColor: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
         .map { it.accentColor }
@@ -275,36 +276,6 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String): MediaItem {
-        val authParam = if (token.isNotBlank()) "api_key=$token" else ""
-        val tagParam = if (!primaryImageTag.isNullOrEmpty()) "&tag=$primaryImageTag" else ""
-        val posterUrl = "$baseUrl/Items/$id/Images/Primary?$authParam$tagParam"
-
-        val backdropTagParam = if (!backdropImageTag.isNullOrEmpty()) "&tag=$backdropImageTag" else ""
-        val backdropUrl = "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
-
-        val effectiveLogoId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
-        val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/$effectiveLogoId/Images/Logo?$authParam" else null
-
-        val total = totalItemCount
-        val unplayed = unplayedItemCount
-        val played = if (total != null && unplayed != null) (total - unplayed).coerceAtLeast(0) else null
-
-        return MediaItem(
-            id = id,
-            title = title,
-            overview = overview,
-            type = type,
-            posterUrl = posterUrl,
-            backdropUrl = backdropUrl,
-            logoUrl = logoUrl,
-            rating = communityRating,
-            year = productionYear,
-            source = MediaSource.JELLYFIN,
-            playbackPositionTicks = playbackPositionTicks,
-            isPlayed = isPlayed,
-            isFavorite = isFavorite,
-            totalEpisodes = total,
-            playedEpisodes = played
-        )
+        return toOptimizedMediaItem(baseUrl, token, MediaSource.JELLYFIN)
     }
 }

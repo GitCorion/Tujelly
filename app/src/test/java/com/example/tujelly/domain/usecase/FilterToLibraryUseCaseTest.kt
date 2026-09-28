@@ -141,6 +141,14 @@ class FakeJellyfinDao : JellyfinDao {
         }
     }
 
+    override suspend fun getAllCatalog(): List<JellyfinMediaEntity> {
+        return localDb.filter { it.type in listOf("Movie", "Series") }
+    }
+
+    override suspend fun getContinueWatchingLocal(limit: Int): List<JellyfinMediaEntity> {
+        return localDb.filter { it.playbackPositionTicks > 0L && !it.isPlayed }.take(limit)
+    }
+
     override suspend fun clearAll() {
         localDb.clear()
     }

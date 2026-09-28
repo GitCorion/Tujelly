@@ -12,7 +12,9 @@ import com.example.tujelly.domain.model.HomeSection
 import com.example.tujelly.domain.model.MediaItem
 import com.example.tujelly.domain.model.MediaSource
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
+import com.example.tujelly.util.toOptimizedMediaItem
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -53,7 +55,11 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
 
     private val userPreferencesRepository = UserPreferencesRepository(application)
     private val database = com.example.tujelly.data.local.db.AppDatabase.getDatabase(application)
-    private val mediaRepository = com.example.tujelly.data.repository.MediaRepository(database.jellyfinDao())
+    private val mediaRepository = com.example.tujelly.data.repository.MediaRepository(
+        database.jellyfinDao(),
+        userPreferencesRepository,
+        database.tmdbVoteCacheDao()
+    )
     private val filterToLibraryUseCase = FilterToLibraryUseCase(mediaRepository)
 
     val accentColor: StateFlow<String> = userPreferencesRepository.userPreferencesFlow
@@ -147,12 +153,19 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 supervisorScope {
                     val trendingDeferred = async {
-                        val trendingMovies = runCatching {
-                            api.discoverMoviesByProvider(apiKey = effectiveApiKey, providerId = brand.providerId, watchRegion = effectiveRegion, page = 1)
-                        }.getOrNull()?.results ?: emptyList()
-                        val trendingTv = runCatching {
-                            api.discoverTvByProvider(apiKey = effectiveApiKey, providerId = brand.providerId, watchRegion = effectiveRegion, page = 1)
-                        }.getOrNull()?.results ?: emptyList()
+                        val (trendingMovies, trendingTv) = coroutineScope {
+                            val m = async {
+                                runCatching {
+                                    api.discoverMoviesByProvider(apiKey = effectiveApiKey, providerId = brand.providerId, watchRegion = effectiveRegion, page = 1)
+                                }.getOrNull()?.results ?: emptyList()
+                            }
+                            val t = async {
+                                runCatching {
+                                    api.discoverTvByProvider(apiKey = effectiveApiKey, providerId = brand.providerId, watchRegion = effectiveRegion, page = 1)
+                                }.getOrNull()?.results ?: emptyList()
+                            }
+                            Pair(m.await(), t.await())
+                        }
                         val combined = (trendingMovies + trendingTv).take(30)
 
                         val localMatched = filterToLibraryUseCase.filterTmdbItems(
@@ -292,58 +305,6 @@ class BrandViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun com.example.tujelly.data.local.db.JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem {
-        val authParam = if (token.isNotBlank()) "api_key=$token" else ""
-
-        val posterUrl = when {
-            primaryImageTag?.startsWith("tmdb:") == true -> {
-                "https://image.tmdb.org/t/p/w500${primaryImageTag.removePrefix("tmdb:")}"
-            }
-            !primaryImageTag.isNullOrEmpty() -> {
-                val tagParam = "&tag=$primaryImageTag"
-                "$baseUrl/Items/$id/Images/Primary?$authParam$tagParam"
-            }
-            else -> {
-                "$baseUrl/Items/$id/Images/Primary?$authParam"
-            }
-        }
-
-        val backdropUrl = when {
-            backdropImageTag?.startsWith("tmdb:") == true -> {
-                "https://image.tmdb.org/t/p/w1280${backdropImageTag.removePrefix("tmdb:")}"
-            }
-            !backdropImageTag.isNullOrEmpty() -> {
-                val backdropTagParam = "&tag=$backdropImageTag"
-                "$baseUrl/Items/$id/Images/Backdrop/0?$authParam$backdropTagParam"
-            }
-            else -> {
-                "$baseUrl/Items/$id/Images/Backdrop/0?$authParam"
-            }
-        }
-
-        val effectiveLogoId = if (type.equals("Episode", ignoreCase = true) && !seriesId.isNullOrEmpty()) seriesId else id
-        val logoUrl = if (baseUrl.isNotBlank()) "$baseUrl/Items/$effectiveLogoId/Images/Logo?$authParam" else null
-
-        val total = totalItemCount
-        val unplayed = unplayedItemCount
-        val played = if (total != null && unplayed != null) (total - unplayed).coerceAtLeast(0) else null
-
-        return MediaItem(
-            id = id,
-            title = title,
-            overview = overview,
-            type = type,
-            posterUrl = posterUrl,
-            backdropUrl = backdropUrl,
-            logoUrl = logoUrl,
-            rating = communityRating,
-            year = productionYear,
-            source = source,
-            playbackPositionTicks = playbackPositionTicks,
-            isPlayed = isPlayed,
-            isFavorite = isFavorite,
-            totalEpisodes = total,
-            playedEpisodes = played
-        )
-    }
+    private fun com.example.tujelly.data.local.db.JellyfinMediaEntity.toMediaItem(baseUrl: String, token: String, source: MediaSource): MediaItem =
+        toOptimizedMediaItem(baseUrl, token, source)
 }

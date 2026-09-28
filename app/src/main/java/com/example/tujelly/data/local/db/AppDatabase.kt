@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [JellyfinMediaEntity::class, TmdbVoteCacheEntity::class],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,6 +52,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_jellyfin_media_type_communityRating ON jellyfin_media (type, communityRating)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_jellyfin_media_seriesId_type ON jellyfin_media (seriesId, type)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_jellyfin_media_playbackPositionTicks ON jellyfin_media (playbackPositionTicks)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_jellyfin_media_productionYear ON jellyfin_media (productionYear)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -59,7 +68,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tujelly_database"
                 )
-                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_8_9, MIGRATION_9_10)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

@@ -71,9 +71,22 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalTvMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        pendingPlayItemId = intent?.getStringExtra("playItemId")
+        com.example.tujelly.data.remote.NetworkClientFactory.initCache(applicationContext)
+
         val imageLoader = coil.ImageLoader.Builder(this)
             .okHttpClient { com.example.tujelly.data.remote.NetworkClientFactory.okHttpClient }
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(250L * 1024 * 1024)
+                    .build()
+            }
+            .respectCacheHeaders(false)
             .crossfade(true)
             .build()
         coil.Coil.setImageLoader(imageLoader)

@@ -67,16 +67,21 @@ fun EpisodeCard(
             indicatorTheme == com.example.tujelly.data.local.INDICATOR_THEME_MONOCHROME
     val activeGlowColor = if (isMonochrome) Color.White else focusBorderColor
 
-    val infiniteTransition = rememberInfiniteTransition(label = "EpisodeCardGlow")
-    val pulseGlow by infiniteTransition.animateFloat(
-        initialValue = 0.50f,
-        targetValue = 0.90f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "episodePulseGlow"
-    )
+    val pulseGlow = if (isFocused) {
+        val infiniteTransition = rememberInfiniteTransition(label = "EpisodeCardGlow")
+        val animatedGlow by infiniteTransition.animateFloat(
+            initialValue = 0.50f,
+            targetValue = 0.90f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "episodePulseGlow"
+        )
+        animatedGlow
+    } else {
+        0.50f
+    }
 
     Box(
         modifier = modifier
