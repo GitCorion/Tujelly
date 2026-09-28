@@ -96,7 +96,8 @@ class MediaRepository(
         val ctx = userPreferencesRepository?.context ?: return null
         val file = java.io.File(ctx.filesDir, "allowed_ids_$userId.txt")
         if (file.exists()) {
-            cachedAllowedIds = file.readLines().toSet()
+            val lines = file.readLines().toSet()
+            cachedAllowedIds = lines
             cachedAllowedUserId = userId
             return cachedAllowedIds
         }
@@ -107,9 +108,8 @@ class MediaRepository(
         val ctx = userPreferencesRepository?.context ?: return
         val file = java.io.File(ctx.filesDir, "allowed_ids_$userId.txt")
         file.writeText(ids.joinToString("\n"))
-        if (cachedAllowedUserId == userId) {
-            cachedAllowedIds = ids
-        }
+        cachedAllowedIds = ids
+        cachedAllowedUserId = userId
     }
 
     private suspend fun List<JellyfinMediaEntity>.filterAllowed(): List<JellyfinMediaEntity> {
@@ -372,10 +372,10 @@ class MediaRepository(
                         val allAllowedResponse = api.getLibraryItems(
                             authHeader = authHeader,
                             userId = userId,
-                            includeItemTypes = "Movie,Series,Episode",
+                            includeItemTypes = "Movie,Series",
                             recursive = true,
                             fields = "",
-                            limit = 200000
+                            limit = 60000
                         )
                         val allowedIds = allAllowedResponse.items.map { it.id }.toSet()
                         if (allowedIds.isNotEmpty()) {

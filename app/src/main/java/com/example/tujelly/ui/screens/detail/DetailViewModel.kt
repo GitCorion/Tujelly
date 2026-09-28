@@ -15,6 +15,7 @@ import com.example.tujelly.domain.model.SeriesStatus
 import com.example.tujelly.domain.usecase.FilterToLibraryUseCase
 import com.example.tujelly.util.JellyfinImageUtils
 import com.example.tujelly.util.toOptimizedMediaItem
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -67,69 +68,27 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
 
     fun loadDetail(itemId: String) {
         viewModelScope.launch {
-            _uiState.value = DetailUiState.Loading
             try {
                 val prefs = userPreferencesRepository.userPreferencesFlow.first()
+                val baseUrl = prefs.jellyfinServerUrl
+                val token = prefs.jellyfinAccessToken
                 val local = database.jellyfinDao().getItemById(itemId)
-                val entity = if (local != null && !local.overview.isNullOrBlank()) {
-                    local
-                } else {
-                    mediaRepository.getItemDetail(
-                        serverUrl = prefs.jellyfinServerUrl,
-                        userId = prefs.jellyfinUserId,
-                        token = prefs.jellyfinAccessToken,
-                        itemId = itemId
-                    ).getOrNull() ?: local
-                }
 
-                if (entity != null) {
-                    val isTv = entity.type.equals("Series", ignoreCase = true) || entity.type.equals("Episode", ignoreCase = true)
-                    val tmdbLong = entity.tmdbId?.toLongOrNull()
-
-                    // Try fetching overview from TMDB if local overview is missing
-                    var finalEntity = entity
-                    if (finalEntity.overview.isNullOrBlank() && tmdbLong != null && prefs.tmdbApiKey.isNotBlank()) {
-                        try {
-                            val tmdbApi = com.example.tujelly.data.remote.NetworkClientFactory.createService("https://api.themoviedb.org/3/", com.example.tujelly.data.remote.tmdb.TmdbApiService::class.java)
-                            val tmdbOverview: String? = if (isTv) {
-                                runCatching { tmdbApi.getTvDetails(tmdbLong, prefs.tmdbApiKey).overview }.getOrNull()
-                            } else {
-                                runCatching { tmdbApi.getMovieDetails(tmdbLong, prefs.tmdbApiKey).overview }.getOrNull()
-                            }
-                            if (!tmdbOverview.isNullOrBlank()) {
-                                finalEntity = finalEntity.copy(overview = tmdbOverview)
-                                database.jellyfinDao().insertOrUpdate(finalEntity)
-                            }
-                        } catch (_: Exception) {}
-                    }
-
-                    val baseUrl = prefs.jellyfinServerUrl
-                    val token = prefs.jellyfinAccessToken
-                    val posterUrl = JellyfinImageUtils.getPosterUrl(
-                        baseUrl = baseUrl,
-                        itemId = finalEntity.id,
-                        imageTag = finalEntity.primaryImageTag,
-                        token = token
-                    )
+                // 1. Si está en BD local, pintar de INMEDIATO (0 ms) sin pantalla de carga
+                var initialEntity = local
+                if (initialEntity != null) {
                     var backdropUrl = JellyfinImageUtils.getDetailBackdropUrl(
                         baseUrl = baseUrl,
-                        itemId = finalEntity.id,
-                        imageTag = finalEntity.backdropImageTag,
+                        itemId = initialEntity.id,
+                        imageTag = initialEntity.backdropImageTag,
                         token = token
                     )
-                    val logoUrl = JellyfinImageUtils.getLogoUrl(
-                        baseUrl = baseUrl,
-                        itemId = finalEntity.id,
-                        token = token
-                    )
-
-                    // If viewing an episode, resolve seriesName and parent backdrop if needed
-                    val currentSeriesId = finalEntity.seriesId
-                    if (finalEntity.type.equals("Episode", ignoreCase = true) && !currentSeriesId.isNullOrBlank()) {
-                        val parentSeries = database.jellyfinDao().getItemById(currentSeriesId)
+                    // Si es episodio, resolver serie y backdrop del padre
+                    if (initialEntity.type.equals("Episode", ignoreCase = true) && !initialEntity.seriesId.isNullOrBlank()) {
+                        val parentSeries = database.jellyfinDao().getItemById(initialEntity.seriesId)
                         if (parentSeries != null) {
-                            if (finalEntity.seriesName.isNullOrBlank()) {
-                                finalEntity = finalEntity.copy(seriesName = parentSeries.title)
+                            if (initialEntity.seriesName.isNullOrBlank()) {
+                                initialEntity = initialEntity.copy(seriesName = parentSeries.title)
                             }
                             if (backdropUrl == null && !parentSeries.backdropImageTag.isNullOrBlank()) {
                                 backdropUrl = JellyfinImageUtils.getDetailBackdropUrl(
@@ -142,114 +101,223 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                         }
                     }
 
-                    val trailerUrl = if (tmdbLong != null && prefs.tmdbApiKey.isNotBlank()) {
-                        mediaRepository.getTmdbTrailerUrl(prefs.tmdbApiKey, tmdbLong, isTv = isTv)
-                    } else null
+                    val posterUrl = JellyfinImageUtils.getPosterUrl(
+                        baseUrl = baseUrl,
+                        itemId = initialEntity.id,
+                        imageTag = initialEntity.primaryImageTag,
+                        token = token
+                    )
+                    val logoUrl = JellyfinImageUtils.getLogoUrl(
+                        baseUrl = baseUrl,
+                        itemId = initialEntity.id,
+                        token = token
+                    )
+                    val isTv = initialEntity.type.equals("Series", ignoreCase = true) || initialEntity.type.equals("Episode", ignoreCase = true)
 
-                    var seriesStatus: SeriesStatus? = null
-                    var seasons: List<SeasonItem> = emptyList()
-                    var episodes: List<EpisodeItem> = emptyList()
-                    var selectedSeasonId: String? = null
-                    var nextUpEpisode: EpisodeItem? = null
+                    _uiState.value = DetailUiState.Success(
+                        entity = initialEntity,
+                        posterUrl = posterUrl,
+                        backdropUrl = backdropUrl,
+                        logoUrl = logoUrl,
+                        baseUrl = baseUrl,
+                        isFavorite = initialEntity.isFavorite,
+                        isPlayed = initialEntity.isPlayed || (initialEntity.unplayedItemCount == 0 && (initialEntity.totalItemCount ?: 0) > 0),
+                        buttonStyle = prefs.buttonStyle,
+                        accentColor = prefs.accentColor,
+                        isLoadingEpisodes = isTv
+                    )
+                } else {
+                    _uiState.value = DetailUiState.Loading
+                }
 
-                    if (isTv && finalEntity.type.equals("Series", ignoreCase = true)) {
-                        // 1. Determine series status (Ended, Continuing, Canceled)
-                        seriesStatus = mediaRepository.getSeriesStatus(
-                            tmdbApiKey = prefs.tmdbApiKey,
-                            tmdbId = tmdbLong,
-                            jellyfinStatus = null
+                // 2. Resolver entidad completa si no estaba en local o si falta overview
+                val entity = if (initialEntity != null && !initialEntity.overview.isNullOrBlank()) {
+                    initialEntity
+                } else {
+                    val remote = mediaRepository.getItemDetail(
+                        serverUrl = baseUrl,
+                        userId = prefs.jellyfinUserId,
+                        token = token,
+                        itemId = itemId
+                    ).getOrNull()
+                    remote ?: initialEntity
+                }
+
+                if (entity == null) {
+                    _uiState.value = DetailUiState.Error("Elemento no encontrado en tu biblioteca")
+                    return@launch
+                }
+
+                var finalEntity = entity
+                val isTv = finalEntity.type.equals("Series", ignoreCase = true) || finalEntity.type.equals("Episode", ignoreCase = true)
+                val tmdbLong = finalEntity.tmdbId?.toLongOrNull()
+
+                // Si aún falta overview, intentar TMDB en segundo plano
+                if (finalEntity.overview.isNullOrBlank() && tmdbLong != null && prefs.tmdbApiKey.isNotBlank()) {
+                    try {
+                        val tmdbApi = com.example.tujelly.data.remote.NetworkClientFactory.createService(
+                            "https://api.themoviedb.org/3/",
+                            com.example.tujelly.data.remote.tmdb.TmdbApiService::class.java
                         )
-
-                        // 2. Fetch Seasons
-                        seasons = mediaRepository.getSeasons(
-                            serverUrl = baseUrl,
-                            userId = prefs.jellyfinUserId,
-                            token = token,
-                            seriesId = finalEntity.id
-                        )
-
-                        // 3. Fetch Next Up or first episode
-                        nextUpEpisode = mediaRepository.getNextUpEpisode(
-                            serverUrl = baseUrl,
-                            userId = prefs.jellyfinUserId,
-                            token = token,
-                            seriesId = finalEntity.id
-                        )
-
-                        // 4. Default to nextUp's season or the first regular season (seasonNumber >= 1)
-                        selectedSeasonId = if (nextUpEpisode != null) {
-                            seasons.firstOrNull { it.seasonNumber == nextUpEpisode.seasonNumber }?.id
-                        } else null
-
-                        if (selectedSeasonId == null) {
-                            selectedSeasonId = seasons.firstOrNull { it.seasonNumber >= 1 }?.id
-                                ?: seasons.firstOrNull()?.id
+                        val tmdbOverview: String? = if (isTv) {
+                            runCatching { tmdbApi.getTvDetails(tmdbLong, prefs.tmdbApiKey).overview }.getOrNull()
+                        } else {
+                            runCatching { tmdbApi.getMovieDetails(tmdbLong, prefs.tmdbApiKey).overview }.getOrNull()
                         }
-
-                        // 5. Fetch episodes for selected season
-                        episodes = mediaRepository.getEpisodes(
-                            serverUrl = baseUrl,
-                            userId = prefs.jellyfinUserId,
-                            token = token,
-                            seriesId = finalEntity.id,
-                            seasonId = selectedSeasonId
-                        )
-
-                        if (nextUpEpisode == null && episodes.isNotEmpty()) {
-                            nextUpEpisode = episodes.firstOrNull()
+                        if (!tmdbOverview.isNullOrBlank()) {
+                            finalEntity = finalEntity.copy(overview = tmdbOverview)
+                            database.jellyfinDao().insertOrUpdate(finalEntity)
                         }
+                    } catch (_: Exception) {}
+                }
 
-                        // 6. Accurate episode stats (deduplicates multi-sources, versions, strm files)
-                        val episodeStats = mediaRepository.getSeriesEpisodeStats(
-                            serverUrl = baseUrl,
-                            userId = prefs.jellyfinUserId,
-                            token = token,
-                            seriesId = finalEntity.id
-                        )
-                        if (episodeStats != null) {
-                            finalEntity = finalEntity.copy(
-                                totalItemCount = episodeStats.totalUniqueEpisodes,
-                                unplayedItemCount = episodeStats.unplayedUniqueEpisodes,
-                                isPlayed = episodeStats.unplayedUniqueEpisodes == 0 && episodeStats.totalUniqueEpisodes > 0
-                            )
+                // Si no teníamos estado previo (caso local == null) o si finalEntity tiene nuevos datos (overview, etc)
+                val posterUrl = JellyfinImageUtils.getPosterUrl(
+                    baseUrl = baseUrl,
+                    itemId = finalEntity.id,
+                    imageTag = finalEntity.primaryImageTag,
+                    token = token
+                )
+                var backdropUrl = JellyfinImageUtils.getDetailBackdropUrl(
+                    baseUrl = baseUrl,
+                    itemId = finalEntity.id,
+                    imageTag = finalEntity.backdropImageTag,
+                    token = token
+                )
+                if (finalEntity.type.equals("Episode", ignoreCase = true) && !finalEntity.seriesId.isNullOrBlank()) {
+                    val parentSeries = database.jellyfinDao().getItemById(finalEntity.seriesId)
+                    if (parentSeries != null) {
+                        if (finalEntity.seriesName.isNullOrBlank()) {
+                            finalEntity = finalEntity.copy(seriesName = parentSeries.title)
                         }
-                    } else if (isTv && finalEntity.type.equals("Episode", ignoreCase = true) && !finalEntity.seriesId.isNullOrBlank()) {
-                        val sId = finalEntity.seriesId!!
-                        seasons = mediaRepository.getSeasons(
-                            serverUrl = baseUrl,
-                            userId = prefs.jellyfinUserId,
-                            token = token,
-                            seriesId = sId
-                        )
-                        val epSeasonNum = finalEntity.seasonNumber ?: 1
-                        selectedSeasonId = seasons.firstOrNull { it.seasonNumber == epSeasonNum }?.id ?: seasons.firstOrNull()?.id
-                        if (selectedSeasonId != null) {
-                            episodes = mediaRepository.getEpisodes(
-                                serverUrl = baseUrl,
-                                userId = prefs.jellyfinUserId,
-                                token = token,
-                                seriesId = sId,
-                                seasonId = selectedSeasonId
+                        if (backdropUrl == null && !parentSeries.backdropImageTag.isNullOrBlank()) {
+                            backdropUrl = JellyfinImageUtils.getDetailBackdropUrl(
+                                baseUrl = baseUrl,
+                                itemId = parentSeries.id,
+                                imageTag = parentSeries.backdropImageTag,
+                                token = token
                             )
                         }
                     }
+                }
+                val logoUrl = JellyfinImageUtils.getLogoUrl(
+                    baseUrl = baseUrl,
+                    itemId = finalEntity.id,
+                    token = token
+                )
 
-                    // Fetch recommendations and genre items
-                    var similarItems: List<MediaItem> = emptyList()
-                    var genreItems: List<MediaItem> = emptyList()
-                    var primaryGenreName: String? = null
+                // Actualizar UI con la entidad enriquecida
+                (_uiState.value as? DetailUiState.Success)?.let { curr ->
+                    _uiState.value = curr.copy(
+                        entity = finalEntity,
+                        posterUrl = posterUrl,
+                        backdropUrl = backdropUrl,
+                        logoUrl = logoUrl
+                    )
+                } ?: run {
+                    _uiState.value = DetailUiState.Success(
+                        entity = finalEntity,
+                        posterUrl = posterUrl,
+                        backdropUrl = backdropUrl,
+                        logoUrl = logoUrl,
+                        baseUrl = baseUrl,
+                        isFavorite = finalEntity.isFavorite,
+                        isPlayed = finalEntity.isPlayed || (finalEntity.unplayedItemCount == 0 && (finalEntity.totalItemCount ?: 0) > 0),
+                        buttonStyle = prefs.buttonStyle,
+                        accentColor = prefs.accentColor,
+                        isLoadingEpisodes = isTv
+                    )
+                }
 
+                // 3. Cargar en paralelo sin bloquear la pantalla: Trailer, Series/Episodios, Recomendaciones, Colecciones
+                // Trailer
+                if (tmdbLong != null && prefs.tmdbApiKey.isNotBlank()) {
+                    launch {
+                        val trailer = mediaRepository.getTmdbTrailerUrl(prefs.tmdbApiKey, tmdbLong, isTv = isTv)
+                        if (trailer != null) {
+                            (_uiState.value as? DetailUiState.Success)?.let { curr ->
+                                _uiState.value = curr.copy(trailerUrl = trailer)
+                            }
+                        }
+                    }
+                }
+
+                // Series / Temporadas / Episodios
+                if (isTv && finalEntity.type.equals("Series", ignoreCase = true)) {
+                    launch {
+                        val statusDeferred = async {
+                            mediaRepository.getSeriesStatus(prefs.tmdbApiKey, tmdbLong, null)
+                        }
+                        val seasonsDeferred = async {
+                            mediaRepository.getSeasons(baseUrl, prefs.jellyfinUserId, token, finalEntity.id)
+                        }
+                        val nextUpDeferred = async {
+                            mediaRepository.getNextUpEpisode(baseUrl, prefs.jellyfinUserId, token, finalEntity.id)
+                        }
+                        val episodeStatsDeferred = async {
+                            mediaRepository.getSeriesEpisodeStats(baseUrl, prefs.jellyfinUserId, token, finalEntity.id)
+                        }
+
+                        val seasons = seasonsDeferred.await()
+                        val nextUp = nextUpDeferred.await()
+                        val selectedSeasonId = if (nextUp != null) {
+                            seasons.firstOrNull { it.seasonNumber == nextUp.seasonNumber }?.id
+                        } else null ?: (seasons.firstOrNull { it.seasonNumber >= 1 }?.id ?: seasons.firstOrNull()?.id)
+
+                        val episodes = if (selectedSeasonId != null) {
+                            mediaRepository.getEpisodes(baseUrl, prefs.jellyfinUserId, token, finalEntity.id, selectedSeasonId)
+                        } else emptyList()
+                        val nextUpEpisode = nextUp ?: episodes.firstOrNull()
+                        val episodeStats = episodeStatsDeferred.await()
+                        val seriesStatus = statusDeferred.await()
+
+                        (_uiState.value as? DetailUiState.Success)?.let { curr ->
+                            val updatedEntity = if (episodeStats != null) {
+                                curr.entity.copy(
+                                    totalItemCount = episodeStats.totalUniqueEpisodes,
+                                    unplayedItemCount = episodeStats.unplayedUniqueEpisodes,
+                                    isPlayed = episodeStats.unplayedUniqueEpisodes == 0 && episodeStats.totalUniqueEpisodes > 0
+                                )
+                            } else curr.entity
+                            _uiState.value = curr.copy(
+                                entity = updatedEntity,
+                                seriesStatus = seriesStatus,
+                                seasons = seasons,
+                                episodes = episodes,
+                                selectedSeasonId = selectedSeasonId,
+                                nextUpEpisode = nextUpEpisode,
+                                isLoadingEpisodes = false,
+                                isPlayed = updatedEntity.isPlayed || (updatedEntity.unplayedItemCount == 0 && (updatedEntity.totalItemCount ?: 0) > 0)
+                            )
+                        }
+                    }
+                } else if (isTv && finalEntity.type.equals("Episode", ignoreCase = true) && !finalEntity.seriesId.isNullOrBlank()) {
+                    launch {
+                        val sId = finalEntity.seriesId
+                        val seasons = mediaRepository.getSeasons(baseUrl, prefs.jellyfinUserId, token, sId)
+                        val epSeasonNum = finalEntity.seasonNumber ?: 1
+                        val selectedSeasonId = seasons.firstOrNull { it.seasonNumber == epSeasonNum }?.id ?: seasons.firstOrNull()?.id
+                        val episodes = if (selectedSeasonId != null) {
+                            mediaRepository.getEpisodes(baseUrl, prefs.jellyfinUserId, token, sId, selectedSeasonId)
+                        } else emptyList()
+                        (_uiState.value as? DetailUiState.Success)?.let { curr ->
+                            _uiState.value = curr.copy(
+                                seasons = seasons,
+                                episodes = episodes,
+                                selectedSeasonId = selectedSeasonId,
+                                isLoadingEpisodes = false
+                            )
+                        }
+                    }
+                }
+
+                // Recomendaciones y género
+                launch {
                     try {
                         val filterToLibraryUseCase = FilterToLibraryUseCase(mediaRepository)
-
-                        // 1. Similar / Recommended titles
+                        var similarItems: List<MediaItem> = emptyList()
                         if (tmdbLong != null && prefs.tmdbApiKey.isNotBlank()) {
-                            val tmdbRecs = mediaRepository.getTmdbRecommendations(
-                                apiKey = prefs.tmdbApiKey,
-                                tmdbId = tmdbLong,
-                                isTv = isTv
-                            ).getOrDefault(emptyList())
-
+                            val tmdbRecs = mediaRepository.getTmdbRecommendations(prefs.tmdbApiKey, tmdbLong, isTv).getOrDefault(emptyList())
                             if (tmdbRecs.isNotEmpty()) {
                                 val matchedRecs = filterToLibraryUseCase.filterTmdbItems(
                                     tmdbItems = tmdbRecs,
@@ -258,17 +326,15 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                                     token = token,
                                     maxCandidates = 30
                                 ).filter { it.id != finalEntity.id }
-
                                 similarItems = matchedRecs.take(15).map {
                                     it.toMediaItem(baseUrl, token, MediaSource.TMDB_RECOMMENDATION)
                                 }
                             }
                         }
 
-                        // 2. Same Genre titles
                         val firstGenre = finalEntity.genres?.split(",", ";")?.firstOrNull()?.trim()
+                        var genreItems: List<MediaItem> = emptyList()
                         if (!firstGenre.isNullOrBlank()) {
-                            primaryGenreName = firstGenre
                             val sameGenreEntities = mediaRepository.getItemsByGenre(firstGenre)
                                 .filter { candidate ->
                                     candidate.id != finalEntity.id &&
@@ -276,21 +342,30 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                                             (!candidate.backdropImageTag.isNullOrEmpty() || !candidate.overview.isNullOrBlank())
                                 }
                                 .take(15)
-
                             genreItems = sameGenreEntities.map {
                                 it.toMediaItem(baseUrl, token, MediaSource.JELLYFIN)
                             }
                         }
+
+                        (_uiState.value as? DetailUiState.Success)?.let { curr ->
+                            _uiState.value = curr.copy(
+                                similarItems = similarItems,
+                                genreItems = genreItems,
+                                genreName = firstGenre
+                            )
+                        }
                     } catch (_: Exception) {}
+                }
 
-                    val isCollection = finalEntity.type.equals("BoxSet", ignoreCase = true) ||
-                            finalEntity.type.equals("CollectionFolder", ignoreCase = true) ||
-                            finalEntity.type.equals("Playlist", ignoreCase = true) ||
-                            finalEntity.title.contains("Colección", ignoreCase = true) ||
-                            finalEntity.title.contains("Collection", ignoreCase = true)
+                // Colecciones / BoxSets
+                val isCollection = finalEntity.type.equals("BoxSet", ignoreCase = true) ||
+                        finalEntity.type.equals("CollectionFolder", ignoreCase = true) ||
+                        finalEntity.type.equals("Playlist", ignoreCase = true) ||
+                        finalEntity.title.contains("Colección", ignoreCase = true) ||
+                        finalEntity.title.contains("Collection", ignoreCase = true)
 
-                    var collectionItems: List<MediaItem> = emptyList()
-                    if (isCollection) {
+                if (isCollection) {
+                    launch {
                         var colEntities = mediaRepository.getCollectionItems(baseUrl, prefs.jellyfinUserId, token, finalEntity.id)
                         if (colEntities.isEmpty()) {
                             val cleanName = finalEntity.title
@@ -303,36 +378,20 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                                     .filter { it.id != finalEntity.id && !it.type.equals("BoxSet", ignoreCase = true) }
                             }
                         }
-                        collectionItems = colEntities.map { it.toMediaItem(baseUrl, token, MediaSource.JELLYFIN) }
+                        val collectionItems = colEntities.map { it.toMediaItem(baseUrl, token, MediaSource.JELLYFIN) }
+                        (_uiState.value as? DetailUiState.Success)?.let { curr ->
+                            _uiState.value = curr.copy(
+                                collectionItems = collectionItems,
+                                isCollection = true
+                            )
+                        }
                     }
-
-                    _uiState.value = DetailUiState.Success(
-                        entity = finalEntity,
-                        posterUrl = posterUrl,
-                        backdropUrl = backdropUrl,
-                        logoUrl = logoUrl,
-                        trailerUrl = trailerUrl,
-                        baseUrl = baseUrl,
-                        isFavorite = finalEntity.isFavorite,
-                        isPlayed = finalEntity.isPlayed || (finalEntity.unplayedItemCount == 0 && (finalEntity.totalItemCount ?: 0) > 0),
-                        buttonStyle = prefs.buttonStyle,
-                        accentColor = prefs.accentColor,
-                        seriesStatus = seriesStatus,
-                        seasons = seasons,
-                        episodes = episodes,
-                        selectedSeasonId = selectedSeasonId,
-                        nextUpEpisode = nextUpEpisode,
-                        similarItems = similarItems,
-                        genreItems = genreItems,
-                        genreName = primaryGenreName,
-                        collectionItems = collectionItems,
-                        isCollection = isCollection
-                    )
-                } else {
-                    _uiState.value = DetailUiState.Error("Elemento no encontrado en tu biblioteca")
                 }
+
             } catch (e: Exception) {
-                _uiState.value = DetailUiState.Error(e.localizedMessage ?: "Error al cargar el contenido")
+                if (_uiState.value !is DetailUiState.Success) {
+                    _uiState.value = DetailUiState.Error(e.localizedMessage ?: "Error al cargar el contenido")
+                }
             }
         }
     }
