@@ -338,12 +338,17 @@ class MediaRepository(
                 val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
                 val authHeader = buildJellyfinAuthHeader(token = token)
 
+                val currentLocal = getLocalCount()
+
                 val effectiveLastSync = if (forceFullSync) null else {
                     lastSyncTimestamp?.ifBlank { null }
                         ?: userPreferencesRepository?.userPreferencesFlow?.firstOrNull()?.jellyfinLastSync?.ifBlank { null }
+                        ?: if (currentLocal >= 500) {
+                            val now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()
+                            userPreferencesRepository?.updateJellyfinLastSync(now)
+                            now
+                        } else null
                 }
-
-                val currentLocal = getLocalCount()
 
                 // 1. Prioridad: refrescar de inmediato los elementos de portada (< 500ms)
                 syncQuickInit(serverUrl, userId, token)
