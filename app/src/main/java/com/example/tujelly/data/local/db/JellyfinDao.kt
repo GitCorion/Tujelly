@@ -128,6 +128,12 @@ interface JellyfinDao {
 
     @Query("SELECT id, overview, backdropImageTag FROM jellyfin_media WHERE overview IS NOT NULL")
     suspend fun getCachedOverviews(): List<CachedOverviewDto>
+
+    @Query("SELECT id FROM jellyfin_media WHERE overview IS NULL OR overview = '' LIMIT :limit")
+    suspend fun getIdsMissingOverview(limit: Int = 50): List<String>
+
+    @Query("UPDATE jellyfin_media SET overview = :overview WHERE id = :id AND (overview IS NULL OR overview = '')")
+    suspend fun updateOverview(id: String, overview: String)
 }
 
 data class CachedOverviewDto(

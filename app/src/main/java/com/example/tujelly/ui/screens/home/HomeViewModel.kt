@@ -136,6 +136,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 token = prefs.jellyfinAccessToken,
                 lastSyncTimestamp = prefs.jellyfinLastSync
             )
+            mediaRepository.startBackgroundOverviewEnrichment(
+                serverUrl = prefs.jellyfinServerUrl,
+                userId = prefs.jellyfinUserId,
+                token = prefs.jellyfinAccessToken
+            )
         }
         viewModelScope.launch {
             try {

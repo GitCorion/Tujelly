@@ -48,6 +48,7 @@ interface JellyfinApiService {
         @Header("Authorization") authHeader: String,
         @Query("UserId") userId: String,
         @Query("ParentId") parentId: String? = null,
+        @Query("Ids") ids: String? = null,
         @Query("IncludeItemTypes") includeItemTypes: String? = "Movie,Series,BoxSet",
         @Query("Fields") fields: String? = "ProviderIds,PrimaryImageTag,BackdropImageTags,CommunityRating,OfficialRating,Genres,UserData,ItemCounts,RecursiveItemCount",
         @Query("Recursive") recursive: Boolean = true,

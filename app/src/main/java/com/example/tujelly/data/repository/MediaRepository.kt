@@ -117,6 +117,53 @@ class MediaRepository(
         return this.filter { allowed.contains(it.id) }
     }
 
+    private val isEnrichingOverviews = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun startBackgroundOverviewEnrichment(serverUrl: String, userId: String, token: String) {
+        if (serverUrl.isBlank() || userId.isBlank() || token.isBlank()) return
+        if (isEnrichingOverviews.getAndSet(true)) return
+
+        syncScope.launch(Dispatchers.IO) {
+            try {
+                val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
+                val authHeader = buildJellyfinAuthHeader(token = token)
+
+                var processedCount = 0
+                while (processedCount < 10000) {
+                    val missingIds = jellyfinDao.getIdsMissingOverview(limit = 40)
+                    if (missingIds.isEmpty()) break
+
+                    val idsParam = missingIds.joinToString(",")
+                    val response = runCatching {
+                        api.getLibraryItems(
+                            authHeader = authHeader,
+                            userId = userId,
+                            ids = idsParam,
+                            fields = "Overview",
+                            limit = 40,
+                            enableTotalRecordCount = false
+                        )
+                    }.getOrNull()
+
+                    if (response != null && response.items.isNotEmpty()) {
+                        for (item in response.items) {
+                            if (!item.overview.isNullOrBlank()) {
+                                jellyfinDao.updateOverview(item.id, item.overview)
+                            }
+                        }
+                        processedCount += missingIds.size
+                    } else {
+                        break
+                    }
+                    delay(1200L)
+                }
+            } catch (_: Exception) {
+            } finally {
+                isEnrichingOverviews.set(false)
+            }
+        }
+    }
+
     fun startBackgroundSync(
         serverUrl: String,
         userId: String,
@@ -408,9 +455,9 @@ class MediaRepository(
                     for (view in mediaViews.ifEmpty { listOf(null) }) {
                         val isSeries = view?.collectionType.equals("tvshows", ignoreCase = true) || view?.name.equals("Series", ignoreCase = true)
                         val viewFields = if (isSeries) {
-                            "ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData,RecursiveItemCount"
+                            "Overview,ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData,RecursiveItemCount"
                         } else {
-                            "ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData"
+                            "Overview,ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData"
                         }
                         var deltaOffset = 0
                         do {
@@ -506,9 +553,9 @@ class MediaRepository(
                     val itemType = if (isSeries) "Series" else if (view != null) "Movie" else "Movie,Series"
                     val isRecursive = !isSeries // Series son hijas directas del CollectionFolder, Movies pueden estar en subcarpetas
                     val viewFields = if (isSeries) {
-                        "ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData,RecursiveItemCount"
+                        "Overview,ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData,RecursiveItemCount"
                     } else {
-                        "ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData"
+                        "Overview,ProviderIds,PrimaryImageTag,CommunityRating,OfficialRating,Genres,Tags,UserData"
                     }
 
                     var startIndex = if (viewIndex == savedViewIndex) savedOffset else 0
