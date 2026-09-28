@@ -81,6 +81,40 @@ class MediaRepository(
             } catch (_: Exception) {}
         }
     }
+    private var cachedAllowedIds: Set<String>? = null
+    private var cachedAllowedUserId: String? = null
+
+    private suspend fun getAllowedIdsSet(): Set<String>? {
+        val userId = userPreferencesRepository?.userPreferencesFlow?.firstOrNull()?.jellyfinUserId ?: return null
+        if (userId.isBlank()) return null
+        
+        if (cachedAllowedUserId == userId && cachedAllowedIds != null) {
+            return cachedAllowedIds
+        }
+        
+        val ctx = userPreferencesRepository?.context ?: return null
+        val file = java.io.File(ctx.filesDir, "allowed_ids_$userId.txt")
+        if (file.exists()) {
+            cachedAllowedIds = file.readLines().toSet()
+            cachedAllowedUserId = userId
+            return cachedAllowedIds
+        }
+        return null
+    }
+
+    private fun saveAllowedIds(userId: String, ids: Set<String>) {
+        val ctx = userPreferencesRepository?.context ?: return
+        val file = java.io.File(ctx.filesDir, "allowed_ids_$userId.txt")
+        file.writeText(ids.joinToString("\n"))
+        if (cachedAllowedUserId == userId) {
+            cachedAllowedIds = ids
+        }
+    }
+
+    private suspend fun List<JellyfinMediaEntity>.filterAllowed(): List<JellyfinMediaEntity> {
+        val allowed = getAllowedIdsSet() ?: return this
+        return this.filter { allowed.contains(it.id) }
+    }
 
     fun startBackgroundSync(
         serverUrl: String,
@@ -324,6 +358,34 @@ class MediaRepository(
                 }
 
                 // =========================================================================
+                // RECONCILIACIÓN / FILTRADO DE RESTRICCIONES (forceFullSync o primera vez)
+                // =========================================================================
+                if (forceFullSync || getAllowedIdsSet() == null) {
+                    _syncProgress.value = SyncProgress(
+                        isSyncing = true,
+                        current = 0,
+                        total = currentLocal,
+                        message = "Comprobando restricciones parentales..."
+                    )
+                    runCatching {
+                        val allAllowedResponse = api.getLibraryItems(
+                            authHeader = authHeader,
+                            userId = userId,
+                            includeItemTypes = "Movie,Series,Episode",
+                            recursive = true,
+                            fields = "",
+                            limit = 200000
+                        )
+                        val allowedIds = allAllowedResponse.items.map { it.id }.toSet()
+                        if (allowedIds.isNotEmpty()) {
+                            saveAllowedIds(userId, allowedIds)
+                        }
+                    }
+                    if (forceFullSync) {
+                        userPreferencesRepository?.clearSyncCheckpoint()
+                    }
+                }
+
                 // =========================================================================
                 // CAMINO 1: SINCRONIZACIÓN INCREMENTAL (DELTA SYNC)
                 // =========================================================================
@@ -376,6 +438,11 @@ class MediaRepository(
                                     }
                                 }
                                 jellyfinDao.insertOrUpdateAll(entities)
+                                
+                                val currentAllowed = getAllowedIdsSet()?.toMutableSet() ?: mutableSetOf()
+                                currentAllowed.addAll(entities.map { it.id })
+                                saveAllowedIds(userId, currentAllowed)
+                                
                                 deltaCount += entities.size
                                 deltaOffset += deltaItems.size
                             }
@@ -787,7 +854,7 @@ class MediaRepository(
      * NO hace random puro (daría viejas películas sin criterio).
      */
     suspend fun getTopRatedMoviesServer(serverUrl: String, userId: String, token: String, limit: Int = 20): List<JellyfinMediaEntity> {
-        if (serverUrl.isBlank() || token.isBlank()) return jellyfinDao.getTopMoviesLocal(limit)
+        if (serverUrl.isBlank() || token.isBlank()) return jellyfinDao.getTopMoviesLocal(limit).filterAllowed()
 
         return runCatching {
             val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
@@ -851,9 +918,9 @@ class MediaRepository(
                 jellyfinDao.insertOrUpdateAll(merged)
                 merged
             } else {
-                jellyfinDao.getTopMoviesLocal(limit)
+                jellyfinDao.getTopMoviesLocal(limit).filterAllowed()
             }
-        }.getOrDefault(jellyfinDao.getTopMoviesLocal(limit))
+        }.getOrDefault(jellyfinDao.getTopMoviesLocal(limit).filterAllowed())
     }
 
     /**
@@ -865,7 +932,7 @@ class MediaRepository(
      *   3. Fallback: series mejor valoradas sin ver
      */
     suspend fun getTopRatedSeriesServer(serverUrl: String, userId: String, token: String, limit: Int = 20): List<JellyfinMediaEntity> {
-        if (serverUrl.isBlank() || token.isBlank()) return jellyfinDao.getTopSeriesLocal(limit)
+        if (serverUrl.isBlank() || token.isBlank()) return jellyfinDao.getTopSeriesLocal(limit).filterAllowed()
 
         return runCatching {
             val api = NetworkClientFactory.createService(serverUrl, JellyfinApiService::class.java)
@@ -928,22 +995,21 @@ class MediaRepository(
                 jellyfinDao.insertOrUpdateAll(merged)
                 merged
             } else {
-                jellyfinDao.getTopSeriesLocal(limit)
+                jellyfinDao.getTopSeriesLocal(limit).filterAllowed()
             }
-        }.getOrDefault(jellyfinDao.getTopSeriesLocal(limit))
+        }.getOrDefault(jellyfinDao.getTopSeriesLocal(limit).filterAllowed())
     }
 
-    fun getAllLocalLibrary(): Flow<List<JellyfinMediaEntity>> = jellyfinDao.getAllItems()
-
-
-    suspend fun getLocalMovies(): List<JellyfinMediaEntity> = jellyfinDao.getMovies().deduplicateMediaEntities()
-    suspend fun getLocalSeries(): List<JellyfinMediaEntity> = jellyfinDao.getSeries().deduplicateMediaEntities()
-    suspend fun getAllCatalog(): List<JellyfinMediaEntity> = jellyfinDao.getAllCatalog().deduplicateMediaEntities()
-    suspend fun getContinueWatchingLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getContinueWatchingLocal(limit).deduplicateMediaEntities()
-    suspend fun getTopMoviesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopMoviesLocal(limit).deduplicateMediaEntities()
-    suspend fun getTopSeriesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopSeriesLocal(limit).deduplicateMediaEntities()
-    suspend fun getTopRatedLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopRatedLocal(limit).deduplicateMediaEntities()
-    suspend fun searchLocalMedia(query: String, limit: Int = 40): List<JellyfinMediaEntity> = jellyfinDao.searchLocalMedia(query.trim(), limit).deduplicateMediaEntities()
+    fun getAllLocalLibrary(): Flow<List<JellyfinMediaEntity>> = jellyfinDao.getAllItems().map { it.filterAllowed() }
+    
+    suspend fun getLocalMovies(): List<JellyfinMediaEntity> = jellyfinDao.getMovies().deduplicateMediaEntities().filterAllowed()
+    suspend fun getLocalSeries(): List<JellyfinMediaEntity> = jellyfinDao.getSeries().deduplicateMediaEntities().filterAllowed()
+    suspend fun getAllCatalog(): List<JellyfinMediaEntity> = jellyfinDao.getAllCatalog().deduplicateMediaEntities().filterAllowed()
+    suspend fun getContinueWatchingLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getContinueWatchingLocal(limit).deduplicateMediaEntities().filterAllowed()
+    suspend fun getTopMoviesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopMoviesLocal(limit).deduplicateMediaEntities().filterAllowed()
+    suspend fun getTopSeriesLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopSeriesLocal(limit).deduplicateMediaEntities().filterAllowed()
+    suspend fun getTopRatedLocal(limit: Int = 20): List<JellyfinMediaEntity> = jellyfinDao.getTopRatedLocal(limit).deduplicateMediaEntities().filterAllowed()
+    suspend fun searchLocalMedia(query: String, limit: Int = 40): List<JellyfinMediaEntity> = jellyfinDao.searchLocalMedia(query.trim(), limit).deduplicateMediaEntities().filterAllowed()
     suspend fun getAllLocalTitles(): List<String> = jellyfinDao.getAllLocalTitles()
     suspend fun getLocalCount(): Int = jellyfinDao.getCount()
     fun getMediaCountFlow(): Flow<Int> = jellyfinDao.getMediaCountFlow()
@@ -955,8 +1021,8 @@ class MediaRepository(
     ) { direct, seriesTotal ->
         maxOf(direct, seriesTotal)
     }
-    suspend fun getFavoritesLocal(): List<JellyfinMediaEntity> = jellyfinDao.getFavorites().deduplicateMediaEntities()
-    fun getFavoritesFlow(): Flow<List<JellyfinMediaEntity>> = jellyfinDao.getFavoritesFlow()
+    suspend fun getFavoritesLocal(): List<JellyfinMediaEntity> = jellyfinDao.getFavorites().deduplicateMediaEntities().filterAllowed()
+    fun getFavoritesFlow(): Flow<List<JellyfinMediaEntity>> = jellyfinDao.getFavoritesFlow().map { it.filterAllowed() }
 
     suspend fun getFavorites(serverUrl: String, userId: String, token: String): Result<List<JellyfinMediaEntity>> {
         return runCatching {
@@ -1130,23 +1196,23 @@ class MediaRepository(
     }
 
     suspend fun getItemsByGenre(genre: String): List<JellyfinMediaEntity> {
-        return jellyfinDao.getItemsByGenre(genre)
+        return jellyfinDao.getItemsByGenre(genre).filterAllowed()
     }
 
     suspend fun getMoviesByGenre(genre: String, limit: Int = 40): List<JellyfinMediaEntity> {
-        return jellyfinDao.getMoviesByGenre(genre, limit)
+        return jellyfinDao.getMoviesByGenre(genre, limit).filterAllowed()
     }
 
     suspend fun getSeriesByGenre(genre: String, limit: Int = 40): List<JellyfinMediaEntity> {
-        return jellyfinDao.getSeriesByGenre(genre, limit)
+        return jellyfinDao.getSeriesByGenre(genre, limit).filterAllowed()
     }
 
     suspend fun getRecentMoviesByGenre(genre: String, limit: Int = 20): List<JellyfinMediaEntity> {
-        return jellyfinDao.getRecentMoviesByGenre(genre, limit)
+        return jellyfinDao.getRecentMoviesByGenre(genre, limit).filterAllowed()
     }
 
     suspend fun getRecentSeriesByGenre(genre: String, limit: Int = 20): List<JellyfinMediaEntity> {
-        return jellyfinDao.getRecentSeriesByGenre(genre, limit)
+        return jellyfinDao.getRecentSeriesByGenre(genre, limit).filterAllowed()
     }
 
     suspend fun getRecommendedMovies(
@@ -1163,7 +1229,7 @@ class MediaRepository(
 
         // Recoger candidatos de cada género por separado, luego intercalar
         val buckets: List<List<JellyfinMediaEntity>> = topGenres.map { genre ->
-            jellyfinDao.getItemsByGenre(genre, limit = maxPerGenre * 3) // pedir más de los que necesitamos para tener margen
+            jellyfinDao.getItemsByGenre(genre, limit = maxPerGenre * 3).filterAllowed() // pedir más de los que necesitamos para tener margen
                 .filter {
                     it.type.equals("Movie", ignoreCase = true)
                         && it.id !in addedIds
@@ -1193,7 +1259,7 @@ class MediaRepository(
 
         // Fallback: rellenar con películas bien valoradas no mostradas aún (evitando escanear toda la DB)
         if (resultList.size < limit) {
-            jellyfinDao.getTopMoviesLocal(limit = 50)
+            jellyfinDao.getTopMoviesLocal(limit = 50).filterAllowed()
                 .filter { it.id !in addedIds && !it.isPlayed && (it.communityRating ?: 0f) >= 6.0f }
                 .take(limit - resultList.size)
                 .forEach {
